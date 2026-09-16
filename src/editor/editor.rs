@@ -19,6 +19,13 @@ pub enum EditorTool {
     Select,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ColorTarget {
+    Build,
+    PropertyColor(WorldCoord),
+    PropertyLight(WorldCoord),
+}
+
 pub struct Editor {
     pub mode: EditorMode,
     pub camera: CameraController,
@@ -35,11 +42,17 @@ pub struct Editor {
     // Layout
     pub right_panel_split: f32,
 
-    // Signals
+    // signals
     pub show_clear_confirmation: bool,
     pub needs_clear_world: bool,
     pub needs_save: bool,
     pub needs_exit: bool,
+
+    // Build Settings (Template for new blocks)
+    pub build_template: crate::world::Cell,
+
+    // Active persistent color picker
+    pub active_color_target: Option<ColorTarget>,
 }
 
 impl Editor {
@@ -62,6 +75,9 @@ impl Editor {
             needs_clear_world: false,
             needs_save: false,
             needs_exit: false,
+
+            build_template: crate::world::Cell::new_block(),
+            active_color_target: None,
         }
     }
 
@@ -84,6 +100,8 @@ impl Editor {
         self.draw_right_panel(ctx, world);
 
         self.draw_dialogs(ctx, world);
+
+        self.render_active_color_picker(ctx, world);
     }
 
     fn draw_menu_bar(&mut self, ctx: &egui::Context) {
@@ -148,7 +166,7 @@ impl Editor {
     fn draw_tool_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("tool_bar").show(ctx, |ui| {
             ui.add_space(2.0);
-            tools::draw_tool_bar(ui, &mut self.current_tool, &mut self.mode);
+            tools::draw_tool_bar(ui, self);
             ui.add_space(2.0);
         });
     }
@@ -303,14 +321,9 @@ impl Editor {
 
                                 ui.horizontal(|ui| {
                                     ui.label("Color:");
-                                    let mut color = [
-                                        cell.light_color.x,
-                                        cell.light_color.y,
-                                        cell.light_color.z,
-                                    ];
-                                    if ui.color_edit_button_rgb(&mut color).changed() {
-                                        cell.light_color = glam::Vec3::new(color[0], color[1], color[2]);
-                                    }
+                                    let mut color = cell.light_color;
+                                    tools::draw_color_edit(ui, self, ColorTarget::PropertyLight(coord), &mut color);
+                                    cell.light_color = color;
                                 });
 
                                 ui.horizontal(|ui| {
@@ -343,14 +356,9 @@ impl Editor {
 
                             ui.horizontal(|ui| {
                                 ui.label("Color:");
-                                let mut color = [
-                                    cell.color_rgb.x,
-                                    cell.color_rgb.y,
-                                    cell.color_rgb.z,
-                                ];
-                                if ui.color_edit_button_rgb(&mut color).changed() {
-                                    cell.color_rgb = glam::Vec3::new(color[0], color[1], color[2]);
-                                }
+                                let mut color = cell.color_rgb;
+                                tools::draw_color_edit(ui, self, ColorTarget::PropertyColor(coord), &mut color);
+                                cell.color_rgb = color;
                             });
 
                             ui.horizontal(|ui| {
@@ -505,6 +513,54 @@ impl Editor {
                         }
                     });
                 });
+        }
+    }
+
+    fn render_active_color_picker(&mut self, ctx: &egui::Context, world: &mut crate::world::World) {
+        if let Some(target) = self.active_color_target {
+            let mut still_open = true;
+            let title = match target {
+                ColorTarget::Build => "Build Color",
+                ColorTarget::PropertyColor(_) => "Block Color",
+                ColorTarget::PropertyLight(_) => "Light Color",
+            };
+
+            egui::Window::new(title)
+                .open(&mut still_open)
+                .resizable(false)
+                .collapsible(false)
+                .show(ctx, |ui| {
+                    let color_ref = match target {
+                        ColorTarget::Build => Some(&mut self.build_template.color_rgb),
+                        ColorTarget::PropertyColor(coord) => {
+                            world.get_mut(coord).map(|c| &mut c.color_rgb)
+                        }
+                        ColorTarget::PropertyLight(coord) => {
+                            world.get_mut(coord).map(|c| &mut c.light_color)
+                        }
+                    };
+
+                    if let Some(color) = color_ref {
+                        let mut edit_color = [color.x, color.y, color.z];
+                        if egui::color_picker::color_edit_button_rgb(ui, &mut edit_color).changed() {
+                            *color = glam::Vec3::from_array(edit_color);
+                        }
+                    } else {
+                        ui.label("Target no longer exists.");
+                        if ui.button("Close").clicked() {
+                            self.active_color_target = None;
+                        }
+                    }
+
+                    ui.add_space(8.0);
+                    if ui.button("Done").clicked() {
+                        self.active_color_target = None;
+                    }
+                });
+
+            if !still_open {
+                self.active_color_target = None;
+            }
         }
     }
 }

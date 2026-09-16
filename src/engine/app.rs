@@ -112,6 +112,12 @@ pub struct App {
     /// when it needs to calculate a world grid location.
     pub mouse_pos: (f64, f64),
 
+    /// State for left mouse button drag actions (Build/Erase).
+    pub is_left_mouse_down: bool,
+
+    /// Starting grid coordinate for a drag operation.
+    pub drag_start_coord: Option<crate::world::WorldCoord>,
+
     /// Keyboard keys currently held by the user.
     ///
     /// App records physical key state so movement can be evaluated during the
@@ -156,6 +162,10 @@ impl App {
             last_cursor_pos: None,
 
             mouse_pos: (0.0, 0.0),
+
+            is_left_mouse_down: false,
+
+            drag_start_coord: None,
 
             keys_down: std::collections::HashSet::new(),
         }
@@ -258,18 +268,43 @@ impl App {
                     return;
                 }
 
+                if *button == MouseButton::Left {
+                    if *state == ElementState::Pressed {
+                        self.is_left_mouse_down = true;
+                        self.drag_start_coord = self.editor.hovered_cell;
+
+                        // Immediate actions (Navigate, Select) trigger on press.
+                        if self.editor.current_tool == EditorTool::Navigate
+                            || self.editor.current_tool == EditorTool::Select
+                        {
+                            self.on_click();
+                        }
+                    } else {
+                        self.is_left_mouse_down = false;
+
+                        // Range actions (Build, Erase) trigger on release.
+                        if self.editor.current_tool == EditorTool::Build
+                            || self.editor.current_tool == EditorTool::Erase
+                        {
+                            if let (Some(start), Some(end)) =
+                                (self.drag_start_coord, self.editor.hovered_cell)
+                            {
+                                self.apply_tool_to_range(start, end);
+                            }
+                        }
+
+                        self.drag_start_coord = None;
+                    }
+
+                    return;
+                }
+
                 // Normal pointer actions are ignored while egui owns the
                 // pointer.
                 if egui_ctx.wants_pointer_input()
                     || egui_ctx.is_using_pointer()
                 {
                     return;
-                }
-
-                if *button == MouseButton::Left
-                    && *state == ElementState::Pressed
-                {
-                    self.on_click();
                 }
             }
 
@@ -378,13 +413,9 @@ impl App {
             );
     }
 
-    /// Handles an editor left click.
+    /// Handles immediate editor actions (Navigate, Select).
     ///
-    /// A click only changes the authored World while the application is in the
-    /// Editor view and the editor itself is in Editor mode.
-    ///
-    /// Play mode is intentionally excluded here. Runtime simulation should
-    /// not be modified by Build or Erase operations.
+    /// These actions trigger on mouse press rather than release.
     fn on_click(&mut self) {
         if self.view == View::Editor
             && self.editor.mode == crate::engine::EditorMode::Editor
@@ -402,34 +433,56 @@ impl App {
                         self.editor.show_properties_window = true;
                     }
 
-                    // Build writes a new Block cell into the authored World.
-                    EditorTool::Build => {
-                        self.world.set_cell(
-                            hover,
-                            CellType::Block,
-                        );
+                    _ => {}
+                }
+            }
+        }
+    }
 
-                        // Newly placed block is initialized through the Cell
-                        // constructor so all default properties are applied
-                        // consistently.
-                        if let Some(cell) =
-                            self.world.get_mut(hover)
-                        {
-                            *cell = crate::world::Cell::new_block();
+    /// Applies the current tool (Build, Erase) to a range of cells.
+    ///
+    /// This handles single clicks (start == end), lines (one axis drag),
+    /// and rectangular planes (two axis drag).
+    fn apply_tool_to_range(
+        &mut self,
+        start: crate::world::WorldCoord,
+        end: crate::world::WorldCoord,
+    ) {
+        if self.view != View::Editor
+            || self.editor.mode != crate::engine::EditorMode::Editor
+        {
+            return;
+        }
+
+        let x_min = start.x.min(end.x);
+        let x_max = start.x.max(end.x);
+        let y_min = start.y.min(end.y);
+        let y_max = start.y.max(end.y);
+        let z_min = start.z.min(end.z);
+        let z_max = start.z.max(end.z);
+
+        for x in x_min..=x_max {
+            for y in y_min..=y_max {
+                for z in z_min..=z_max {
+                    let coord = crate::world::WorldCoord::new(x, y, z);
+                    match self.editor.current_tool {
+                        // Build writes a new Block cell into the authored World using current settings.
+                        EditorTool::Build => {
+                            let mut cell = self.editor.build_template.clone();
+                            self.world.set_cell(coord, cell.cell_type);
+
+                            if let Some(target) = self.world.get_mut(coord) {
+                                *target = cell;
+                            }
                         }
-                    }
 
-                    // Erase replaces the selected grid location with Empty.
-                    EditorTool::Erase => {
-                        self.world.set_cell(
-                            hover,
-                            CellType::Empty,
-                        );
+                        // Erase replaces the selected grid location with Empty.
+                        EditorTool::Erase => {
+                            self.world.set_cell(coord, CellType::Empty);
+                        }
+                        _ => {}
                     }
                 }
-            } else {
-                // No editor action occurs when the picker did not return a
-                // valid grid location.
             }
         }
     }
@@ -899,6 +952,7 @@ impl App {
                     &self.editor,
                     &self.world,
                     &self.physics_world,
+                    if self.is_left_mouse_down { self.drag_start_coord } else { None },
                 );
             }
         }

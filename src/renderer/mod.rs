@@ -300,6 +300,7 @@ impl Renderer {
         editor: &Editor,
         world: &World,
         physics: &PhysicsWorld,
+        drag_start: Option<WorldCoord>,
     ) {
         let camera_pos = editor.camera.get_position();
         let view = editor.camera.get_view_matrix();
@@ -396,6 +397,10 @@ impl Renderer {
             let base_color_name = CString::new("u_base_color").unwrap();
             let base_color_location = gl::GetUniformLocation(self.grid_program, base_color_name.as_ptr());
             gl::Uniform3f(base_color_location, 1.0, 1.0, 1.0); // Default to white
+
+            let alpha_name = CString::new("u_alpha").unwrap();
+            let alpha_location = gl::GetUniformLocation(self.grid_program, alpha_name.as_ptr());
+            gl::Uniform1f(alpha_location, 1.0); // Default to opaque
 
             // --- Set Lighting Uniforms ---
             let ambient_name = CString::new("u_ambient_intensity").unwrap();
@@ -550,6 +555,58 @@ impl Renderer {
                 gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
                 gl::BindVertexArray(self.axis_vao);
                 gl::DrawArrays(gl::LINES, 0, self.axis_vertex_count);
+            }
+
+            // --- Render Ghost Preview ---
+            if editor.mode == EditorMode::Editor {
+                if let (Some(start), Some(end)) = (drag_start, editor.hovered_cell) {
+                    let x_min = start.x.min(end.x);
+                    let x_max = start.x.max(end.x);
+                    let y_min = start.y.min(end.y);
+                    let y_max = start.y.max(end.y);
+                    let z_min = start.z.min(end.z);
+                    let z_max = start.z.max(end.z);
+
+                    gl::Enable(gl::BLEND);
+                    gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                    gl::DepthMask(gl::FALSE);
+                    gl::Uniform1f(alpha_location, 0.4); // 40% opaque for ghost
+
+                    match editor.current_tool {
+                        crate::editor::EditorTool::Build => {
+                            gl::BindVertexArray(self.block_vao);
+                            let color = editor.build_template.color_rgb;
+                            gl::Uniform3f(base_color_location, color.x, color.y, color.z);
+
+                            for x in x_min..=x_max {
+                                for y in y_min..=y_max {
+                                    for z in z_min..=z_max {
+                                        let model = Mat4::from_translation(Vec3::new(x as f32, y as f32, z as f32));
+                                        gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
+                                        gl::DrawArrays(gl::TRIANGLES, 0, self.block_vertex_count);
+                                    }
+                                }
+                            }
+                        }
+                        crate::editor::EditorTool::Erase => {
+                            gl::BindVertexArray(self.highlight_vao);
+                            gl::Uniform3f(base_color_location, 1.0, 0.2, 0.2); // Red ghost for erase
+
+                            for x in x_min..=x_max {
+                                for y in y_min..=y_max {
+                                    for z in z_min..=z_max {
+                                        let model = Mat4::from_translation(Vec3::new(x as f32, y as f32, z as f32));
+                                        gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
+                                        gl::DrawArrays(gl::LINES, 0, self.highlight_vertex_count);
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                    gl::DepthMask(gl::TRUE);
+                    gl::Uniform1f(alpha_location, 1.0);
+                }
             }
 
             gl::BindVertexArray(0);
@@ -1151,6 +1208,7 @@ uniform PointLight u_point_lights[MAX_POINT_LIGHTS];
 uniform sampler2D u_shadow_map;
 uniform mat4 u_light_space_matrix;
 uniform bool u_shadows_enabled;
+uniform float u_alpha;
 
 out vec4 FragColor;
 
@@ -1212,7 +1270,7 @@ void main() {
     }
 
     vec3 result = ambient + diffuse + point_contribution;
-    FragColor = vec4(result, v_color.a);
+    FragColor = vec4(result, v_color.a * u_alpha);
 }
 "#;
 
