@@ -16,10 +16,18 @@ pub struct App {
     pub world: World,
     pub project_manager: ProjectManager,
 
-    // Timing and Simulation
+    // We track the time between frames to keep simulation speed consistent
+    // regardless of the frame rate.
     pub last_frame_instant: Instant,
+
+    // The physics clock handles fixed timestep accumulation.
     pub physics_clock: physics::PhysicsClock,
+
+    // This owns the temporary physics bodies while the game is playing.
     pub physics_world: physics::PhysicsWorld,
+
+    // We store the mode from the previous frame to detect when the user
+    // clicks Play or Editor.
     pub last_mode: EditorMode,
 
     // UI State for Home
@@ -191,21 +199,28 @@ impl App {
         self.last_frame_instant = now;
 
         if self.view == View::Editor {
-            // Detect mode transition
+            // We only synchronize the physics world on the exact frame the mode
+            // changes to Play. This takes a snapshot of the grid world and
+            // creates the dynamic runtime bodies.
             if self.editor.mode == EditorMode::Play && self.last_mode == EditorMode::Editor {
                 self.physics_world.register_from_world(&self.world);
             }
             self.last_mode = self.editor.mode;
 
-            // Physics Clock: Fixed Timestep Accumulator
+            // The simulation loop runs only in Play mode.
             if self.editor.mode == EditorMode::Play {
                 let gravity = self.world.gravity;
                 let p_world = &mut self.physics_world;
+
+                // We use fixed steps to keep physics stable.
                 self.physics_clock.update(frame_time, |dt| {
+                    // Gravity changes velocity, then movement changes position.
                     p_world.apply_gravity(gravity, dt);
+                    p_world.integrate_positions(dt);
                 });
             } else {
-                // In Editor mode, we don't accumulate physics time.
+                // We reset the clock in Editor mode so simulation time does
+                // not leak across sessions.
                 self.physics_clock.reset();
             }
 
@@ -362,7 +377,7 @@ impl App {
     pub fn render(&self) {
         match self.view {
             View::Home => self.renderer.render_home(),
-            View::Editor => self.renderer.render_editor(&self.editor, &self.world),
+            View::Editor => self.renderer.render_editor(&self.editor, &self.world, &self.physics_world),
         }
     }
 

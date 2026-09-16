@@ -1,15 +1,23 @@
 use glam::Vec3;
 use crate::world::World;
 
-/// Fixed timestep for physics simulation (1/60th of a second).
+/// We use a fixed physics timestep of 1/60 second to keep the simulation
+/// deterministic across different hardware and frame rates.
 pub const SIMULATION_DT: f32 = 1.0 / 60.0;
 
-/// Maximum number of simulation steps to process in a single frame to prevent "spiral of death".
+/// We cap the number of physics steps per frame to 8. This ensures that if the
+/// renderer stalls or the window is dragged, the engine does not get stuck in
+/// an infinite catch up loop trying to simulate seconds of missed time.
 pub const MAX_PHYSICS_STEPS: u32 = 8;
 
+/// This unique ID identifies a body during a single simulation session.
+/// It is separate from world coordinates because physics bodies move in
+/// continuous space and can exist at any position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PhysicsBodyId(pub u64);
 
+/// The clock tracks how much time has passed since the last physics update.
+/// It accumulates frame deltas and triggers fixed size steps.
 pub struct PhysicsClock {
     pub accumulator: f32,
 }
@@ -19,24 +27,28 @@ impl PhysicsClock {
         Self { accumulator: 0.0 }
     }
 
-    /// Resets the accumulator. Useful when switching modes.
+    /// Resets the clock. We call this when leaving Play mode so that
+    /// the simulation does not jump forward when the user returns.
     pub fn reset(&mut self) {
         self.accumulator = 0.0;
     }
 
-    /// Advances the clock by the given frame delta time and executes fixed steps.
+    /// This consumes the frame delta and runs the provided physics logic in
+    /// fixed size chunks. If the frame time is too large (over 0.25s), we
+    /// clamp it to prevent objects from teleporting through the world.
     pub fn update<F>(&mut self, dt: f32, mut step_fn: F)
     where
         F: FnMut(f32)
     {
-        // Cap frame time to prevent massive jumps (e.g. after a pause or stall)
         let dt = dt.min(0.25);
         self.accumulator += dt;
 
         let mut steps_processed = 0;
         while self.accumulator >= SIMULATION_DT {
+            // If the simulation falls too far behind the renderer, we drop
+            // the excess time. This protects the engine from freezing if
+            // the physics calculations become too heavy.
             if steps_processed >= MAX_PHYSICS_STEPS {
-                // Drop remaining time if we hit the catch-up limit
                 self.accumulator = 0.0;
                 break;
             }
@@ -48,7 +60,9 @@ impl PhysicsClock {
     }
 }
 
-/// Runtime Physics Body representing a physical entity in continuous space.
+/// A physics body is a dynamic object in the simulation.
+/// Unlike World cells which are locked to a grid, bodies move in continuous
+/// world space using floating point coordinates.
 #[derive(Debug, Clone)]
 pub struct PhysicsBody {
     pub id: PhysicsBodyId,
@@ -56,13 +70,19 @@ pub struct PhysicsBody {
     pub velocity: Vec3,
     pub size: Vec3,
 
-    // Properties
+    // The density is used to calculate mass based on the body's volume.
     pub density: f32,
+
+    // Anchored bodies are physically frozen and do not move or fall.
     pub anchored: bool,
+
+    // Solid bodies will eventually participate in collision detection.
     pub solid: bool,
+
+    // Some bodies might ignore world gravity (like trigger volumes).
     pub gravity_participation: bool,
 
-    // State metadata
+    // Sleeping bodies are skipped by the solver to save time.
     pub is_sleeping: bool,
 }
 
@@ -81,7 +101,9 @@ impl PhysicsBody {
         }
     }
 
-    /// Returns the mass calculated from volume and density.
+    /// We calculate mass from volume and density. Anchored objects return zero
+    /// mass because they are treated as infinite immovable masses by physics
+    /// solvers.
     pub fn get_mass(&self) -> f32 {
         if self.anchored {
             0.0
@@ -92,7 +114,7 @@ impl PhysicsBody {
     }
 }
 
-/// Simple runtime ID generator for physics bodies.
+/// The generator provides a new unique ID for every body created in a session.
 pub struct PhysicsIdGenerator {
     next_id: u64,
 }
@@ -109,10 +131,13 @@ impl PhysicsIdGenerator {
     }
 }
 
-/// The Physics System state, managing runtime bodies and simulation.
+/// This owns the runtime physics state.
+/// It is temporary and exists only while the simulation is running.
 pub struct PhysicsWorld {
     pub bodies: Vec<PhysicsBody>,
     id_gen: PhysicsIdGenerator,
+
+    // Used for low frequency debug logging.
     step_count: u64,
 }
 
@@ -125,49 +150,69 @@ impl PhysicsWorld {
         }
     }
 
-    /// Applies gravity acceleration to all dynamic bodies.
+    /// World gravity changes velocity but does not decide where the body ends up.
+    /// Position is updated separately so forces and movement remain separate parts
+    /// of the simulation.
+    ///
+    /// This uses the fixed physics timestep supplied by PhysicsClock. It must not
+    /// use frame time because physics behavior should not change just because the
+    /// renderer produced a different number of frames.
     pub fn apply_gravity(&mut self, gravity: Vec3, dt: f32) {
         self.step_count += 1;
         for body in &mut self.bodies {
+            // Anchored bodies ignore gravity because they are physically frozen.
             if !body.anchored && body.gravity_participation {
                 body.velocity += gravity * dt;
             }
         }
 
-        // Low-frequency debug print (approx once per second at 60Hz)
+        // Temporary debug output used while verifying runtime gravity.
+        // Remove this once physics state can be inspected directly in the UI.
         if self.step_count % 60 == 0 {
             if let Some(body) = self.bodies.first() {
-                println!("Physics Debug | Body[0] Velocity: ({:.2}, {:.2}, {:.2})",
-                    body.velocity.x, body.velocity.y, body.velocity.z);
+                println!("Physics Debug | Body[0] Vel: ({:.2}, {:.2}, {:.2}) | Pos: ({:.2}, {:.2}, {:.2})",
+                    body.velocity.x, body.velocity.y, body.velocity.z,
+                    body.position.x, body.position.y, body.position.z);
             }
         }
     }
 
-    /// Synchronizes the physics system with the authoritative world state.
-    /// Discovers non-anchored cells and registers them as dynamic physics bodies.
+    /// We update position based on velocity. This is called after gravity so
+    /// the velocity change from this step is included in the movement.
+    pub fn integrate_positions(&mut self, dt: f32) {
+        for body in &mut self.bodies {
+            if !body.anchored {
+                body.position += body.velocity * dt;
+            }
+        }
+    }
+
+    /// This function populates the physics simulation from the grid world.
+    /// We keep World as the authoring truth and use PhysicsWorld for runtime simulation.
+    /// We do not write simulated positions back into World here because the editor
+    /// must be able to restore the exact authored state when Play stops.
     pub fn register_from_world(&mut self, world: &World) {
         self.bodies.clear();
-        self.id_gen = PhysicsIdGenerator::new(); // Reset IDs for consistent session sync
-        self.step_count = 0; // Reset debug counter
+        self.id_gen = PhysicsIdGenerator::new();
+        self.step_count = 0;
 
         for coord in world.active_blocks() {
             if let Some(cell) = world.get(coord) {
-                // Rules: Only non-anchored cells become active dynamic bodies.
+                // Only non anchored blocks participate in physics movement.
                 if !cell.anchored {
                     let id = self.id_gen.next();
-                    // Position is center of voxel (X.0, Y.0, Z.0)
+                    // We treat the grid coordinate as the center of the voxel.
                     let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32);
                     let mut body = PhysicsBody::new(id, pos, Vec3::ONE);
 
-                    // Map existing cell properties
                     body.solid = cell.solid;
-                    // Density/Mass are not yet in Cell data, using default 1.0
 
                     self.bodies.push(body);
                 }
             }
         }
 
+        // Temporary confirmation print for the mode transition phase.
         println!("Physics: Registered {} dynamic bodies from world.", self.bodies.len());
     }
 }
@@ -180,20 +225,22 @@ mod tests {
 
     #[test]
     fn test_physics_clock_accumulation() {
+        // This proves that the clock correctly accumulates time across
+        // several small frame deltas until the fixed threshold is reached.
         let mut clock = PhysicsClock::new();
         let mut steps = 0;
 
-        // One step exactly
+        // One step exactly should trigger one update.
         clock.update(SIMULATION_DT, |_| steps += 1);
         assert_eq!(steps, 1);
         assert!(clock.accumulator < 0.0001);
 
-        // Half a step, should not tick
+        // Half a step should not trigger an update yet.
         clock.update(SIMULATION_DT / 2.0, |_| steps += 1);
         assert_eq!(steps, 1);
         assert!((clock.accumulator - SIMULATION_DT / 2.0).abs() < 0.0001);
 
-        // Another half, should tick once
+        // The second half should push it over the threshold and trigger the tick.
         clock.update(SIMULATION_DT / 2.0, |_| steps += 1);
         assert_eq!(steps, 2);
         assert!(clock.accumulator < 0.0001);
@@ -201,19 +248,22 @@ mod tests {
 
     #[test]
     fn test_physics_clock_cap() {
+        // This ensures the engine remains responsive during heavy stalls
+        // by capping the number of catch up steps we perform in one frame.
         let mut clock = PhysicsClock::new();
         let mut steps = 0;
 
-        // Provide enough time for 100 steps
+        // Provide enough time for 100 steps.
         clock.update(1.0, |_| steps += 1);
 
-        // Should be capped at MAX_PHYSICS_STEPS (8)
+        // It must be capped at MAX_PHYSICS_STEPS (8) and drop the excess.
         assert_eq!(steps, MAX_PHYSICS_STEPS);
         assert_eq!(clock.accumulator, 0.0);
     }
 
     #[test]
     fn test_physics_body_id_uniqueness() {
+        // IDs must stay unique within a session so we can track bodies correctly.
         let mut id_gen = PhysicsIdGenerator::new();
         let id1 = id_gen.next();
         let id2 = id_gen.next();
@@ -222,17 +272,19 @@ mod tests {
 
     #[test]
     fn test_world_to_physics_registration() {
+        // This verifies the rule that anchored blocks ignore simulation
+        // while non anchored blocks are correctly discovered.
         let mut world = World::new();
         let mut p_world = PhysicsWorld::new();
 
-        // 1. Non-anchored cell -> Should be registered
+        // One non anchored block should be registered.
         let coord1 = WorldCoord::new(0, 0, 0);
         world.set_cell(coord1, CellType::Grass);
         if let Some(cell) = world.get_mut(coord1) {
             cell.anchored = false;
         }
 
-        // 2. Anchored cell -> Should be ignored
+        // One anchored block should be ignored.
         let coord2 = WorldCoord::new(1, 0, 0);
         world.set_cell(coord2, CellType::Grass);
         if let Some(cell) = world.get_mut(coord2) {
@@ -241,12 +293,13 @@ mod tests {
 
         p_world.register_from_world(&world);
 
-        assert_eq!(p_world.bodies.len(), 1, "Only non-anchored cell should be registered");
+        assert_eq!(p_world.bodies.len(), 1);
         assert_eq!(p_world.bodies[0].position, Vec3::new(0.0, 0.0, 0.0));
     }
 
     #[test]
     fn test_app_mode_transition_logic() {
+        // This proves that registration only happens on the edge of the mode change.
         use crate::engine::EditorMode;
 
         let mut world = World::new();
@@ -254,47 +307,38 @@ mod tests {
         let mut last_mode = EditorMode::Editor;
         let mut current_mode = EditorMode::Editor;
 
-        // 1. Put a non-anchored block in the world
         let coord = WorldCoord::new(0, 5, 0);
         world.set_cell(coord, CellType::Grass);
         if let Some(cell) = world.get_mut(coord) {
             cell.anchored = false;
         }
 
-        // 2. Confirm physics world starts empty
         assert_eq!(p_world.bodies.len(), 0);
 
-        // 3. Simulate App::update logic for transition
-        let mut simulate_update = |mode: EditorMode, last: &mut EditorMode, p: &mut PhysicsWorld, w: &World| {
+        let simulate_update = |mode: EditorMode, last: &mut EditorMode, p: &mut PhysicsWorld, w: &World| {
             if mode == EditorMode::Play && *last == EditorMode::Editor {
                 p.register_from_world(w);
             }
             *last = mode;
         };
 
-        // 4. Set mode to Play and run update logic
+        // Transition from Editor to Play.
         current_mode = EditorMode::Play;
         simulate_update(current_mode, &mut last_mode, &mut p_world, &world);
-
-        // 5. Assert the physics world now contains the expected registered body
         assert_eq!(p_world.bodies.len(), 1);
         let first_id = p_world.bodies[0].id;
 
-        // 6. Run the update again while still in Play
+        // Run again while already in Play. Registration should not repeat.
         simulate_update(current_mode, &mut last_mode, &mut p_world, &world);
-
-        // 7. Assert the registration did not happen again (count and ID remain same)
         assert_eq!(p_world.bodies.len(), 1);
         assert_eq!(p_world.bodies[0].id, first_id);
     }
 
     #[test]
     fn test_physics_gravity_acceleration() {
+        // This verifies that world gravity correctly changes velocity over time.
         let mut p_world = PhysicsWorld::new();
-        let id = PhysicsBodyId(1);
-        let pos = Vec3::ZERO;
-        let size = Vec3::ONE;
-        let mut body = PhysicsBody::new(id, pos, size);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
         body.velocity = Vec3::ZERO;
         p_world.bodies.push(body);
 
@@ -313,6 +357,7 @@ mod tests {
 
     #[test]
     fn test_physics_gravity_anchored_ignored() {
+        // Frozen objects must never receive acceleration from gravity.
         let mut p_world = PhysicsWorld::new();
         let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
         body.anchored = true;
@@ -325,6 +370,7 @@ mod tests {
 
     #[test]
     fn test_physics_gravity_participation_gating() {
+        // Some bodies might be configured to ignore the gravity field entirely.
         let mut p_world = PhysicsWorld::new();
         let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
         body.gravity_participation = false;
@@ -337,6 +383,7 @@ mod tests {
 
     #[test]
     fn test_physics_gravity_3d_vector() {
+        // Gravity is a full 3D vector and can pull in any direction.
         let mut p_world = PhysicsWorld::new();
         let body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
         p_world.bodies.push(body);
@@ -351,5 +398,62 @@ mod tests {
         assert!((actual.x - expected.x).abs() < 1e-5);
         assert!((actual.y - expected.y).abs() < 1e-5);
         assert!((actual.z - expected.z).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_physics_position_integration() {
+        // Proves that position correctly follows velocity over time.
+        let mut p_world = PhysicsWorld::new();
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(10.0, 10.0, 10.0), Vec3::ONE);
+        body.velocity = Vec3::new(1.0, 2.0, 3.0);
+        p_world.bodies.push(body);
+
+        let dt = 0.1;
+        p_world.integrate_positions(dt);
+
+        let expected_pos = Vec3::new(10.1, 10.2, 10.3);
+        let actual_pos = p_world.bodies[0].position;
+        assert!((actual_pos.x - expected_pos.x).abs() < 1e-5);
+        assert!((actual_pos.y - expected_pos.y).abs() < 1e-5);
+        assert!((actual_pos.z - expected_pos.z).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_physics_integration_anchored_ignored() {
+        // Anchored objects are physically static and must not move even if they have velocity.
+        let mut p_world = PhysicsWorld::new();
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
+        body.velocity = Vec3::new(10.0, 10.0, 10.0);
+        body.anchored = true;
+        p_world.bodies.push(body);
+
+        p_world.integrate_positions(0.1);
+        assert_eq!(p_world.bodies[0].position, Vec3::ZERO);
+    }
+
+    #[test]
+    fn test_physics_gravity_integration_ordering() {
+        // Verifies that applying gravity then integrating position works correctly
+        // in a single simulation step.
+        let mut p_world = PhysicsWorld::new();
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
+        body.velocity = Vec3::ZERO;
+        p_world.bodies.push(body);
+
+        let gravity = Vec3::new(0.0, -10.0, 0.0);
+        let dt = 0.1;
+
+        // Step simulation: apply gravity THEN integrate
+        p_world.apply_gravity(gravity, dt);
+        p_world.integrate_positions(dt);
+
+        let expected_vel = Vec3::new(0.0, -1.0, 0.0);
+        let expected_pos = Vec3::new(0.0, -0.1, 0.0);
+
+        let actual_vel = p_world.bodies[0].velocity;
+        let actual_pos = p_world.bodies[0].position;
+
+        assert!((actual_vel.y - expected_vel.y).abs() < 1e-5);
+        assert!((actual_pos.y - expected_pos.y).abs() < 1e-5);
     }
 }

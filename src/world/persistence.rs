@@ -6,10 +6,13 @@ use super::world::World;
 use super::cell::CellType;
 use super::coordinate::WorldCoord;
 
+/// We save the world to a simple text format. This is easier to debug and
+/// version than a binary format for now.
 pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
     let mut file = File::create(path)?;
 
-    // Save global settings
+    // We save the global gravity setting first so it can be parsed easily
+    // before the block data.
     writeln!(file, "GRAVITY {} {} {}", world.gravity.x, world.gravity.y, world.gravity.z)?;
 
     for coord in world.active_blocks() {
@@ -29,6 +32,8 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// We clear and reload the world from disk. This supports the standard project
+/// save format used by the engine.
 pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
     *world = World::new();
 
@@ -44,10 +49,14 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.is_empty() { continue; }
 
+        // We check for global settings first.
         if parts[0] == "GRAVITY" && parts.len() >= 4 {
             let x = parts[1].parse::<f32>().ok();
             let y = parts[2].parse::<f32>().ok();
             let z = parts[3].parse::<f32>().ok();
+
+            // If the tag exists but the numbers are invalid, we keep the default
+            // gravity from World::new().
             if let (Some(x), Some(y), Some(z)) = (x, y, z) {
                 world.gravity = Vec3::new(x, y, z);
             }
@@ -71,13 +80,13 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                             cell.anchored = parts[6].parse::<bool>().unwrap_or(true);
                             cell.texture = parts[7].to_string();
                         } else if parts.len() >= 7 {
-                            // Format without anchored
+                            // Support for files created before the Anchored property was added.
                             cell.visible = parts[4].parse::<bool>().unwrap_or(true);
                             cell.solid = parts[5].parse::<bool>().unwrap_or(true);
                             cell.anchored = true;
                             cell.texture = parts[6].to_string();
                         } else {
-                            // Upgrade old format
+                            // Support for early prototype files.
                             cell.visible = true;
                             cell.solid = true;
                             cell.anchored = true;
@@ -100,12 +109,15 @@ mod tests {
 
     #[test]
     fn test_world_default_gravity() {
+        // A new world must start with standard gravity.
         let world = World::new();
         assert_eq!(world.gravity, Vec3::new(0.0, -9.81, 0.0));
     }
 
     #[test]
     fn test_world_gravity_persistence() {
+        // This proves that custom gravity vectors survive the save and load
+        // cycle without loss of precision.
         let mut world = World::new();
         let custom_gravity = Vec3::new(1.2, 3.4, -5.6);
         world.gravity = custom_gravity;

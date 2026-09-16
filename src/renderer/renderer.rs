@@ -3,6 +3,8 @@ use std::ffi::CString;
 
 use crate::world::{World, CellType};
 use crate::editor::{Editor, GridPlane};
+use crate::engine::physics::PhysicsWorld;
+use crate::engine::EditorMode;
 use super::shader::create_program;
 use super::mesh::{
     upload_vertices_2d,
@@ -112,7 +114,7 @@ impl Renderer {
         }
     }
 
-    pub fn render_editor(&self, editor: &Editor, world: &World) {
+    pub fn render_editor(&self, editor: &Editor, world: &World, physics: &PhysicsWorld) {
         let camera_pos = editor.camera.get_position();
         let view = editor.camera.get_view_matrix();
         let target = editor.camera.target;
@@ -140,14 +142,35 @@ impl Renderer {
             let model_location = gl::GetUniformLocation(self.grid_program, model_name.as_ptr());
 
             // --- Render World Blocks ---
+            // World is authored editor state. PhysicsWorld is runtime state.
+            // In Editor mode, we draw everything from World.
+            // In Play mode, we draw only anchored blocks from World, and dynamic blocks from PhysicsWorld.
             gl::BindVertexArray(self.grass_vao);
             for coord in world.active_blocks() {
                 if let Some(cell) = world.get(coord) {
                     if cell.cell_type == CellType::Grass && cell.visible {
-                        let model = Mat4::from_translation(Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32));
-                        gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
-                        gl::DrawArrays(gl::TRIANGLES, 0, self.grass_vertex_count);
+                        let should_draw = match editor.mode {
+                            EditorMode::Editor => true,
+                            EditorMode::Play => cell.anchored,
+                        };
+
+                        if should_draw {
+                            let model = Mat4::from_translation(Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32));
+                            gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
+                            gl::DrawArrays(gl::TRIANGLES, 0, self.grass_vertex_count);
+                        }
                     }
+                }
+            }
+
+            // --- Render Physics Bodies ---
+            // In Play mode, the renderer reads runtime position from PhysicsWorld so simulated
+            // movement is visible.
+            if editor.mode == EditorMode::Play {
+                for body in &physics.bodies {
+                    let model = Mat4::from_translation(body.position);
+                    gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
+                    gl::DrawArrays(gl::TRIANGLES, 0, self.grass_vertex_count);
                 }
             }
 
