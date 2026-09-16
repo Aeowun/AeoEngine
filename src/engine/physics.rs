@@ -113,6 +113,7 @@ impl PhysicsIdGenerator {
 pub struct PhysicsWorld {
     pub bodies: Vec<PhysicsBody>,
     id_gen: PhysicsIdGenerator,
+    step_count: u64,
 }
 
 impl PhysicsWorld {
@@ -120,6 +121,25 @@ impl PhysicsWorld {
         Self {
             bodies: Vec::new(),
             id_gen: PhysicsIdGenerator::new(),
+            step_count: 0,
+        }
+    }
+
+    /// Applies gravity acceleration to all dynamic bodies.
+    pub fn apply_gravity(&mut self, gravity: Vec3, dt: f32) {
+        self.step_count += 1;
+        for body in &mut self.bodies {
+            if !body.anchored && body.gravity_participation {
+                body.velocity += gravity * dt;
+            }
+        }
+
+        // Low-frequency debug print (approx once per second at 60Hz)
+        if self.step_count % 60 == 0 {
+            if let Some(body) = self.bodies.first() {
+                println!("Physics Debug | Body[0] Velocity: ({:.2}, {:.2}, {:.2})",
+                    body.velocity.x, body.velocity.y, body.velocity.z);
+            }
         }
     }
 
@@ -128,6 +148,7 @@ impl PhysicsWorld {
     pub fn register_from_world(&mut self, world: &World) {
         self.bodies.clear();
         self.id_gen = PhysicsIdGenerator::new(); // Reset IDs for consistent session sync
+        self.step_count = 0; // Reset debug counter
 
         for coord in world.active_blocks() {
             if let Some(cell) = world.get(coord) {
@@ -149,10 +170,6 @@ impl PhysicsWorld {
 
         println!("Physics: Registered {} dynamic bodies from world.", self.bodies.len());
     }
-}
-
-/// Foundational physics step function.
-pub fn physics_step(_dt: f32) {
 }
 
 #[cfg(test)]
@@ -269,5 +286,70 @@ mod tests {
         // 7. Assert the registration did not happen again (count and ID remain same)
         assert_eq!(p_world.bodies.len(), 1);
         assert_eq!(p_world.bodies[0].id, first_id);
+    }
+
+    #[test]
+    fn test_physics_gravity_acceleration() {
+        let mut p_world = PhysicsWorld::new();
+        let id = PhysicsBodyId(1);
+        let pos = Vec3::ZERO;
+        let size = Vec3::ONE;
+        let mut body = PhysicsBody::new(id, pos, size);
+        body.velocity = Vec3::ZERO;
+        p_world.bodies.push(body);
+
+        let gravity = Vec3::new(0.0, -9.81, 0.0);
+        let dt = 1.0 / 60.0;
+
+        p_world.apply_gravity(gravity, dt);
+
+        let expected_velocity = Vec3::new(0.0, -9.81 * dt, 0.0);
+        let actual_velocity = p_world.bodies[0].velocity;
+
+        assert!((actual_velocity.x - expected_velocity.x).abs() < 1e-5);
+        assert!((actual_velocity.y - expected_velocity.y).abs() < 1e-5);
+        assert!((actual_velocity.z - expected_velocity.z).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_physics_gravity_anchored_ignored() {
+        let mut p_world = PhysicsWorld::new();
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
+        body.anchored = true;
+        body.velocity = Vec3::ZERO;
+        p_world.bodies.push(body);
+
+        p_world.apply_gravity(Vec3::new(0.0, -10.0, 0.0), 0.1);
+        assert_eq!(p_world.bodies[0].velocity, Vec3::ZERO);
+    }
+
+    #[test]
+    fn test_physics_gravity_participation_gating() {
+        let mut p_world = PhysicsWorld::new();
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
+        body.gravity_participation = false;
+        body.velocity = Vec3::ZERO;
+        p_world.bodies.push(body);
+
+        p_world.apply_gravity(Vec3::new(0.0, -10.0, 0.0), 0.1);
+        assert_eq!(p_world.bodies[0].velocity, Vec3::ZERO);
+    }
+
+    #[test]
+    fn test_physics_gravity_3d_vector() {
+        let mut p_world = PhysicsWorld::new();
+        let body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
+        p_world.bodies.push(body);
+
+        let gravity = Vec3::new(1.0, 2.0, -3.0);
+        let dt = 0.5;
+        p_world.apply_gravity(gravity, dt);
+
+        let expected = gravity * dt;
+        let actual = p_world.bodies[0].velocity;
+
+        assert!((actual.x - expected.x).abs() < 1e-5);
+        assert!((actual.y - expected.y).abs() < 1e-5);
+        assert!((actual.z - expected.z).abs() < 1e-5);
     }
 }

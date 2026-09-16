@@ -199,7 +199,11 @@ impl App {
 
             // Physics Clock: Fixed Timestep Accumulator
             if self.editor.mode == EditorMode::Play {
-                self.physics_clock.update(frame_time, physics::physics_step);
+                let gravity = self.world.gravity;
+                let p_world = &mut self.physics_world;
+                self.physics_clock.update(frame_time, |dt| {
+                    p_world.apply_gravity(gravity, dt);
+                });
             } else {
                 // In Editor mode, we don't accumulate physics time.
                 self.physics_clock.reset();
