@@ -490,10 +490,12 @@ impl Renderer {
             // --- Draw Physics Bodies ---
             if editor.mode == EditorMode::Play {
                 for body in &physics.bodies {
-                    gl::Uniform3f(base_color_location, body.color_rgb.x, body.color_rgb.y, body.color_rgb.z);
-                    let model = Mat4::from_translation(body.position);
-                    gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
-                    gl::DrawArrays(gl::TRIANGLES, 0, self.block_vertex_count);
+                    if body.visible {
+                        gl::Uniform3f(base_color_location, body.color_rgb.x, body.color_rgb.y, body.color_rgb.z);
+                        let model = Mat4::from_translation(body.position);
+                        gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
+                        gl::DrawArrays(gl::TRIANGLES, 0, self.block_vertex_count);
+                    }
                 }
             }
 

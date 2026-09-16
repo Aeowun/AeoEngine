@@ -66,11 +66,14 @@ impl PhysicsClock {
 #[derive(Debug, Clone)]
 pub struct PhysicsBody {
     pub id: PhysicsBodyId,
+    pub cell_type: CellType,
     pub position: Vec3,
     pub velocity: Vec3,
     pub size: Vec3,
     pub color_rgb: Vec3,
+    pub texture: String,
     pub density: f32,
+    pub visible: bool,
     pub anchored: bool,
     pub solid: bool,
     pub gravity_participation: bool,
@@ -92,11 +95,14 @@ impl PhysicsBody {
     pub fn new(id: PhysicsBodyId, position: Vec3, size: Vec3) -> Self {
         Self {
             id,
+            cell_type: CellType::Empty,
             position,
             velocity: Vec3::ZERO,
             size,
             color_rgb: Vec3::new(0.5, 0.5, 0.5),
+            texture: "None".to_string(),
             density: 1.0,
+            visible: true,
             anchored: false,
             solid: true,
             gravity_participation: true,
@@ -605,8 +611,15 @@ impl PhysicsWorld {
                     let id = self.id_gen.next();
                     let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32);
                     let mut body = PhysicsBody::new(id, pos, Vec3::ONE);
+
+                    // Authoritative Property Transfer
+                    body.cell_type = cell.cell_type;
+                    body.visible = cell.visible;
                     body.solid = cell.solid;
+                    body.anchored = cell.anchored;
+                    body.texture = cell.texture.clone();
                     body.color_rgb = cell.color_rgb;
+
                     self.bodies.push(body);
                 }
             }
@@ -1150,5 +1163,34 @@ mod tests {
 
         assert_eq!(p_world.bodies.len(), 1);
         assert_eq!(p_world.bodies[0].color_rgb, authored_color);
+    }
+
+    #[test]
+    fn test_physics_body_independence_after_registration() {
+        let mut world = World::new();
+        let coord = WorldCoord::new(0, 0, 0);
+        world.set_cell(coord, CellType::Block);
+
+        let original_color = Vec3::new(1.0, 1.0, 1.0);
+        if let Some(cell) = world.get_mut(coord) {
+            cell.anchored = false;
+            cell.color_rgb = original_color;
+            cell.visible = true;
+        }
+
+        let mut p_world = PhysicsWorld::new();
+        p_world.register_from_world(&world);
+
+        // Change authored world after registration
+        if let Some(cell) = world.get_mut(coord) {
+            cell.color_rgb = Vec3::ZERO;
+            cell.visible = false;
+        }
+        world.set_cell(coord, CellType::Empty);
+
+        // Runtime body must remain unchanged
+        assert_eq!(p_world.bodies.len(), 1);
+        assert_eq!(p_world.bodies[0].color_rgb, original_color);
+        assert_eq!(p_world.bodies[0].visible, true);
     }
 }
