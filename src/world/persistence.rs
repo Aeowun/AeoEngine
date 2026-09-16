@@ -15,13 +15,35 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
     // before the block data.
     writeln!(file, "GRAVITY {} {} {}", world.gravity.x, world.gravity.y, world.gravity.z)?;
 
+    // Save global lighting settings.
+    writeln!(file, "LIGHTING {} {} {} {} {} {} {} {} {} {}",
+        world.lighting.shadows_enabled,
+        world.lighting.global_light_enabled,
+        world.lighting.global_light_direction.x,
+        world.lighting.global_light_direction.y,
+        world.lighting.global_light_direction.z,
+        world.lighting.global_light_color.x,
+        world.lighting.global_light_color.y,
+        world.lighting.global_light_color.z,
+        world.lighting.global_light_intensity,
+        world.lighting.ambient_intensity
+    )?;
+
     for coord in world.active_blocks() {
         if let Some(cell) = world.get(coord) {
             match cell.cell_type {
-                CellType::Grass => {
-                    writeln!(file, "GRASS {} {} {} {} {} {} {}",
+                CellType::Block => {
+                    writeln!(file, "BLOCK {} {} {} {} {} {} {} {} {} {}",
                         coord.x, coord.y, coord.z,
-                        cell.visible, cell.solid, cell.anchored, cell.texture
+                        cell.visible, cell.solid, cell.anchored, cell.texture,
+                        cell.color_rgb.x, cell.color_rgb.y, cell.color_rgb.z
+                    )?;
+                }
+                CellType::Light => {
+                    writeln!(file, "LIGHT {} {} {} {} {} {} {} {} {}",
+                        coord.x, coord.y, coord.z,
+                        cell.light_color.x, cell.light_color.y, cell.light_color.z,
+                        cell.light_intensity, cell.light_range, cell.light_shadows
                     )?;
                 }
                 _ => {}
@@ -63,6 +85,29 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
             continue;
         }
 
+        if parts[0] == "LIGHTING" && parts.len() >= 11 {
+            world.lighting.shadows_enabled = parts[1].parse::<bool>().unwrap_or(true);
+            world.lighting.global_light_enabled = parts[2].parse::<bool>().unwrap_or(true);
+
+            let dx = parts[3].parse::<f32>().ok();
+            let dy = parts[4].parse::<f32>().ok();
+            let dz = parts[5].parse::<f32>().ok();
+            if let (Some(x), Some(y), Some(z)) = (dx, dy, dz) {
+                world.lighting.global_light_direction = Vec3::new(x, y, z);
+            }
+
+            let cr = parts[6].parse::<f32>().ok();
+            let cg = parts[7].parse::<f32>().ok();
+            let cb = parts[8].parse::<f32>().ok();
+            if let (Some(r), Some(g), Some(b)) = (cr, cg, cb) {
+                world.lighting.global_light_color = Vec3::new(r, g, b);
+            }
+
+            world.lighting.global_light_intensity = parts[9].parse::<f32>().unwrap_or(1.0);
+            world.lighting.ambient_intensity = parts[10].parse::<f32>().unwrap_or(0.2);
+            continue;
+        }
+
         if parts.len() >= 4 {
             let block_type = parts[0];
             let x = parts[1].parse::<i32>().ok();
@@ -71,8 +116,22 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
             if let (Some(x), Some(y), Some(z)) = (x, y, z) {
                 let coord = WorldCoord::new(x, y, z);
-                if block_type == "GRASS" {
-                    world.set_cell(coord, CellType::Grass);
+                if block_type == "BLOCK" {
+                    world.set_cell(coord, CellType::Block);
+                    if let Some(cell) = world.get_mut(coord) {
+                        if parts.len() >= 11 {
+                            cell.visible = parts[4].parse::<bool>().unwrap_or(true);
+                            cell.solid = parts[5].parse::<bool>().unwrap_or(true);
+                            cell.anchored = parts[6].parse::<bool>().unwrap_or(true);
+                            cell.texture = parts[7].to_string();
+                            let r = parts[8].parse::<f32>().unwrap_or(0.5);
+                            let g = parts[9].parse::<f32>().unwrap_or(0.5);
+                            let b = parts[10].parse::<f32>().unwrap_or(0.5);
+                            cell.color_rgb = Vec3::new(r, g, b);
+                        }
+                    }
+                } else if block_type == "GRASS" {
+                    world.set_cell(coord, CellType::Block);
                     if let Some(cell) = world.get_mut(coord) {
                         if parts.len() >= 8 {
                             cell.visible = parts[4].parse::<bool>().unwrap_or(true);
@@ -80,17 +139,32 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                             cell.anchored = parts[6].parse::<bool>().unwrap_or(true);
                             cell.texture = parts[7].to_string();
                         } else if parts.len() >= 7 {
-                            // Support for files created before the Anchored property was added.
+                            // Format without anchored
                             cell.visible = parts[4].parse::<bool>().unwrap_or(true);
                             cell.solid = parts[5].parse::<bool>().unwrap_or(true);
                             cell.anchored = true;
                             cell.texture = parts[6].to_string();
                         } else {
-                            // Support for early prototype files.
+                            // Upgrade old format
                             cell.visible = true;
                             cell.solid = true;
                             cell.anchored = true;
-                            cell.texture = "Grass_tx".to_string();
+                            cell.texture = "Block_tx".to_string();
+                        }
+                        // Default color for legacy grass
+                        cell.color_rgb = Vec3::new(0.5, 0.5, 0.5);
+                    }
+                } else if block_type == "LIGHT" {
+                    world.set_cell(coord, CellType::Light);
+                    if let Some(cell) = world.get_mut(coord) {
+                        if parts.len() >= 10 {
+                            let r = parts[4].parse::<f32>().unwrap_or(1.0);
+                            let g = parts[5].parse::<f32>().unwrap_or(1.0);
+                            let b = parts[6].parse::<f32>().unwrap_or(1.0);
+                            cell.light_color = Vec3::new(r, g, b);
+                            cell.light_intensity = parts[7].parse::<f32>().unwrap_or(5.0);
+                            cell.light_range = parts[8].parse::<f32>().unwrap_or(10.0);
+                            cell.light_shadows = parts[9].parse::<bool>().unwrap_or(true);
                         }
                     }
                 }
@@ -106,6 +180,7 @@ mod tests {
     use super::*;
     use std::fs;
     use glam::Vec3;
+    use crate::world::Cell;
 
     #[test]
     fn test_world_default_gravity() {
@@ -129,6 +204,82 @@ mod tests {
         load_world(&mut loaded_world, path).unwrap();
 
         assert_eq!(loaded_world.gravity, custom_gravity);
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_world_lighting_defaults() {
+        // Verify that a new World has the documented lighting defaults.
+        let world = World::new();
+        assert_eq!(world.lighting.shadows_enabled, true);
+        assert_eq!(world.lighting.global_light_enabled, true);
+        assert!((world.lighting.global_light_intensity - 1.0).abs() < 1e-5);
+        assert!((world.lighting.ambient_intensity - 0.2).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_light_cell_construction() {
+        // Verify that Cell::new_light() produces a valid authored Light cell.
+        let cell = Cell::new_light();
+        assert_eq!(cell.cell_type, CellType::Light);
+        assert_eq!(cell.visible, false);
+        assert_eq!(cell.solid, false);
+        assert_eq!(cell.light_intensity, 5.0);
+    }
+
+    #[test]
+    fn test_world_lighting_persistence() {
+        // Verify that global lighting settings survive the save/load cycle.
+        let mut world = World::new();
+        world.lighting.shadows_enabled = false;
+        world.lighting.global_light_enabled = false;
+        world.lighting.global_light_direction = Vec3::new(0.0, 1.0, 0.0);
+        world.lighting.global_light_color = Vec3::new(1.0, 0.5, 0.2);
+        world.lighting.global_light_intensity = 4.2;
+        world.lighting.ambient_intensity = 0.88;
+
+        let path = Path::new("test_lighting.dat");
+        save_world(&world, path).unwrap();
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        assert_eq!(loaded_world.lighting.shadows_enabled, false);
+        assert_eq!(loaded_world.lighting.global_light_enabled, false);
+        assert_eq!(loaded_world.lighting.global_light_direction, Vec3::new(0.0, 1.0, 0.0));
+        assert_eq!(loaded_world.lighting.global_light_color, Vec3::new(1.0, 0.5, 0.2));
+        assert!((loaded_world.lighting.global_light_intensity - 4.2).abs() < 1e-5);
+        assert!((loaded_world.lighting.ambient_intensity - 0.88).abs() < 1e-5);
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_light_cell_persistence() {
+        // Verify that Light cell properties are correctly persisted and reloaded.
+        let mut world = World::new();
+        let coord = WorldCoord::new(10, 20, 30);
+        world.set_cell(coord, CellType::Light);
+        if let Some(cell) = world.get_mut(coord) {
+            cell.light_color = Vec3::new(0.1, 0.2, 0.3);
+            cell.light_intensity = 99.0;
+            cell.light_range = 50.0;
+            cell.light_shadows = false;
+        }
+
+        let path = Path::new("test_light_cell.dat");
+        save_world(&world, path).unwrap();
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        let loaded_cell = loaded_world.get(coord).unwrap();
+        assert_eq!(loaded_cell.cell_type, CellType::Light);
+        assert_eq!(loaded_cell.light_color, Vec3::new(0.1, 0.2, 0.3));
+        assert_eq!(loaded_cell.light_intensity, 99.0);
+        assert_eq!(loaded_cell.light_range, 50.0);
+        assert_eq!(loaded_cell.light_shadows, false);
 
         fs::remove_file(path).ok();
     }

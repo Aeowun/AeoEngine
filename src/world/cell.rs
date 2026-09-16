@@ -1,12 +1,14 @@
+use glam::Vec3;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CellType {
     #[default]
     Empty,
-    Grass,
     Block,
     FxBlock,
     Player,
     NPC,
+    Light,
 }
 
 #[derive(Clone, Debug)]
@@ -16,6 +18,13 @@ pub struct Cell {
     pub solid: bool,
     pub anchored: bool,
     pub texture: String,
+    pub color_rgb: Vec3,
+
+    // Authored light properties. Only used when cell_type is Light.
+    pub light_color: Vec3,
+    pub light_intensity: f32,
+    pub light_range: f32,
+    pub light_shadows: bool,
 }
 
 impl Default for Cell {
@@ -26,18 +35,41 @@ impl Default for Cell {
             solid: true,
             anchored: true,
             texture: "None".to_string(),
+            color_rgb: Vec3::new(0.5, 0.5, 0.5),
+            light_color: Vec3::ONE,
+            light_intensity: 5.0,
+            light_range: 10.0,
+            light_shadows: true,
         }
     }
 }
 
 impl Cell {
-    pub fn new_grass() -> Self {
+    pub fn new_block() -> Self {
         Self {
-            cell_type: CellType::Grass,
+            cell_type: CellType::Block,
             visible: true,
             solid: true,
             anchored: true,
-            texture: "Grass_tx".to_string(),
+            texture: "Block_tx".to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// Creates a new point light cell with standard defaults.
+    pub fn new_light() -> Self {
+        Self {
+            cell_type: CellType::Light,
+            // Lights are authored markers and don't render as blocks themselves.
+            visible: false,
+            solid: false,
+            anchored: true,
+            texture: "Light_tx".to_string(),
+            color_rgb: Vec3::new(1.0, 1.0, 0.0), // Visual indicator color
+            light_color: Vec3::ONE, // White emitted light
+            light_intensity: 5.0,
+            light_range: 10.0,
+            light_shadows: true,
         }
     }
 }

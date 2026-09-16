@@ -47,14 +47,21 @@ pub fn upload_vertices_3d(
             gl::STATIC_DRAW,
         );
 
-        let stride = (7 * mem::size_of::<f32>()) as i32;
+        // Stride is 10: pos(3), normal(3), color(4)
+        let stride = (10 * mem::size_of::<f32>()) as i32;
+        // Position
         gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, stride, ptr::null());
         gl::EnableVertexAttribArray(0);
-        gl::VertexAttribPointer(1, 4, gl::FLOAT, gl::FALSE, stride, (3 * mem::size_of::<f32>()) as *const _);
+        // Normal
+        gl::VertexAttribPointer(1, 3, gl::FLOAT, gl::FALSE, stride, (3 * mem::size_of::<f32>()) as *const _);
         gl::EnableVertexAttribArray(1);
+        // Color
+        gl::VertexAttribPointer(2, 4, gl::FLOAT, gl::FALSE, stride, (6 * mem::size_of::<f32>()) as *const _);
+        gl::EnableVertexAttribArray(2);
+
         gl::BindVertexArray(0);
     }
-    (vao, vbo, (vertices.len() / 7) as i32)
+    (vao, vbo, (vertices.len() / 10) as i32)
 }
 
 pub fn add_line(
@@ -63,14 +70,15 @@ pub fn add_line(
     b: [f32; 3],
     color: [f32; 4],
 ) {
+    let normal = [0.0, 1.0, 0.0]; // Dummy normal for lines
     vertices.extend_from_slice(&[
         a[0], a[1], a[2],
-        color[0], color[1],
-        color[2], color[3],
+        normal[0], normal[1], normal[2],
+        color[0], color[1], color[2], color[3],
 
         b[0], b[1], b[2],
-        color[0], color[1],
-        color[2], color[3],
+        normal[0], normal[1], normal[2],
+        color[0], color[1], color[2], color[3],
     ]);
 }
 
@@ -81,24 +89,26 @@ pub fn add_quad(
     v3: [f32; 3],
     v4: [f32; 3],
     color: [f32; 4],
+    normal: [f32; 3],
 ) {
-    add_vertex(vertices, v1, color);
-    add_vertex(vertices, v2, color);
-    add_vertex(vertices, v3, color);
+    add_vertex(vertices, v1, normal, color);
+    add_vertex(vertices, v2, normal, color);
+    add_vertex(vertices, v3, normal, color);
 
-    add_vertex(vertices, v1, color);
-    add_vertex(vertices, v3, color);
-    add_vertex(vertices, v4, color);
+    add_vertex(vertices, v1, normal, color);
+    add_vertex(vertices, v3, normal, color);
+    add_vertex(vertices, v4, normal, color);
 }
 
 fn add_vertex(
     vertices: &mut Vec<f32>,
     pos: [f32; 3],
+    normal: [f32; 3],
     color: [f32; 4],
 ) {
     vertices.extend_from_slice(&[
         pos[0], pos[1], pos[2],
-        color[0], color[1],
-        color[2], color[3],
+        normal[0], normal[1], normal[2],
+        color[0], color[1], color[2], color[3],
     ]);
 }

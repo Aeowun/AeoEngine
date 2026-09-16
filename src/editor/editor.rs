@@ -30,6 +30,10 @@ pub struct Editor {
     // Windows
     pub navigation_window: NavigationWindow,
     pub show_properties_window: bool,
+    pub show_world_window: bool,
+
+    // Layout
+    pub right_panel_split: f32,
 
     // Signals
     pub show_clear_confirmation: bool,
@@ -49,7 +53,10 @@ impl Editor {
             current_tool: EditorTool::Navigate,
 
             navigation_window: NavigationWindow::new(),
-            show_properties_window: false,
+            show_properties_window: true,
+            show_world_window: true,
+
+            right_panel_split: 0.5,
 
             show_clear_confirmation: false,
             needs_clear_world: false,
@@ -73,7 +80,8 @@ impl Editor {
         self.draw_tool_bar(ctx);
         self.draw_status_bar(ctx);
 
-        self.draw_properties_panel(ctx, world);
+        self.draw_left_panel(ctx, world);
+        self.draw_right_panel(ctx, world);
 
         self.draw_dialogs(ctx, world);
     }
@@ -101,17 +109,19 @@ impl Editor {
                 });
 
                 ui.menu_button("View", |ui| {
-                    if ui.button("Navigation").clicked() {
-                        self.navigation_window.is_open = true;
+                    if ui.selectable_label(self.navigation_window.is_open, "Navigation").clicked() {
+                        self.navigation_window.is_open = !self.navigation_window.is_open;
                         ui.close_menu();
                     }
-                    if ui.button("Properties").clicked() {
-                        self.show_properties_window = true;
+                    if ui.selectable_label(self.show_properties_window, "Properties").clicked() {
+                        self.show_properties_window = !self.show_properties_window;
+                        ui.close_menu();
+                    }
+                    if ui.selectable_label(self.show_world_window, "World").clicked() {
+                        self.show_world_window = !self.show_world_window;
                         ui.close_menu();
                     }
                 });
-
-                ui.menu_button("World", |_ui| {});
 
                 ui.menu_button("Tools", |ui| {
                     if ui.selectable_label(self.current_tool == EditorTool::Navigate, "Navigate").clicked() {
@@ -158,9 +168,237 @@ impl Editor {
         });
     }
 
-    fn draw_properties_panel(&mut self, ctx: &egui::Context, world: &mut crate::world::World) {
-        if self.show_properties_window {
-            egui::SidePanel::right("properties_panel")
+    fn draw_right_panel(&mut self, ctx: &egui::Context, world: &mut crate::world::World) {
+        let show_prop = self.show_properties_window;
+        let show_nav = self.navigation_window.is_open;
+
+        if show_prop || show_nav {
+            egui::SidePanel::right("right_panel")
+                .resizable(true)
+                .default_width(260.0)
+                .show(ctx, |ui| {
+                    // Enforce square, hard-edged style for this panel
+                    ui.style_mut().visuals.window_rounding = egui::Rounding::ZERO;
+                    ui.style_mut().visuals.widgets.noninteractive.rounding = egui::Rounding::ZERO;
+                    ui.style_mut().visuals.widgets.inactive.rounding = egui::Rounding::ZERO;
+                    ui.style_mut().visuals.widgets.hovered.rounding = egui::Rounding::ZERO;
+                    ui.style_mut().visuals.widgets.active.rounding = egui::Rounding::ZERO;
+
+                    if show_prop && show_nav {
+                        let total_height = ui.available_height();
+                        let split_height = total_height * self.right_panel_split;
+
+                        // PROPERTIES (Top)
+                        egui::TopBottomPanel::top("prop_top")
+                            .exact_height(split_height)
+                            .show_inside(ui, |ui| {
+                                ui.add_space(4.0);
+                                ui.horizontal(|ui| {
+                                    ui.heading("PROPERTIES");
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        if ui.button("X").clicked() {
+                                            self.show_properties_window = false;
+                                        }
+                                    });
+                                });
+                                ui.separator();
+                                self.render_properties_content(ui, world);
+                            });
+
+                        // High-vis draggable separator
+                        let (sep_rect, sep_resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 4.0), egui::Sense::drag());
+                        ui.painter().rect_filled(sep_rect, 0.0, egui::Color32::from_rgb(150, 150, 150));
+                        if ui.rect_contains_pointer(sep_rect) {
+                            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ResizeVertical);
+                        }
+
+                        if sep_resp.dragged() {
+                             self.right_panel_split += ui.input(|i| i.pointer.delta().y) / total_height;
+                        }
+                        self.right_panel_split = self.right_panel_split.clamp(0.1, 0.9);
+
+                        // NAVIGATION (Bottom)
+                        egui::CentralPanel::default().show_inside(ui, |ui| {
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                ui.heading("NAVIGATION");
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.button("X").clicked() {
+                                        self.navigation_window.is_open = false;
+                                    }
+                                });
+                            });
+                            ui.separator();
+                            self.render_navigation_content(ui);
+                        });
+
+                    } else if show_prop {
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.heading("PROPERTIES");
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button("X").clicked() {
+                                    self.show_properties_window = false;
+                                }
+                            });
+                        });
+                        ui.separator();
+                        self.render_properties_content(ui, world);
+                    } else if show_nav {
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.heading("NAVIGATION");
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button("X").clicked() {
+                                    self.navigation_window.is_open = false;
+                                }
+                            });
+                        });
+                        ui.separator();
+                        self.render_navigation_content(ui);
+                    }
+                });
+        }
+    }
+
+    fn render_properties_content(&mut self, ui: &mut egui::Ui, world: &mut crate::world::World) {
+        if let Some(coord) = self.selected_coord {
+            egui::ScrollArea::vertical().id_source("prop_scroll").show(ui, |ui| {
+                // --- IDENTITY ---
+                egui::CollapsingHeader::new("IDENTITY")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        if let Some(cell) = world.get(coord) {
+                            ui.horizontal(|ui| {
+                                ui.label("Type:");
+                                ui.label(format!("{:?}", cell.cell_type));
+                            });
+                        } else {
+                            ui.label("Type: Empty");
+                        }
+                    });
+
+                // --- TRANSFORM ---
+                egui::CollapsingHeader::new("TRANSFORM")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        ui.label("Position");
+                        ui.indent("pos_indent", |ui| {
+                            ui.label(format!("X: {}", coord.x));
+                            ui.label(format!("Y: {}", coord.y));
+                            ui.label(format!("Z: {}", coord.z));
+                        });
+                    });
+
+                if let Some(cell) = world.get_mut(coord) {
+                    // --- LIGHT ---
+                    if cell.cell_type == crate::world::CellType::Light {
+                        egui::CollapsingHeader::new("LIGHT")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label("Type:");
+                                    ui.label("Point");
+                                });
+
+                                ui.horizontal(|ui| {
+                                    ui.label("Color:");
+                                    let mut color = [
+                                        cell.light_color.x,
+                                        cell.light_color.y,
+                                        cell.light_color.z,
+                                    ];
+                                    if ui.color_edit_button_rgb(&mut color).changed() {
+                                        cell.light_color = glam::Vec3::new(color[0], color[1], color[2]);
+                                    }
+                                });
+
+                                ui.horizontal(|ui| {
+                                    ui.label("Intensity:");
+                                    ui.add(egui::DragValue::new(&mut cell.light_intensity).speed(0.1).range(0.0..=f32::MAX));
+                                });
+
+                                ui.horizontal(|ui| {
+                                    ui.label("Range:");
+                                    ui.add(egui::DragValue::new(&mut cell.light_range).speed(0.1).range(0.0..=f32::MAX));
+                                });
+
+                                ui.checkbox(&mut cell.light_shadows, "Shadows");
+                            });
+                    }
+
+                    // --- PHYSICS ---
+                    egui::CollapsingHeader::new("PHYSICS")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            ui.checkbox(&mut cell.solid, "Solid");
+                            ui.checkbox(&mut cell.anchored, "Anchored");
+                        });
+
+                    // --- RENDERING ---
+                    egui::CollapsingHeader::new("RENDERING")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            ui.checkbox(&mut cell.visible, "Visible");
+
+                            ui.horizontal(|ui| {
+                                ui.label("Color:");
+                                let mut color = [
+                                    cell.color_rgb.x,
+                                    cell.color_rgb.y,
+                                    cell.color_rgb.z,
+                                ];
+                                if ui.color_edit_button_rgb(&mut color).changed() {
+                                    cell.color_rgb = glam::Vec3::new(color[0], color[1], color[2]);
+                                }
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.label("Texture:");
+                                ui.text_edit_singleline(&mut cell.texture);
+                            });
+                        });
+                }
+            });
+        } else {
+            ui.centered_and_justified(|ui| {
+                ui.label("No cell selected.");
+            });
+        }
+    }
+
+    fn render_navigation_content(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical().id_source("nav_scroll").show(ui, |ui| {
+            egui::Grid::new("nav_grid")
+                .spacing([10.0, 10.0])
+                .show(ui, |ui| {
+                    ui.label("X:");
+                    ui.text_edit_singleline(&mut self.navigation_window.x_buf);
+                    ui.end_row();
+
+                    ui.label("Y:");
+                    ui.text_edit_singleline(&mut self.navigation_window.y_buf);
+                    ui.end_row();
+
+                    ui.label("Z:");
+                    ui.text_edit_singleline(&mut self.navigation_window.z_buf);
+                    ui.end_row();
+                });
+
+            ui.add_space(10.0);
+
+            if ui.button("Go").clicked() {
+                let x = self.navigation_window.x_buf.parse::<i32>().unwrap_or(0);
+                let y = self.navigation_window.y_buf.parse::<i32>().unwrap_or(0);
+                let z = self.navigation_window.z_buf.parse::<i32>().unwrap_or(0);
+                self.set_anchor(WorldCoord::new(x, y, z));
+            }
+        });
+    }
+
+    fn draw_left_panel(&mut self, ctx: &egui::Context, world: &mut crate::world::World) {
+        if self.show_world_window {
+            egui::SidePanel::left("left_panel")
                 .resizable(true)
                 .default_width(260.0)
                 .show(ctx, |ui| {
@@ -173,86 +411,82 @@ impl Editor {
 
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
-                        ui.heading("PROPERTIES");
+                        ui.heading("WORLD");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui.button("X").clicked() {
-                                self.show_properties_window = false;
+                                self.show_world_window = false;
                             }
                         });
                     });
                     ui.separator();
 
-                    if let Some(coord) = self.selected_coord {
-                        egui::ScrollArea::vertical().show(ui, |ui| {
-                            // --- IDENTITY ---
-                            egui::CollapsingHeader::new("IDENTITY")
-                                .default_open(true)
-                                .show(ui, |ui| {
-                                    if let Some(cell) = world.get(coord) {
-                                        ui.horizontal(|ui| {
-                                            ui.label("Type:");
-                                            ui.label(format!("{:?}", cell.cell_type));
-                                        });
-                                    } else {
-                                        ui.label("Type: Empty");
-                                    }
-                                });
-
-                            // --- TRANSFORM ---
-                            egui::CollapsingHeader::new("TRANSFORM")
-                                .default_open(true)
-                                .show(ui, |ui| {
-                                    ui.label("Position");
-                                    ui.indent("pos_indent", |ui| {
-                                        ui.label(format!("X: {}", coord.x));
-                                        ui.label(format!("Y: {}", coord.y));
-                                        ui.label(format!("Z: {}", coord.z));
-                                    });
-                                });
-
-                            if let Some(cell) = world.get_mut(coord) {
-                                // --- PHYSICS ---
-                                egui::CollapsingHeader::new("PHYSICS")
-                                    .default_open(true)
-                                    .show(ui, |ui| {
-                                        ui.checkbox(&mut cell.solid, "Solid");
-                                        ui.checkbox(&mut cell.anchored, "Anchored");
-                                    });
-
-                                // --- RENDERING ---
-                                egui::CollapsingHeader::new("RENDERING")
-                                    .default_open(true)
-                                    .show(ui, |ui| {
-                                        ui.checkbox(&mut cell.visible, "Visible");
-                                        ui.horizontal(|ui| {
-                                            ui.label("Texture:");
-                                            ui.text_edit_singleline(&mut cell.texture);
-                                        });
-                                    });
-
-                                // --- WORLD ---
-                                egui::CollapsingHeader::new("WORLD")
-                                    .default_open(false)
-                                    .show(ui, |ui| {
-                                        ui.label("Selectable: true");
-                                        ui.label("Editable: true");
-                                    });
-                            }
-                        });
-                    } else {
-                        ui.centered_and_justified(|ui| {
-                            ui.label("No cell selected.");
-                        });
-                    }
+                    self.render_world_content(ui, world);
                 });
         }
     }
 
-    fn draw_dialogs(&mut self, ctx: &egui::Context, _world: &mut crate::world::World) {
-        if let Some(new_anchor) = self.navigation_window.show(ctx) {
-            self.set_anchor(new_anchor);
-        }
+    fn render_world_content(&mut self, ui: &mut egui::Ui, world: &mut crate::world::World) {
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            // --- LIGHTING ---
+            egui::CollapsingHeader::new("LIGHTING")
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.checkbox(&mut world.lighting.shadows_enabled, "Shadows Enabled");
+                    ui.checkbox(&mut world.lighting.global_light_enabled, "Global Light Enabled");
 
+                    ui.separator();
+                    ui.label("Global Light Direction");
+                    ui.horizontal(|ui| {
+                        ui.label("X:");
+                        ui.add(egui::DragValue::new(&mut world.lighting.global_light_direction.x).speed(0.01));
+                        ui.label("Y:");
+                        ui.add(egui::DragValue::new(&mut world.lighting.global_light_direction.y).speed(0.01));
+                        ui.label("Z:");
+                        ui.add(egui::DragValue::new(&mut world.lighting.global_light_direction.z).speed(0.01));
+                    });
+
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.label("Global Light Color:");
+                        let mut color = [
+                            world.lighting.global_light_color.x,
+                            world.lighting.global_light_color.y,
+                            world.lighting.global_light_color.z,
+                        ];
+                        if ui.color_edit_button_rgb(&mut color).changed() {
+                            world.lighting.global_light_color = glam::Vec3::new(color[0], color[1], color[2]);
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Global Light Intensity:");
+                        ui.add(egui::DragValue::new(&mut world.lighting.global_light_intensity).speed(0.1).range(0.0..=f32::MAX));
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Ambient Intensity:");
+                        ui.add(egui::DragValue::new(&mut world.lighting.ambient_intensity).speed(0.01).range(0.0..=1.0));
+                    });
+                });
+
+            // --- PHYSICS ---
+            egui::CollapsingHeader::new("PHYSICS")
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.label("Gravity");
+                    ui.horizontal(|ui| {
+                        ui.label("X:");
+                        ui.add(egui::DragValue::new(&mut world.gravity.x).speed(0.1));
+                        ui.label("Y:");
+                        ui.add(egui::DragValue::new(&mut world.gravity.y).speed(0.1));
+                        ui.label("Z:");
+                        ui.add(egui::DragValue::new(&mut world.gravity.z).speed(0.1));
+                    });
+                });
+        });
+    }
+
+    fn draw_dialogs(&mut self, ctx: &egui::Context, _world: &mut crate::world::World) {
         if self.show_clear_confirmation {
             egui::Window::new("Confirm Clear")
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])

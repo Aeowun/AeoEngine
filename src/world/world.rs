@@ -3,6 +3,30 @@ use glam::Vec3;
 use super::cell::{Cell, CellType};
 use super::coordinate::WorldCoord;
 
+pub struct LightingSettings {
+    pub shadows_enabled: bool,
+    pub global_light_enabled: bool,
+    /// The direction light travels through the scene.
+    pub global_light_direction: Vec3,
+    pub global_light_color: Vec3,
+    pub global_light_intensity: f32,
+    pub ambient_intensity: f32,
+}
+
+impl Default for LightingSettings {
+    fn default() -> Self {
+        Self {
+            shadows_enabled: true,
+            global_light_enabled: true,
+            // Default downward diagonal.
+            global_light_direction: Vec3::new(0.5, -1.0, 0.5).normalize(),
+            global_light_color: Vec3::ONE,
+            global_light_intensity: 1.0,
+            ambient_intensity: 0.20,
+        }
+    }
+}
+
 pub struct World {
     // Authored grid data. We use a HashMap because the world is unbounded
     // and most coordinates are empty.
@@ -10,6 +34,9 @@ pub struct World {
 
     // The world wide gravity vector used by the physics simulation.
     pub gravity: Vec3,
+
+    // Authoritative scene lighting settings.
+    pub lighting: LightingSettings,
 }
 
 impl World {
@@ -18,6 +45,7 @@ impl World {
             cells: HashMap::new(),
             // We default to Earth standard gravity.
             gravity: Vec3::new(0.0, -9.81, 0.0),
+            lighting: LightingSettings::default(),
         }
     }
 
@@ -34,11 +62,15 @@ impl World {
             self.cells.remove(&coord);
         } else {
             // Default properties for a new cell
-            let mut cell = Cell::default();
-            cell.cell_type = cell_type;
-            if cell_type == CellType::Grass {
-                cell = Cell::new_grass();
-            }
+            let cell = match cell_type {
+                CellType::Block => Cell::new_block(),
+                CellType::Light => Cell::new_light(),
+                _ => {
+                    let mut c = Cell::default();
+                    c.cell_type = cell_type;
+                    c
+                }
+            };
             self.cells.insert(coord, cell);
         }
     }
