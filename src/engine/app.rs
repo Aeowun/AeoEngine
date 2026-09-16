@@ -217,6 +217,15 @@ impl App {
                     // Gravity changes velocity, then movement changes position.
                     p_world.apply_gravity(gravity, dt);
                     p_world.integrate_positions(dt);
+
+                    // We check for static block collisions after the body has moved
+                    // this step. This detection allows the simulation to know when
+                    // a body has intersected a solid anchored block.
+                    let _collisions = p_world.check_static_collisions();
+
+                    // We resolve the overlaps found above by moving bodies out of
+                    // solid geometry and zeroing velocity along the surface normal.
+                    p_world.resolve_static_collisions();
                 });
             } else {
                 // We reset the clock in Editor mode so simulation time does
