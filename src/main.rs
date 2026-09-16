@@ -4,6 +4,7 @@ mod editor;
 mod world;
 mod project;
 mod character;
+mod character_custom;
 
 use glutin::config::ConfigTemplateBuilder;
 use glutin::context::ContextAttributesBuilder;

@@ -112,3 +112,35 @@ fn add_vertex(
         color[0], color[1], color[2], color[3],
     ]);
 }
+
+/// Dynamic mesh upload and draw for character pose updates.
+pub fn upload_and_draw_mesh_3d(vertices: &[f32]) {
+    unsafe {
+        let mut vao = 0;
+        let mut vbo = 0;
+        gl::GenVertexArrays(1, &mut vao);
+        gl::GenBuffers(1, &mut vbo);
+        gl::BindVertexArray(vao);
+        gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+        gl::BufferData(
+            gl::ARRAY_BUFFER,
+            (vertices.len() * mem::size_of::<f32>()) as isize,
+            vertices.as_ptr() as *const _,
+            gl::STREAM_DRAW,
+        );
+
+        let stride = (10 * mem::size_of::<f32>()) as i32;
+        gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, stride, ptr::null());
+        gl::EnableVertexAttribArray(0);
+        gl::VertexAttribPointer(1, 3, gl::FLOAT, gl::FALSE, stride, (3 * mem::size_of::<f32>()) as *const _);
+        gl::EnableVertexAttribArray(1);
+        gl::VertexAttribPointer(2, 4, gl::FLOAT, gl::FALSE, stride, (6 * mem::size_of::<f32>()) as *const _);
+        gl::EnableVertexAttribArray(2);
+
+        gl::DrawArrays(gl::TRIANGLES, 0, (vertices.len() / 10) as i32);
+
+        gl::BindVertexArray(0);
+        gl::DeleteBuffers(1, &vbo);
+        gl::DeleteVertexArrays(1, &vao);
+    }
+}

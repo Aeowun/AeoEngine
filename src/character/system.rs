@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use glam::{Vec2, Vec3, Quat};
 use crate::world::{World, WorldCoord};
+use crate::character_custom::TargetAnimation;
 use super::character::Character;
 use super::spawning::spawn_at_random_point;
 use super::movement::{MovementState, MOVE_SPEED, JUMP_IMPULSE};
 use super::animation::AnimationState;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Default)]
 pub struct CharacterSystem {
     characters: HashMap<u64, Character>,
     next_id: u64,
@@ -91,10 +92,19 @@ impl CharacterSystem {
             if horizontal_speed > 0.1 {
                 character.animation.current_state = AnimationState::Walk;
                 character.movement.state = MovementState::Walk;
+                character.animation_controller.select_animation(TargetAnimation::Walk);
             } else {
                 character.animation.current_state = AnimationState::Idle;
                 character.movement.state = MovementState::Idle;
+                character.animation_controller.select_animation(TargetAnimation::Idle);
             }
+
+            // 8. Advance Custom Animation Controller
+            // This advances time and blends weights.
+            character.animation_controller.update(dt);
+
+            // 9. Evaluate Pose for Renderer
+            character.current_pose = character.animation_controller.evaluate_pose();
         }
     }
 
@@ -176,6 +186,7 @@ impl CharacterSystem {
 mod tests {
     use super::*;
     use crate::world::{World, CellType, WorldCoord};
+    use crate::character::movement;
 
     #[test]
     fn test_character_runtime_starts_empty() {
@@ -255,6 +266,7 @@ mod tests {
         let updated = system.get_active_characters().next().unwrap();
         assert!(updated.transform.position.x > 0.0);
         assert_eq!(updated.animation.current_state, AnimationState::Walk);
+        assert_eq!(updated.animation_controller.blend_weight() > 0.0, true);
     }
 
     #[test]
@@ -334,12 +346,15 @@ mod tests {
         // Jump
         system.update(&world, 1.0/60.0, Vec2::ZERO, true);
         let updated = system.get_active_characters().next().unwrap();
-        assert_eq!(updated.movement.velocity.y, JUMP_IMPULSE);
+        // Note: Gravity is applied in the same frame as the impulse, so we expect
+        // JUMP_IMPULSE + gravity * dt.
+        let expected_v = JUMP_IMPULSE + world.gravity.y * (1.0/60.0);
+        assert!((updated.movement.velocity.y - expected_v).abs() < 0.001);
         assert!(!updated.movement.is_grounded);
 
         // Airborne character cannot jump again (until grounded)
         system.update(&world, 1.0/60.0, Vec2::ZERO, true);
         // Velocity should have decreased due to gravity, not reset to JUMP_IMPULSE
-        assert!(system.get_active_characters().next().unwrap().movement.velocity.y < JUMP_IMPULSE);
+        assert!(system.get_active_characters().next().unwrap().movement.velocity.y < movement::JUMP_IMPULSE);
     }
 }

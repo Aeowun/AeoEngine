@@ -134,18 +134,66 @@ Version `0.4.0` expands the editor from basic block placement into configurable 
 
 ## 0.5.0
 
-### Planned
+### Added
 
-* Character spawning system.
-* Basic 3D character.
-* Capsule character collision.
-* Character movement.
-* Character runtime state.
-* Basic idle and walking animation.
+* Character runtime system with dedicated character state.
+* Character transform, movement, collision, and animation state.
+* Character spawning from authored SpawnPoint cells.
+* SpawnPoint validation and nearby clearance search.
+* Fixed timestep character movement.
+* Character gravity and grounded state.
+* Character jumping with grounded jump gating.
+* Character voxel collision against solid World cells.
+* Character floor, wall, and ceiling collision handling.
+* Character movement state switching between Idle and Walk.
+* Character orientation based on movement direction.
+* Isolated 3D character rig and skeleton implementation.
+* Idle and Walk character animation clips.
+* Character animation blending and evaluated poses.
+* Character appearance customization data.
+* Modular generated character geometry.
+* Runtime integration of the custom character implementation.
+* Dynamic character mesh rendering.
+* Dedicated third person GameplayCamera.
+* Gameplay camera follow behavior.
+* Gameplay camera mouse orbit.
+* Gameplay camera pitch limits.
+* Gameplay camera collision against solid World geometry.
+* Gameplay camera follow target derived from the runtime character.
+* Editor camera preservation across Play mode transitions.
+
+### Changed
+
+* Character gameplay state is owned by `CharacterSystem`.
+* Character visual and animation implementation is provided by the isolated character system.
+* Runtime animation updates use the existing fixed timestep.
+* Play mode now renders the integrated 3D character instead of the temporary Magenta cube.
+* Play mode uses a dedicated GameplayCamera instead of the Editor camera.
+* Editor and gameplay camera state are explicitly separated.
+* Character orientation follows actual movement direction and remains independent of camera orientation.
+* Character collision dimensions remain independent from visual character scaling.
+
+### Fixed
+
+* Prevented editor camera state from being lost across Play mode transitions.
+* Prevented editor camera controls from continuing to mutate the editor camera during Play.
+* Added gameplay camera obstruction handling against solid voxel geometry.
+* Added regression coverage for character movement, collision, jumping, animation, spawning, and gameplay camera behavior.
 
 ### Notes
 
-Version `0.5.0` begins the Character system while keeping character state, physics, rendering, and spawning separated into their own systems.
+Version `0.5.0` establishes the first complete runtime character and third person gameplay foundation while preserving the separation between World authority, runtime character state, physics, camera systems, rendering, and editor state.
+
+---
+
+## Current Development
+
+### In Progress
+
+* Camera relative player movement controls.
+* Further third person player control refinement.
+* Character interaction with dynamic PhysicsBodies.
+* SpawnPoint driven character appearance authoring and persistence.
 
 ---
 
@@ -156,9 +204,9 @@ Planned engine work includes:
 * Dynamic point lights.
 * Expanded lighting controls.
 * Shadow refinement.
-* Character controller improvements.
-* Additional character animation.
+* Additional character animation and gameplay states.
 * Expanded rendering and material systems.
+* Additional character controller features.
 
 ---
 
@@ -182,7 +230,7 @@ A new engine capability or major feature milestone.
 
 Example:
 
-`0.5.0` — Character system.
+`0.5.0` — Character and third person gameplay foundation.
 
 ### PATCH
 

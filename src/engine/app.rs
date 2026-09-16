@@ -134,6 +134,18 @@ pub struct App {
     /// This handles spawning, ownership, and lifecycle of players and NPCs
     /// during Play mode.
     pub character_system: crate::character::CharacterSystem,
+
+    /// Dedicated camera used during Play mode.
+    ///
+    /// This camera follows the active player character and remains independent
+    /// of the editor camera state.
+    pub gameplay_camera: crate::renderer::camera::GameplayCamera,
+
+    /// Snapshot of the editor camera state captured when entering Play mode.
+    ///
+    /// This is restored when returning to Editor mode to ensure the authored
+    /// perspective is preserved.
+    pub saved_editor_camera: Option<crate::renderer::camera::CameraController>,
 }
 
 impl App {
@@ -183,6 +195,10 @@ impl App {
             jump_requested: false,
 
             character_system: crate::character::CharacterSystem::new(),
+
+            gameplay_camera: crate::renderer::camera::GameplayCamera::new(),
+
+            saved_editor_camera: None,
         }
     }
 
@@ -278,6 +294,14 @@ impl App {
                 button,
                 ..
             } => {
+                let ppp = egui_ctx.pixels_per_point();
+                let mouse_logical = egui::pos2(
+                    self.mouse_pos.0 as f32 / ppp,
+                    self.mouse_pos.1 as f32 / ppp,
+                );
+                let in_viewport =
+                    self.editor.viewport_rect.contains(mouse_logical);
+
                 if *button == MouseButton::Middle {
                     self.is_middle_mouse_down =
                         *state == ElementState::Pressed;
@@ -320,11 +344,8 @@ impl App {
                     return;
                 }
 
-                // Normal pointer actions are ignored while egui owns the
-                // pointer.
-                if egui_ctx.wants_pointer_input()
-                    || egui_ctx.is_using_pointer()
-                {
+                // Normal pointer actions are ignored when outside the central viewport.
+                if !in_viewport {
                     return;
                 }
             }
@@ -338,45 +359,47 @@ impl App {
                 position,
                 ..
             } => {
+                let dx = position.x - self.mouse_pos.0;
+                let dy = position.y - self.mouse_pos.1;
+
                 self.mouse_pos = (
                     position.x,
                     position.y,
                 );
 
-                // Hover is only active when the pointer is available to the
-                // editor and the application is actually editing.
-                if egui_ctx.wants_pointer_input()
-                    || egui_ctx.is_using_pointer()
-                    || self.editor.mode != crate::engine::EditorMode::Editor
+                let ppp = egui_ctx.pixels_per_point();
+                let mouse_logical = egui::pos2(
+                    position.x as f32 / ppp,
+                    position.y as f32 / ppp,
+                );
+                let in_viewport =
+                    self.editor.viewport_rect.contains(mouse_logical);
+
+                if self.editor.mode == EditorMode::Play {
+                    self.gameplay_camera.orbit(
+                        dx as f32,
+                        dy as f32,
+                    );
+                }
+
+                // Hover is only active when the pointer is inside the central viewport.
+                if in_viewport
+                    && self.editor.mode == crate::engine::EditorMode::Editor
                 {
-                    self.editor.hovered_cell = None;
-                } else {
                     self.update_hover();
+                } else {
+                    self.editor.hovered_cell = None;
                 }
 
                 // Once middle mouse is held, mouse movement is converted
                 // into camera orbit movement.
-                //
-                // last_cursor_pos is established on the first movement after
-                // the gesture starts so that the first event does not produce
-                // a large artificial camera jump.
                 if self.is_middle_mouse_down {
-                    if let Some((last_x, last_y)) =
-                        self.last_cursor_pos
-                    {
-                        let dx = position.x - last_x;
-                        let dy = position.y - last_y;
-
+                    if self.editor.mode == EditorMode::Editor {
                         self.editor.camera.orbit(
                             dx as f32,
                             dy as f32,
                         );
                     }
-
-                    self.last_cursor_pos = Some((
-                        position.x,
-                        position.y,
-                    ));
                 }
             }
 
@@ -389,9 +412,15 @@ impl App {
                 delta,
                 ..
             } => {
-                if egui_ctx.wants_pointer_input()
-                    || egui_ctx.is_using_pointer()
-                {
+                let ppp = egui_ctx.pixels_per_point();
+                let mouse_logical = egui::pos2(
+                    self.mouse_pos.0 as f32 / ppp,
+                    self.mouse_pos.1 as f32 / ppp,
+                );
+                let in_viewport =
+                    self.editor.viewport_rect.contains(mouse_logical);
+
+                if !in_viewport {
                     return;
                 }
 
@@ -403,11 +432,13 @@ impl App {
                     }
                 };
 
-                self.editor.camera.zoom(y);
+                if self.editor.mode == EditorMode::Editor {
+                    self.editor.camera.zoom(y);
 
-                // Camera movement can change which grid location lies under
-                // the cursor, so hover is refreshed after zoom.
-                self.update_hover();
+                    // Camera movement can change which grid location lies under
+                    // the cursor, so hover is refreshed after zoom.
+                    self.update_hover();
+                }
             }
 
             _ => {}
@@ -485,22 +516,38 @@ impl App {
         for x in x_min..=x_max {
             for y in y_min..=y_max {
                 for z in z_min..=z_max {
-                    let coord = crate::world::WorldCoord::new(x, y, z);
+                    let coord = crate::world::WorldCoord::new(
+                        x,
+                        y,
+                        z,
+                    );
+
                     match self.editor.current_tool {
                         // Build writes a new Block cell into the authored World using current settings.
                         EditorTool::Build => {
-                            let mut cell = self.editor.build_template.clone();
-                            self.world.set_cell(coord, cell.cell_type);
+                            let mut cell =
+                                self.editor.build_template.clone();
 
-                            if let Some(target) = self.world.get_mut(coord) {
+                            self.world.set_cell(
+                                coord,
+                                cell.cell_type,
+                            );
+
+                            if let Some(target) =
+                                self.world.get_mut(coord)
+                            {
                                 *target = cell;
                             }
                         }
 
                         // Erase replaces the selected grid location with Empty.
                         EditorTool::Erase => {
-                            self.world.set_cell(coord, CellType::Empty);
+                            self.world.set_cell(
+                                coord,
+                                CellType::Empty,
+                            );
                         }
+
                         _ => {}
                     }
                 }
@@ -530,14 +577,38 @@ impl App {
         self.last_frame_instant = now;
 
         if self.view == View::Editor {
-            // Snapshot world on the transition from Editor to Play.
+            // --- Mode Transition Logic ---
+
+            // 1. Entering Play Mode
             if self.editor.mode == EditorMode::Play
                 && self.last_mode == EditorMode::Editor
             {
+                // Snapshot the editor camera state before physics takes over.
+                self.saved_editor_camera =
+                    Some(self.editor.camera.clone());
+
                 self.physics_world
                     .register_from_world(&self.world);
 
-                self.character_system.spawn_player(&self.world);
+                self.character_system
+                    .spawn_player(&self.world);
+            }
+
+            // 2. Returning to Editor Mode
+            if self.editor.mode == EditorMode::Editor
+                && self.last_mode == EditorMode::Play
+            {
+                // Restore the authored perspective exactly as it was.
+                if let Some(saved) =
+                    self.saved_editor_camera.take()
+                {
+                    self.editor.camera = saved;
+                }
+
+                // Clear accumulated simulation time and runtime state.
+                self.physics_clock.reset();
+                self.character_system.clear();
+                self.physics_world.bodies.clear();
             }
 
             self.last_mode = self.editor.mode;
@@ -548,15 +619,156 @@ impl App {
                 let p_world =
                     &mut self.physics_world;
 
-                // Capture horizontal movement input for characters.
-                let mut move_input = glam::Vec2::ZERO;
-                if self.keys_down.contains(&KeyCode::KeyW) { move_input.y += 1.0; }
-                if self.keys_down.contains(&KeyCode::KeyS) { move_input.y -= 1.0; }
-                if self.keys_down.contains(&KeyCode::KeyA) { move_input.x -= 1.0; }
-                if self.keys_down.contains(&KeyCode::KeyD) { move_input.x += 1.0; }
+                // Edge scrolling rotates the gameplay camera around the player.
+                const EDGE_MARGIN: f32 = 50.0;
+                const EDGE_YAW_SPEED: f32 = 1.5;
+                const EDGE_PITCH_SPEED: f32 = 1.0;
 
-                let character_system = &mut self.character_system;
-                let world = &self.world;
+                // The editor viewport remains the boundary for Play-only
+                // edge scrolling. This does not move the player or camera
+                // target through the world.
+                let viewport =
+                    self.editor.viewport_rect;
+
+                let pixels_per_point =
+                    egui_ctx.pixels_per_point();
+
+                // Capture horizontal movement input and transform it based on the
+                // gameplay camera's horizontal orientation.
+                let mut raw_input =
+                    glam::Vec2::ZERO;
+
+                if self.keys_down.contains(
+                    &KeyCode::KeyW,
+                ) {
+                    raw_input.y += 1.0;
+                }
+
+                if self.keys_down.contains(
+                    &KeyCode::KeyS,
+                ) {
+                    raw_input.y -= 1.0;
+                }
+
+                if self.keys_down.contains(
+                    &KeyCode::KeyA,
+                ) {
+                    raw_input.x -= 1.0;
+                }
+
+                if self.keys_down.contains(
+                    &KeyCode::KeyD,
+                ) {
+                    raw_input.x += 1.0;
+                }
+
+                let world_move_input =
+                    if raw_input.length_squared() > 0.001 {
+                        let (
+                            cam_fwd,
+                            cam_right,
+                        ) = self.gameplay_camera
+                            .get_horizontal_basis();
+
+                        // Horizontal forward/right are 3D vectors with y=0.
+                        let world_vec =
+                            cam_right * raw_input.x
+                            + cam_fwd * raw_input.y;
+
+                        glam::Vec2::new(
+                            world_vec.x,
+                            world_vec.z,
+                        )
+                        .normalize()
+                    } else {
+                        glam::Vec2::ZERO
+                    };
+
+                // Edge scrolling changes gameplay camera yaw and pitch.
+                // The camera still orbits around the player and never moves
+                // the player's world-space pivot.
+                let mut edge_yaw =
+                    0.0_f32;
+
+                let mut edge_pitch =
+                    0.0_f32;
+
+                if viewport.is_positive() {
+                    let mouse_pt =
+                        egui::pos2(
+                            self.mouse_pos.0 as f32
+                                / pixels_per_point,
+                            self.mouse_pos.1 as f32
+                                / pixels_per_point,
+                        );
+
+                    if mouse_pt.x
+                        < viewport.min.x + EDGE_MARGIN
+                    {
+                        edge_yaw = -(
+                            1.0
+                                - (
+                                    (mouse_pt.x - viewport.min.x)
+                                        / EDGE_MARGIN
+                                )
+                                .clamp(
+                                    0.0,
+                                    1.0,
+                                )
+                        );
+                    } else if mouse_pt.x
+                        > viewport.max.x - EDGE_MARGIN
+                    {
+                        edge_yaw =
+                            1.0
+                                - (
+                                    (viewport.max.x - mouse_pt.x)
+                                        / EDGE_MARGIN
+                                )
+                                .clamp(
+                                    0.0,
+                                    1.0,
+                                );
+                    }
+
+                    if mouse_pt.y
+                        < viewport.min.y + EDGE_MARGIN
+                    {
+                        edge_pitch = -(
+                            1.0
+                                - (
+                                    (mouse_pt.y - viewport.min.y)
+                                        / EDGE_MARGIN
+                                )
+                                .clamp(
+                                    0.0,
+                                    1.0,
+                                )
+                        );
+                    } else if mouse_pt.y
+                        > viewport.max.y - EDGE_MARGIN
+                    {
+                        edge_pitch =
+                            1.0
+                                - (
+                                    (viewport.max.y - mouse_pt.y)
+                                        / EDGE_MARGIN
+                                )
+                                .clamp(
+                                    0.0,
+                                    1.0,
+                                );
+                    }
+                }
+
+                let character_system =
+                    &mut self.character_system;
+
+                let world =
+                    &self.world;
+
+                let gameplay_camera =
+                    &mut self.gameplay_camera;
 
                 // Physics uses the fixed simulation clock so the same amount
                 // of simulation time produces the same sequence of fixed
@@ -574,21 +786,67 @@ impl App {
                             dt,
                         );
 
-                        p_world.resolve_dynamic_collisions();
+                        p_world
+                            .resolve_dynamic_collisions();
 
-                        p_world.resolve_static_collisions();
+                        p_world
+                            .resolve_static_collisions();
 
-                        p_world.refresh_dynamic_support();
+                        p_world
+                            .refresh_dynamic_support();
 
-                        p_world.update_sleeping(
-                            gravity,
+                        p_world
+                            .update_sleeping(gravity);
+
+                        // Character Update
+                        // Characters interact with the voxel world using
+                        // fixed simulation steps.
+                        character_system.update(
+                            world,
+                            dt,
+                            world_move_input,
+                            self.jump_requested,
                         );
 
-                        // --- Character Update ---
-                        // Characters interact with the voxel world using fixed simulation steps.
-                        character_system.update(world, dt, move_input, self.jump_requested);
+                        // Edge scroll feeds the existing orbit controls.
+                        //
+                        // Convert the desired angular speed into the same
+                        // input units used by GameplayCamera::orbit().
+                        if edge_yaw != 0.0
+                            || edge_pitch != 0.0
+                        {
+                            let yaw_input =
+                                edge_yaw
+                                    * EDGE_YAW_SPEED
+                                    * dt
+                                    / crate::renderer::camera::ORBIT_SENSITIVITY;
+
+                            let pitch_input =
+                                edge_pitch
+                                    * EDGE_PITCH_SPEED
+                                    * dt
+                                    / crate::renderer::camera::ORBIT_SENSITIVITY;
+
+                            gameplay_camera.orbit(
+                                yaw_input,
+                                pitch_input,
+                            );
+                        }
                     },
                 );
+
+                // Update gameplay camera to follow the primary character.
+                if let Some(player) =
+                    self.character_system
+                        .get_active_characters()
+                        .next()
+                {
+                    self.gameplay_camera
+                        .update(
+                            player,
+                            world,
+                        );
+                }
 
                 // Reset transient input flags after the physics simulation.
                 self.jump_requested = false;
@@ -596,6 +854,7 @@ impl App {
                 // Leaving Play clears accumulated simulation time and runtime state.
                 self.physics_clock.reset();
                 self.character_system.clear();
+                self.physics_world.bodies.clear();
             }
 
             // Camera movement is blocked while egui is requesting keyboard
@@ -782,10 +1041,10 @@ impl App {
                                     .clone();
 
                             for path in recent {
-                                let name = path
-                                    .file_name()
-                                    .unwrap_or_default()
-                                    .to_string_lossy();
+                                let name =
+                                    path.file_name()
+                                        .unwrap_or_default()
+                                        .to_string_lossy();
 
                                 if ui
                                     .button(
@@ -910,10 +1169,10 @@ impl App {
                                 );
                             } else {
                                 for path in projects {
-                                    let name = path
-                                        .file_name()
-                                        .unwrap_or_default()
-                                        .to_string_lossy();
+                                    let name =
+                                        path.file_name()
+                                            .unwrap_or_default()
+                                            .to_string_lossy();
 
                                     if ui
                                         .button(
@@ -993,7 +1252,12 @@ impl App {
                     &self.world,
                     &self.physics_world,
                     &self.character_system,
-                    if self.is_left_mouse_down { self.drag_start_coord } else { None },
+                    &self.gameplay_camera,
+                    if self.is_left_mouse_down {
+                        self.drag_start_coord
+                    } else {
+                        None
+                    },
                 );
             }
         }

@@ -53,6 +53,9 @@ pub struct Editor {
 
     // Active persistent color picker
     pub active_color_target: Option<ColorTarget>,
+
+    /// The central area of the editor screen not covered by side or top/bottom panels.
+    pub viewport_rect: egui::Rect,
 }
 
 impl Editor {
@@ -78,6 +81,7 @@ impl Editor {
 
             build_template: crate::world::Cell::new_block(),
             active_color_target: None,
+            viewport_rect: egui::Rect::NOTHING,
         }
     }
 
@@ -102,6 +106,10 @@ impl Editor {
         self.draw_dialogs(ctx, world);
 
         self.render_active_color_picker(ctx, world);
+
+        // Capture the remaining central area for the engine viewport using the remaining
+        // screen space after panels are placed. This does not claim pointer interaction.
+        self.viewport_rect = ctx.available_rect();
     }
 
     fn draw_menu_bar(&mut self, ctx: &egui::Context) {

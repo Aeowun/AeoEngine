@@ -371,16 +371,22 @@ impl Renderer {
         world: &World,
         physics: &PhysicsWorld,
         character_system: &crate::character::CharacterSystem,
+        gameplay_camera: &crate::renderer::camera::GameplayCamera,
         drag_start: Option<WorldCoord>,
     ) {
-        let camera_pos =
-            editor.camera.get_position();
+        let camera_pos;
+        let view;
+        let target;
 
-        let view =
-            editor.camera.get_view_matrix();
-
-        let target =
-            editor.camera.target;
+        if editor.mode == EditorMode::Play {
+            camera_pos = gameplay_camera.current_position;
+            view = gameplay_camera.get_view_matrix();
+            target = gameplay_camera.current_target;
+        } else {
+            camera_pos = editor.camera.get_position();
+            view = editor.camera.get_view_matrix();
+            target = editor.camera.target;
+        }
 
         let aspect_ratio =
             self.width / self.height.max(1.0);
@@ -1094,23 +1100,20 @@ impl Renderer {
 
                 // --- Render Runtime Characters ---
                 for character in character_system.get_active_characters() {
-                    // Visually distinguishable color (Magenta)
-                    gl::Uniform3f(base_color_location, 1.0, 0.0, 1.0);
+                    let vertices = crate::character_custom::generate_character_mesh(&character.current_pose, &character.appearance);
 
-                    // Placeholder scaling derived from collision dimensions.
-                    let radius = character.collision.radius;
-                    let height = character.collision.height;
-                    let scale = Vec3::new(radius * 2.0, height, radius * 2.0);
-
-                    // The block cube mesh is min 0, max 1.
-                    // We must center it horizontally and keep the base at Y.
-                    let model = Mat4::from_translation(character.transform.position)
-                        * Mat4::from_quat(character.transform.rotation)
-                        * Mat4::from_scale(scale)
-                        * Mat4::from_translation(Vec3::new(-0.5, 0.0, -0.5));
+                    let model = Mat4::from_scale_rotation_translation(
+                        character.transform.scale,
+                        character.transform.rotation,
+                        character.transform.position,
+                    );
 
                     gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
-                    gl::DrawArrays(gl::TRIANGLES, 0, self.block_vertex_count);
+
+                    // We reset base color to white so vertex colors from the character mesh are preserved.
+                    gl::Uniform3f(base_color_location, 1.0, 1.0, 1.0);
+
+                    self::mesh::upload_and_draw_mesh_3d(&vertices);
                 }
             }
 

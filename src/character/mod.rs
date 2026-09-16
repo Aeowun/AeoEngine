@@ -67,6 +67,10 @@ mod tests {
         assert_eq!(c.transform.position, pos);
         assert_eq!(c.movement.state, MovementState::Idle);
         assert_eq!(c.animation.current_state, AnimationState::Idle);
+
+        // Custom character integration verification
+        assert_eq!(c.animation_controller.blend_weight(), 0.0);
+        assert_eq!(c.appearance.show_accessory, true);
     }
 
     #[test]
@@ -121,5 +125,98 @@ mod tests {
         // It should have found a valid spot within the search radius.
         // (0, 1, 0) is blocked, so it would check radius 1.
         // e.g. (1, 1, 0) or (0, 1, 1) etc.
+    }
+
+    #[test]
+    fn test_character_animation_controller_pose_evaluation() {
+        let mut c = Character::new(1, Vec3::ZERO);
+
+        // Initial pose should be evaluated in new()
+        assert_eq!(c.current_pose.matrices.is_empty(), false);
+
+        let initial_hips_mat = c.current_pose.matrices[1];
+
+        // Advance and re-evaluate
+        c.animation_controller.update(0.5);
+        c.current_pose = c.animation_controller.evaluate_pose();
+
+        let new_hips_mat = c.current_pose.matrices[1];
+        assert_ne!(initial_hips_mat, new_hips_mat);
+    }
+
+    #[test]
+    fn test_gameplay_camera_follows_character() {
+        use crate::renderer::camera::GameplayCamera;
+        let mut camera = GameplayCamera::new();
+        let character = Character::new(1, Vec3::new(10.0, 0.0, 20.0));
+        let world = World::new();
+
+        camera.update(&character, &world);
+
+        // Camera target should be character position + look height
+        assert_eq!(camera.current_target, Vec3::new(10.0, camera.look_height, 20.0));
+
+        // Camera position should be offset from character
+        assert!(camera.current_position.distance(character.transform.position) > camera.distance - 0.1);
+    }
+
+    #[test]
+    fn test_gameplay_camera_collision() {
+        use crate::renderer::camera::GameplayCamera;
+        let mut camera = GameplayCamera::new();
+        let character = Character::new(1, Vec3::new(0.0, 0.0, 0.0));
+        let mut world = World::new();
+
+        // Configure camera to be at the same height as the look target (Y=1)
+        // look_height is 1.0. If height is 1.0 and pitch is 0, camera Y is 1.0.
+        camera.height = 1.0;
+        camera.pitch = 0.0;
+        camera.distance = 10.0;
+
+        // Place a solid block in the line of sight (constant Y=1).
+        world.set_cell(WorldCoord::new(2, 1, 2), CellType::Block);
+
+        camera.update(&character, &world);
+
+        // Camera should be shortened.
+        let actual_dist = camera.current_position.distance(camera.current_target);
+        assert!(actual_dist < 9.5);
+    }
+
+    #[test]
+    fn test_camera_relative_movement_vectors() {
+        use crate::renderer::camera::GameplayCamera;
+        let mut camera = GameplayCamera::new();
+
+        // Face North (yaw 0)
+        camera.yaw = 0.0;
+        let (fwd, right) = camera.get_horizontal_basis();
+        // Forward should be -Z: (0, 0, -1)
+        assert!((fwd - Vec3::new(0.0, 0.0, -1.0)).length() < 0.001);
+        // Right should be +X: (1, 0, 0)
+        assert!((right - Vec3::new(1.0, 0.0, 0.0)).length() < 0.001);
+
+        // Rotate 180 degrees
+        camera.yaw = std::f32::consts::PI;
+        let (fwd2, right2) = camera.get_horizontal_basis();
+        // Forward should be +Z: (0, 0, 1)
+        assert!((fwd2 - Vec3::new(0.0, 0.0, 1.0)).length() < 0.001);
+        // Right should be -X: (-1, 0, 0)
+        assert!((right2 - Vec3::new(-1.0, 0.0, 0.0)).length() < 0.001);
+    }
+
+    #[test]
+    fn test_camera_pitch_horizontal_isolation() {
+        use crate::renderer::camera::GameplayCamera;
+        let mut camera = GameplayCamera::new();
+
+        // Extreme pitch should not affect horizontal basis.
+        camera.pitch = 80.0_f32.to_radians();
+        let (fwd, _) = camera.get_horizontal_basis();
+        assert_eq!(fwd.y, 0.0);
+
+        camera.pitch = -80.0_f32.to_radians();
+        let (fwd2, _) = camera.get_horizontal_basis();
+        assert_eq!(fwd2.y, 0.0);
     }
 }
