@@ -370,6 +370,7 @@ impl Renderer {
         editor: &Editor,
         world: &World,
         physics: &PhysicsWorld,
+        character_system: &crate::character::CharacterSystem,
         drag_start: Option<WorldCoord>,
     ) {
         let camera_pos =
@@ -1089,6 +1090,27 @@ impl Renderer {
                         0,
                         self.block_vertex_count,
                     );
+                }
+
+                // --- Render Runtime Characters ---
+                for character in character_system.get_active_characters() {
+                    // Visually distinguishable color (Magenta)
+                    gl::Uniform3f(base_color_location, 1.0, 0.0, 1.0);
+
+                    // Placeholder scaling derived from collision dimensions.
+                    let radius = character.collision.radius;
+                    let height = character.collision.height;
+                    let scale = Vec3::new(radius * 2.0, height, radius * 2.0);
+
+                    // The block cube mesh is min 0, max 1.
+                    // We must center it horizontally and keep the base at Y.
+                    let model = Mat4::from_translation(character.transform.position)
+                        * Mat4::from_quat(character.transform.rotation)
+                        * Mat4::from_scale(scale)
+                        * Mat4::from_translation(Vec3::new(-0.5, 0.0, -0.5));
+
+                    gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
+                    gl::DrawArrays(gl::TRIANGLES, 0, self.block_vertex_count);
                 }
             }
 

@@ -3,6 +3,7 @@ mod renderer;
 mod editor;
 mod world;
 mod project;
+mod character;
 
 use glutin::config::ConfigTemplateBuilder;
 use glutin::context::ContextAttributesBuilder;

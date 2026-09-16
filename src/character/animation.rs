@@ -1,20 +1,24 @@
-use serde::{Serialize, Deserialize};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AnimationState {
     Idle,
     Walk,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CharacterAnimation {
     pub current_state: AnimationState,
 }
 
-impl CharacterAnimation {
-    pub fn new() -> Self {
+impl Default for CharacterAnimation {
+    fn default() -> Self {
         Self {
             current_state: AnimationState::Idle,
         }
+    }
+}
+
+impl CharacterAnimation {
+    pub fn new() -> Self {
+        Self::default()
     }
 }

@@ -123,6 +123,17 @@ pub struct App {
     /// App records physical key state so movement can be evaluated during the
     /// regular update instead of depending on individual key press events.
     pub keys_down: std::collections::HashSet<KeyCode>,
+
+    /// True if a jump was requested this frame.
+    ///
+    /// This is transient and reset after the physics update.
+    pub jump_requested: bool,
+
+    /// Management system for all active runtime characters.
+    ///
+    /// This handles spawning, ownership, and lifecycle of players and NPCs
+    /// during Play mode.
+    pub character_system: crate::character::CharacterSystem,
 }
 
 impl App {
@@ -168,6 +179,10 @@ impl App {
             drag_start_coord: None,
 
             keys_down: std::collections::HashSet::new(),
+
+            jump_requested: false,
+
+            character_system: crate::character::CharacterSystem::new(),
         }
     }
 
@@ -237,6 +252,12 @@ impl App {
                                     self.exit_to_home();
                                 } else {
                                     self.view = View::Home;
+                                }
+                            }
+
+                            KeyCode::Space => {
+                                if self.view == View::Editor && self.editor.mode == EditorMode::Play {
+                                    self.jump_requested = true;
                                 }
                             }
 
@@ -515,6 +536,8 @@ impl App {
             {
                 self.physics_world
                     .register_from_world(&self.world);
+
+                self.character_system.spawn_player(&self.world);
             }
 
             self.last_mode = self.editor.mode;
@@ -524,6 +547,16 @@ impl App {
 
                 let p_world =
                     &mut self.physics_world;
+
+                // Capture horizontal movement input for characters.
+                let mut move_input = glam::Vec2::ZERO;
+                if self.keys_down.contains(&KeyCode::KeyW) { move_input.y += 1.0; }
+                if self.keys_down.contains(&KeyCode::KeyS) { move_input.y -= 1.0; }
+                if self.keys_down.contains(&KeyCode::KeyA) { move_input.x -= 1.0; }
+                if self.keys_down.contains(&KeyCode::KeyD) { move_input.x += 1.0; }
+
+                let character_system = &mut self.character_system;
+                let world = &self.world;
 
                 // Physics uses the fixed simulation clock so the same amount
                 // of simulation time produces the same sequence of fixed
@@ -550,13 +583,19 @@ impl App {
                         p_world.update_sleeping(
                             gravity,
                         );
+
+                        // --- Character Update ---
+                        // Characters interact with the voxel world using fixed simulation steps.
+                        character_system.update(world, dt, move_input, self.jump_requested);
                     },
                 );
+
+                // Reset transient input flags after the physics simulation.
+                self.jump_requested = false;
             } else {
-                // Leaving Play clears accumulated simulation time so the next
-                // Play session does not inherit unused time from the previous
-                // session.
+                // Leaving Play clears accumulated simulation time and runtime state.
                 self.physics_clock.reset();
+                self.character_system.clear();
             }
 
             // Camera movement is blocked while egui is requesting keyboard
@@ -659,8 +698,9 @@ impl App {
         // Discard the in memory authored world currently loaded into the App.
         self.world = World::new();
 
-        // Discard temporary runtime physics bodies.
+        // Discard temporary runtime physics bodies and characters.
         self.physics_world.bodies.clear();
+        self.character_system.clear();
 
         // The project manager no longer owns an active project.
         self.project_manager.current_project =
@@ -952,6 +992,7 @@ impl App {
                     &self.editor,
                     &self.world,
                     &self.physics_world,
+                    &self.character_system,
                     if self.is_left_mouse_down { self.drag_start_coord } else { None },
                 );
             }

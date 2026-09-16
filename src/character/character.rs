@@ -1,10 +1,10 @@
-use serde::{Serialize, Deserialize};
-use super::transform::CharacterTransform;
-use super::movement::CharacterMovement;
-use super::collision::CharacterCollision;
 use super::animation::CharacterAnimation;
+use super::collision::CharacterCollision;
+use super::movement::CharacterMovement;
+use super::transform::CharacterTransform;
+use glam::Vec3;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Character {
     pub id: u64,
     pub transform: CharacterTransform,
@@ -14,7 +14,7 @@ pub struct Character {
 }
 
 impl Character {
-    pub fn new(id: u64, position: glam::Vec3) -> Self {
+    pub fn new(id: u64, position: Vec3) -> Self {
         Self {
             id,
             transform: CharacterTransform::new(position),
