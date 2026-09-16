@@ -1,5 +1,6 @@
 use crate::world::WorldCoord;
 use crate::renderer::camera::CameraController;
+use crate::engine::EditorMode;
 use super::navigation::NavigationWindow;
 use super::tools;
 
@@ -19,6 +20,7 @@ pub enum EditorTool {
 }
 
 pub struct Editor {
+    pub mode: EditorMode,
     pub camera: CameraController,
     pub anchor: WorldCoord,
     pub hovered_cell: Option<WorldCoord>,
@@ -39,6 +41,7 @@ pub struct Editor {
 impl Editor {
     pub fn new() -> Self {
         Self {
+            mode: EditorMode::default(),
             camera: CameraController::new(),
             anchor: WorldCoord::new(0, 0, 0),
             hovered_cell: None,
@@ -135,7 +138,7 @@ impl Editor {
     fn draw_tool_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("tool_bar").show(ctx, |ui| {
             ui.add_space(2.0);
-            tools::draw_tool_bar(ui, &mut self.current_tool);
+            tools::draw_tool_bar(ui, &mut self.current_tool, &mut self.mode);
             ui.add_space(2.0);
         });
     }

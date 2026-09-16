@@ -96,7 +96,7 @@ impl App {
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse_pos = (position.x, position.y);
 
-                if egui_ctx.wants_pointer_input() || egui_ctx.is_using_pointer() {
+                if egui_ctx.wants_pointer_input() || egui_ctx.is_using_pointer() || self.editor.mode != crate::engine::EditorMode::Editor {
                     self.editor.hovered_cell = None;
                 } else {
                     self.update_hover();
@@ -140,7 +140,7 @@ impl App {
     }
 
     fn on_click(&mut self) {
-        if self.view == View::Editor {
+        if self.view == View::Editor && self.editor.mode == crate::engine::EditorMode::Editor {
             if let Some(hover) = self.editor.hovered_cell {
                 match self.editor.current_tool {
                     EditorTool::Navigate => {

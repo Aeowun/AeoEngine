@@ -152,65 +152,69 @@ impl Renderer {
             }
 
             // --- Render Workarea Grid ---
-            let (_normal, anchor_offset) = match plane {
-                GridPlane::Xz => (Vec3::Y, editor.anchor.y as f32),
-                GridPlane::Yz => (Vec3::X, editor.anchor.x as f32),
-                GridPlane::Xy => (Vec3::Z, editor.anchor.z as f32),
-            };
-
-            let center = if let Some(hover) = editor.hovered_cell {
-                Vec3::new(hover.x as f32, hover.y as f32, hover.z as f32)
-            } else {
-                // Working area follows camera target, but stays on the plane defined by anchor
-                let t = editor.camera.target;
-                let c = match plane {
-                    GridPlane::Xz => Vec3::new(t.x.floor(), anchor_offset, t.z.floor()),
-                    GridPlane::Yz => Vec3::new(anchor_offset, t.y.floor(), t.z.floor()),
-                    GridPlane::Xy => Vec3::new(t.x.floor(), t.y.floor(), anchor_offset),
+            if editor.mode == crate::engine::EditorMode::Editor {
+                let (_normal, anchor_offset) = match plane {
+                    GridPlane::Xz => (Vec3::Y, editor.anchor.y as f32),
+                    GridPlane::Yz => (Vec3::X, editor.anchor.x as f32),
+                    GridPlane::Xy => (Vec3::Z, editor.anchor.z as f32),
                 };
 
-                // LOGGING FOR DEBUGGING
-                // println!("DEBUG | RENDER | Center (no hover): {:?} | Target: {:?} | AnchorOffset: {}", c, t, anchor_offset);
+                let center = if let Some(hover) = editor.hovered_cell {
+                    Vec3::new(hover.x as f32, hover.y as f32, hover.z as f32)
+                } else {
+                    // Working area follows camera target, but stays on the plane defined by anchor
+                    let t = editor.camera.target;
+                    match plane {
+                        GridPlane::Xz => Vec3::new(t.x.floor(), anchor_offset, t.z.floor()),
+                        GridPlane::Yz => Vec3::new(anchor_offset, t.y.floor(), t.z.floor()),
+                        GridPlane::Xy => Vec3::new(t.x.floor(), t.y.floor(), anchor_offset),
+                    }
+                };
 
-                c
-            };
-
-            gl::UniformMatrix4fv(model_location, 1, gl::FALSE, Mat4::from_translation(center).to_cols_array().as_ptr());
-            self.bind_grid_vao(plane);
-            gl::DrawArrays(gl::LINES, 0, self.get_grid_count(plane));
+                gl::UniformMatrix4fv(model_location, 1, gl::FALSE, Mat4::from_translation(center).to_cols_array().as_ptr());
+                self.bind_grid_vao(plane);
+                gl::DrawArrays(gl::LINES, 0, self.get_grid_count(plane));
+            }
 
             // --- Render Anchor Marker ---
-            let anchor_pos = Vec3::new(editor.anchor.x as f32, editor.anchor.y as f32, editor.anchor.z as f32);
-            gl::UniformMatrix4fv(
-                model_location,
-                1,
-                gl::FALSE,
-                Mat4::from_translation(anchor_pos).to_cols_array().as_ptr()
-            );
-            gl::BindVertexArray(self.anchor_vao);
-            gl::DrawArrays(gl::LINES, 0, self.anchor_vertex_count);
-
-            // --- Render Hover Highlight ---
-            if let Some(hover) = editor.hovered_cell {
+            if editor.mode == crate::engine::EditorMode::Editor {
+                let anchor_pos = Vec3::new(editor.anchor.x as f32, editor.anchor.y as f32, editor.anchor.z as f32);
                 gl::UniformMatrix4fv(
                     model_location,
                     1,
                     gl::FALSE,
-                    Mat4::from_translation(Vec3::new(hover.x as f32, hover.y as f32, hover.z as f32)).to_cols_array().as_ptr()
+                    Mat4::from_translation(anchor_pos).to_cols_array().as_ptr()
                 );
-                gl::BindVertexArray(self.highlight_vao);
-                gl::DrawArrays(gl::LINES, 0, self.highlight_vertex_count);
+                gl::BindVertexArray(self.anchor_vao);
+                gl::DrawArrays(gl::LINES, 0, self.anchor_vertex_count);
+            }
+
+            // --- Render Hover Highlight ---
+            if editor.mode == crate::engine::EditorMode::Editor {
+                if let Some(hover) = editor.hovered_cell {
+                    gl::UniformMatrix4fv(
+                        model_location,
+                        1,
+                        gl::FALSE,
+                        Mat4::from_translation(Vec3::new(hover.x as f32, hover.y as f32, hover.z as f32)).to_cols_array().as_ptr()
+                    );
+                    gl::BindVertexArray(self.highlight_vao);
+                    gl::DrawArrays(gl::LINES, 0, self.highlight_vertex_count);
+                }
             }
 
             // --- Render World Axes (follows anchor) ---
-            gl::UniformMatrix4fv(
-                model_location,
-                1,
-                gl::FALSE,
-                Mat4::from_translation(anchor_pos).to_cols_array().as_ptr()
-            );
-            gl::BindVertexArray(self.axis_vao);
-            gl::DrawArrays(gl::LINES, 0, self.axis_vertex_count);
+            if editor.mode == crate::engine::EditorMode::Editor {
+                let anchor_pos = Vec3::new(editor.anchor.x as f32, editor.anchor.y as f32, editor.anchor.z as f32);
+                gl::UniformMatrix4fv(
+                    model_location,
+                    1,
+                    gl::FALSE,
+                    Mat4::from_translation(anchor_pos).to_cols_array().as_ptr()
+                );
+                gl::BindVertexArray(self.axis_vao);
+                gl::DrawArrays(gl::LINES, 0, self.axis_vertex_count);
+            }
 
             gl::BindVertexArray(0);
 

@@ -1,8 +1,19 @@
 use egui::{Ui, RichText, Color32};
+use crate::engine::EditorMode;
 use super::editor::EditorTool;
 
-pub fn draw_tool_bar(ui: &mut Ui, current_tool: &mut EditorTool) {
+pub fn draw_tool_bar(ui: &mut Ui, current_tool: &mut EditorTool, mode: &mut EditorMode) {
     ui.horizontal(|ui| {
+        ui.label(RichText::new("Mode").strong());
+        if ui.selectable_label(*mode == EditorMode::Editor, "Editor").clicked() {
+            *mode = EditorMode::Editor;
+        }
+        if ui.selectable_label(*mode == EditorMode::Play, "Play").clicked() {
+            *mode = EditorMode::Play;
+        }
+
+        ui.separator();
+
         ui.label(RichText::new("Tool").strong());
 
         draw_tool_button(ui, current_tool, EditorTool::Navigate, "Navigate");
