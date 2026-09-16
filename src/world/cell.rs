@@ -14,6 +14,7 @@ pub struct Cell {
     pub cell_type: CellType,
     pub visible: bool,
     pub solid: bool,
+    pub anchored: bool,
     pub texture: String,
 }
 
@@ -23,6 +24,7 @@ impl Default for Cell {
             cell_type: CellType::Empty,
             visible: true,
             solid: true,
+            anchored: true,
             texture: "None".to_string(),
         }
     }
@@ -34,6 +36,7 @@ impl Cell {
             cell_type: CellType::Grass,
             visible: true,
             solid: true,
+            anchored: true,
             texture: "Grass_tx".to_string(),
         }
     }

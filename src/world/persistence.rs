@@ -12,9 +12,9 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
         if let Some(cell) = world.get(coord) {
             match cell.cell_type {
                 CellType::Grass => {
-                    writeln!(file, "GRASS {} {} {} {} {} {}",
+                    writeln!(file, "GRASS {} {} {} {} {} {} {}",
                         coord.x, coord.y, coord.z,
-                        cell.visible, cell.solid, cell.texture
+                        cell.visible, cell.solid, cell.anchored, cell.texture
                     )?;
                 }
                 _ => {}
@@ -49,14 +49,22 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                 if block_type == "GRASS" {
                     world.set_cell(coord, CellType::Grass);
                     if let Some(cell) = world.get_mut(coord) {
-                        if parts.len() >= 7 {
+                        if parts.len() >= 8 {
                             cell.visible = parts[4].parse::<bool>().unwrap_or(true);
                             cell.solid = parts[5].parse::<bool>().unwrap_or(true);
+                            cell.anchored = parts[6].parse::<bool>().unwrap_or(true);
+                            cell.texture = parts[7].to_string();
+                        } else if parts.len() >= 7 {
+                            // Format without anchored
+                            cell.visible = parts[4].parse::<bool>().unwrap_or(true);
+                            cell.solid = parts[5].parse::<bool>().unwrap_or(true);
+                            cell.anchored = true;
                             cell.texture = parts[6].to_string();
                         } else {
                             // Upgrade old format
                             cell.visible = true;
                             cell.solid = true;
+                            cell.anchored = true;
                             cell.texture = "Grass_tx".to_string();
                         }
                     }

@@ -162,24 +162,31 @@ impl Editor {
                 .open(&mut self.show_properties_window)
                 .show(ctx, |ui| {
                     if let Some(coord) = self.selected_coord {
-                        ui.heading("Cell");
-                        ui.label(format!("X: {}", coord.x));
-                        ui.label(format!("Y: {}", coord.y));
-                        ui.label(format!("Z: {}", coord.z));
+                        ui.heading("CELL");
+                        ui.label("Position");
+                        ui.indent("pos_indent", |ui| {
+                            ui.label(format!("X: {}", coord.x));
+                            ui.label(format!("Y: {}", coord.y));
+                            ui.label(format!("Z: {}", coord.z));
+                        });
                         ui.separator();
 
                         if let Some(cell) = world.get_mut(coord) {
-                            ui.heading("Block");
-                            ui.label(format!("{:?}", cell.cell_type));
-                            ui.add_space(5.0);
+                            ui.heading("CONTENTS");
+                            ui.label(format!("Block: {:?}", cell.cell_type));
+                            ui.separator();
 
+                            ui.heading("RENDERING");
                             ui.checkbox(&mut cell.visible, "Visible");
-                            ui.checkbox(&mut cell.solid, "Solid");
-
                             ui.horizontal(|ui| {
                                 ui.label("Texture:");
                                 ui.text_edit_singleline(&mut cell.texture);
                             });
+                            ui.separator();
+
+                            ui.heading("PHYSICS");
+                            ui.checkbox(&mut cell.solid, "Solid");
+                            ui.checkbox(&mut cell.anchored, "Anchored");
                         } else {
                             ui.label("Empty Cell");
                         }
