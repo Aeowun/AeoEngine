@@ -74,7 +74,11 @@ impl App {
                                 self.view = if self.view == View::Home { View::Editor } else { View::Home };
                             }
                             KeyCode::KeyH | KeyCode::Escape => {
-                                self.view = View::Home;
+                                if self.view == View::Editor {
+                                    self.exit_to_home();
+                                } else {
+                                    self.view = View::Home;
+                                }
                             }
                             _ => {}
                         }
@@ -222,11 +226,27 @@ impl App {
             }
 
             if self.editor.needs_exit {
-                self.save_project();
-                self.view = View::Home;
+                self.exit_to_home();
                 self.editor.needs_exit = false;
             }
         }
+    }
+
+    pub fn exit_to_home(&mut self) {
+        // 1. Set to editor mode
+        self.editor.mode = crate::engine::EditorMode::Editor;
+
+        // 2. Save the project
+        self.save_project();
+
+        // 3. Unload the world
+        self.world = World::new();
+
+        // 4. Reset project state
+        self.project_manager.current_project = None;
+
+        // 5. Change view
+        self.view = View::Home;
     }
 
     pub fn update_ui(&mut self, ctx: &egui::Context) {
@@ -339,6 +359,23 @@ impl App {
             } else {
                 println!("World loaded from {:?}", world_path);
             }
+
+            // Load Camera
+            let camera_path = project_path.join("camera.dat");
+            if camera_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&camera_path) {
+                    let parts: Vec<&str> = content.split_whitespace().collect();
+                    if parts.len() >= 6 {
+                        self.editor.camera.yaw = parts[0].parse().unwrap_or(self.editor.camera.yaw);
+                        self.editor.camera.pitch = parts[1].parse().unwrap_or(self.editor.camera.pitch);
+                        self.editor.camera.distance = parts[2].parse().unwrap_or(self.editor.camera.distance);
+                        self.editor.camera.target.x = parts[3].parse().unwrap_or(self.editor.camera.target.x);
+                        self.editor.camera.target.y = parts[4].parse().unwrap_or(self.editor.camera.target.y);
+                        self.editor.camera.target.z = parts[5].parse().unwrap_or(self.editor.camera.target.z);
+                        println!("Camera loaded from {:?}", camera_path);
+                    }
+                }
+            }
         }
     }
 
@@ -349,6 +386,19 @@ impl App {
                 eprintln!("Failed to save world: {}", e);
             } else {
                 println!("World saved to {:?}", world_path);
+            }
+
+            // Save Camera
+            let camera_path = project_path.join("camera.dat");
+            let cam = &self.editor.camera;
+            let content = format!("{} {} {} {} {} {}",
+                cam.yaw, cam.pitch, cam.distance,
+                cam.target.x, cam.target.y, cam.target.z
+            );
+            if let Err(e) = std::fs::write(&camera_path, content) {
+                eprintln!("Failed to save camera: {}", e);
+            } else {
+                println!("Camera saved to {:?}", camera_path);
             }
         }
     }
