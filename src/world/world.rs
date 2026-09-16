@@ -1,15 +1,18 @@
 use std::collections::HashMap;
+use glam::Vec3;
 use super::cell::{Cell, CellType};
 use super::coordinate::WorldCoord;
 
 pub struct World {
     cells: HashMap<WorldCoord, Cell>,
+    pub gravity: Vec3,
 }
 
 impl World {
     pub fn new() -> Self {
         Self {
             cells: HashMap::new(),
+            gravity: Vec3::new(0.0, -9.81, 0.0),
         }
     }
 
