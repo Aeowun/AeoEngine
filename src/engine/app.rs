@@ -6,7 +6,7 @@ use crate::renderer::Renderer;
 use crate::editor::{Editor, EditorTool};
 use crate::world::{World, CellType};
 use crate::project::ProjectManager;
-use super::View;
+use super::{View, EditorMode};
 use super::physics;
 
 pub struct App {
@@ -19,6 +19,8 @@ pub struct App {
     // Timing and Simulation
     pub last_frame_instant: Instant,
     pub physics_clock: physics::PhysicsClock,
+    pub physics_world: physics::PhysicsWorld,
+    pub last_mode: EditorMode,
 
     // UI State for Home
     pub show_new_project_dialog: bool,
@@ -43,6 +45,8 @@ impl App {
 
             last_frame_instant: Instant::now(),
             physics_clock: physics::PhysicsClock::new(),
+            physics_world: physics::PhysicsWorld::new(),
+            last_mode: EditorMode::default(),
 
             show_new_project_dialog: false,
             new_project_name: String::new(),
@@ -187,8 +191,14 @@ impl App {
         self.last_frame_instant = now;
 
         if self.view == View::Editor {
+            // Detect mode transition
+            if self.editor.mode == EditorMode::Play && self.last_mode == EditorMode::Editor {
+                self.physics_world.register_from_world(&self.world);
+            }
+            self.last_mode = self.editor.mode;
+
             // Physics Clock: Fixed Timestep Accumulator
-            if self.editor.mode == crate::engine::EditorMode::Play {
+            if self.editor.mode == EditorMode::Play {
                 self.physics_clock.update(frame_time, physics::physics_step);
             } else {
                 // In Editor mode, we don't accumulate physics time.
@@ -241,6 +251,7 @@ impl App {
 
         // 3. Unload the world
         self.world = World::new();
+        self.physics_world.bodies.clear();
 
         // 4. Reset project state
         self.project_manager.current_project = None;
