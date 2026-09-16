@@ -1,4 +1,5 @@
 pub mod app;
+pub mod physics;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum View {

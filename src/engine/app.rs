@@ -1,11 +1,13 @@
 use winit::event::{WindowEvent, MouseButton, MouseScrollDelta, ElementState};
 use winit::keyboard::{KeyCode, PhysicalKey};
+use std::time::Instant;
 
 use crate::renderer::Renderer;
 use crate::editor::{Editor, EditorTool};
 use crate::world::{World, CellType};
 use crate::project::ProjectManager;
 use super::View;
+use super::physics;
 
 pub struct App {
     pub view: View,
@@ -13,6 +15,10 @@ pub struct App {
     pub editor: Editor,
     pub world: World,
     pub project_manager: ProjectManager,
+
+    // Timing and Simulation
+    pub last_frame_instant: Instant,
+    pub physics_clock: physics::PhysicsClock,
 
     // UI State for Home
     pub show_new_project_dialog: bool,
@@ -34,6 +40,9 @@ impl App {
             editor: Editor::new(),
             world: World::new(),
             project_manager: ProjectManager::new(),
+
+            last_frame_instant: Instant::now(),
+            physics_clock: physics::PhysicsClock::new(),
 
             show_new_project_dialog: false,
             new_project_name: String::new(),
@@ -169,7 +178,19 @@ impl App {
     }
 
     pub fn update(&mut self, egui_ctx: &egui::Context) {
+        let now = Instant::now();
+        let frame_time = now.duration_since(self.last_frame_instant).as_secs_f32();
+        self.last_frame_instant = now;
+
         if self.view == View::Editor {
+            // Physics Clock: Fixed Timestep Accumulator
+            if self.editor.mode == crate::engine::EditorMode::Play {
+                self.physics_clock.update(frame_time, physics::physics_step);
+            } else {
+                // In Editor mode, we don't accumulate physics time.
+                self.physics_clock.reset();
+            }
+
             if egui_ctx.wants_keyboard_input() {
                 return;
             }
