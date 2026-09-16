@@ -160,39 +160,77 @@ impl Editor {
         if self.show_properties_window {
             egui::Window::new("Properties")
                 .open(&mut self.show_properties_window)
+                .default_width(260.0)
+                .resizable(true)
                 .show(ctx, |ui| {
+                    // Enforce square, hard-edged style for this window's contents
+                    ui.style_mut().visuals.window_rounding = egui::Rounding::ZERO;
+                    ui.style_mut().visuals.widgets.noninteractive.rounding = egui::Rounding::ZERO;
+                    ui.style_mut().visuals.widgets.inactive.rounding = egui::Rounding::ZERO;
+                    ui.style_mut().visuals.widgets.hovered.rounding = egui::Rounding::ZERO;
+                    ui.style_mut().visuals.widgets.active.rounding = egui::Rounding::ZERO;
+
                     if let Some(coord) = self.selected_coord {
-                        ui.heading("CELL");
-                        ui.label("Position");
-                        ui.indent("pos_indent", |ui| {
-                            ui.label(format!("X: {}", coord.x));
-                            ui.label(format!("Y: {}", coord.y));
-                            ui.label(format!("Z: {}", coord.z));
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            // --- IDENTITY ---
+                            egui::CollapsingHeader::new("IDENTITY")
+                                .default_open(true)
+                                .show(ui, |ui| {
+                                    if let Some(cell) = world.get(coord) {
+                                        ui.horizontal(|ui| {
+                                            ui.label("Type:");
+                                            ui.label(format!("{:?}", cell.cell_type));
+                                        });
+                                    } else {
+                                        ui.label("Type: Empty");
+                                    }
+                                });
+
+                            // --- TRANSFORM ---
+                            egui::CollapsingHeader::new("TRANSFORM")
+                                .default_open(true)
+                                .show(ui, |ui| {
+                                    ui.label("Position");
+                                    ui.indent("pos_indent", |ui| {
+                                        ui.label(format!("X: {}", coord.x));
+                                        ui.label(format!("Y: {}", coord.y));
+                                        ui.label(format!("Z: {}", coord.z));
+                                    });
+                                });
+
+                            if let Some(cell) = world.get_mut(coord) {
+                                // --- PHYSICS ---
+                                egui::CollapsingHeader::new("PHYSICS")
+                                    .default_open(true)
+                                    .show(ui, |ui| {
+                                        ui.checkbox(&mut cell.solid, "Solid");
+                                        ui.checkbox(&mut cell.anchored, "Anchored");
+                                    });
+
+                                // --- RENDERING ---
+                                egui::CollapsingHeader::new("RENDERING")
+                                    .default_open(true)
+                                    .show(ui, |ui| {
+                                        ui.checkbox(&mut cell.visible, "Visible");
+                                        ui.horizontal(|ui| {
+                                            ui.label("Texture:");
+                                            ui.text_edit_singleline(&mut cell.texture);
+                                        });
+                                    });
+
+                                // --- WORLD ---
+                                egui::CollapsingHeader::new("WORLD")
+                                    .default_open(false)
+                                    .show(ui, |ui| {
+                                        ui.label("Selectable: true");
+                                        ui.label("Editable: true");
+                                    });
+                            }
                         });
-                        ui.separator();
-
-                        if let Some(cell) = world.get_mut(coord) {
-                            ui.heading("CONTENTS");
-                            ui.label(format!("Block: {:?}", cell.cell_type));
-                            ui.separator();
-
-                            ui.heading("RENDERING");
-                            ui.checkbox(&mut cell.visible, "Visible");
-                            ui.horizontal(|ui| {
-                                ui.label("Texture:");
-                                ui.text_edit_singleline(&mut cell.texture);
-                            });
-                            ui.separator();
-
-                            ui.heading("PHYSICS");
-                            ui.checkbox(&mut cell.solid, "Solid");
-                            ui.checkbox(&mut cell.anchored, "Anchored");
-                        } else {
-                            ui.label("Empty Cell");
-                        }
                     } else {
-                        ui.label("No cell selected.");
-                        ui.label("Use the 'Select' tool to pick a cell.");
+                        ui.centered_and_justified(|ui| {
+                            ui.label("No cell selected.");
+                        });
                     }
                 });
         }

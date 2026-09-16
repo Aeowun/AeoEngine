@@ -76,15 +76,19 @@ impl App {
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
-                if egui_ctx.wants_pointer_input() || egui_ctx.is_using_pointer() {
-                    return;
-                }
                 if *button == MouseButton::Middle {
                     self.is_middle_mouse_down = *state == ElementState::Pressed;
                     if !self.is_middle_mouse_down {
                         self.last_cursor_pos = None;
                     }
-                } else if *button == MouseButton::Left && *state == ElementState::Pressed {
+                    return;
+                }
+
+                if egui_ctx.wants_pointer_input() || egui_ctx.is_using_pointer() {
+                    return;
+                }
+
+                if *button == MouseButton::Left && *state == ElementState::Pressed {
                     self.on_click();
                 }
             }
