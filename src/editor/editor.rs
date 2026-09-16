@@ -69,7 +69,10 @@ impl Editor {
         self.draw_menu_bar(ctx);
         self.draw_tool_bar(ctx);
         self.draw_status_bar(ctx);
-        self.draw_windows(ctx, world);
+
+        self.draw_properties_panel(ctx, world);
+
+        self.draw_dialogs(ctx, world);
     }
 
     fn draw_menu_bar(&mut self, ctx: &egui::Context) {
@@ -152,23 +155,29 @@ impl Editor {
         });
     }
 
-    fn draw_windows(&mut self, ctx: &egui::Context, world: &mut crate::world::World) {
-        if let Some(new_anchor) = self.navigation_window.show(ctx) {
-            self.set_anchor(new_anchor);
-        }
-
+    fn draw_properties_panel(&mut self, ctx: &egui::Context, world: &mut crate::world::World) {
         if self.show_properties_window {
-            egui::Window::new("Properties")
-                .open(&mut self.show_properties_window)
-                .default_width(260.0)
+            egui::SidePanel::right("properties_panel")
                 .resizable(true)
+                .default_width(260.0)
                 .show(ctx, |ui| {
-                    // Enforce square, hard-edged style for this window's contents
+                    // Enforce square, hard-edged style for this panel
                     ui.style_mut().visuals.window_rounding = egui::Rounding::ZERO;
                     ui.style_mut().visuals.widgets.noninteractive.rounding = egui::Rounding::ZERO;
                     ui.style_mut().visuals.widgets.inactive.rounding = egui::Rounding::ZERO;
                     ui.style_mut().visuals.widgets.hovered.rounding = egui::Rounding::ZERO;
                     ui.style_mut().visuals.widgets.active.rounding = egui::Rounding::ZERO;
+
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.heading("PROPERTIES");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button("X").clicked() {
+                                self.show_properties_window = false;
+                            }
+                        });
+                    });
+                    ui.separator();
 
                     if let Some(coord) = self.selected_coord {
                         egui::ScrollArea::vertical().show(ui, |ui| {
@@ -233,6 +242,12 @@ impl Editor {
                         });
                     }
                 });
+        }
+    }
+
+    fn draw_dialogs(&mut self, ctx: &egui::Context, _world: &mut crate::world::World) {
+        if let Some(new_anchor) = self.navigation_window.show(ctx) {
+            self.set_anchor(new_anchor);
         }
 
         if self.show_clear_confirmation {

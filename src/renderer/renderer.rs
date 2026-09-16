@@ -213,6 +213,10 @@ impl Renderer {
             gl::DrawArrays(gl::LINES, 0, self.axis_vertex_count);
 
             gl::BindVertexArray(0);
+
+            // Explicitly restore GL state for egui
+            gl::Disable(gl::DEPTH_TEST);
+            gl::Disable(gl::BLEND);
         }
     }
 

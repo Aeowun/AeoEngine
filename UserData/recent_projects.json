@@ -1,5 +1,6 @@
 {
   "paths": [
-    "UserData\\Test"
+    "UserData\\Test",
+    "UserData\\Fresh-test"
   ]
 }
