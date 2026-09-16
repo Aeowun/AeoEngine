@@ -65,6 +65,7 @@ impl World {
             let cell = match cell_type {
                 CellType::Block => Cell::new_block(),
                 CellType::Light => Cell::new_light(),
+                CellType::SpawnPoint => Cell::new_spawn_point(),
                 _ => {
                     let mut c = Cell::default();
                     c.cell_type = cell_type;

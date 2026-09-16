@@ -80,8 +80,15 @@ pub fn draw_tool_bar(ui: &mut Ui, editor: &mut Editor) {
             ui.separator();
 
             // Block Type Dropdown
-            ui.menu_button(RichText::new("Block: Cube ▼").strong(), |ui| {
-                ui.label("Cube");
+            ui.menu_button(RichText::new(format!("Block: {:?} ▼", editor.build_template.cell_type)).strong(), |ui| {
+                if ui.selectable_label(editor.build_template.cell_type == crate::world::CellType::Block, "Cube").clicked() {
+                    editor.build_template.cell_type = crate::world::CellType::Block;
+                    ui.close_menu();
+                }
+                if ui.selectable_label(editor.build_template.cell_type == crate::world::CellType::SpawnPoint, "Spawn point").clicked() {
+                    editor.build_template.cell_type = crate::world::CellType::SpawnPoint;
+                    ui.close_menu();
+                }
             });
 
             ui.separator();

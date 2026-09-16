@@ -2,14 +2,13 @@ pub mod camera;
 pub mod mesh;
 pub mod shader;
 
-
 use glam::{Mat4, Vec3};
 use std::ffi::CString;
 
-use crate::world::{CellType, World, WorldCoord};
 use crate::editor::{Editor, GridPlane};
 use crate::engine::physics::PhysicsWorld;
 use crate::engine::EditorMode;
+use crate::world::{CellType, World, WorldCoord};
 
 use self::mesh::{
     add_line,
@@ -29,9 +28,9 @@ use self::shader::create_program;
 /// Editor rendering uses the camera, authored World, runtime PhysicsWorld,
 /// grid geometry, selection geometry, and editor helper geometry.
 ///
-/// The width and height stored here describe the current OpenGL rendering
-/// surface in physical pixels. Picking and UI code must not invent a second
-/// rendering size when they need to agree with the renderer.
+/// Width and height describe the current OpenGL rendering surface in physical
+/// pixels. Picking and UI code must convert into the same viewport geometry
+/// before using mouse coordinates.
 pub struct Renderer {
     home_program: u32,
     home_vao: u32,
@@ -67,7 +66,6 @@ pub struct Renderer {
     block_vbo: u32,
     block_vertex_count: i32,
 
-    // Shadow mapping
     shadow_program: u32,
     shadow_fbo: u32,
     shadow_depth_tex: u32,
@@ -156,32 +154,106 @@ impl Renderer {
             anchor_vertex_count,
         ) = create_anchor_marker();
 
-        let (block_vao, block_vbo, block_vertex_count) = create_block_cube();
+        let (
+            block_vao,
+            block_vbo,
+            block_vertex_count,
+        ) = create_block_cube();
 
-        let shadow_program = create_program(SHADOW_VERTEX_SHADER, SHADOW_FRAGMENT_SHADER);
+        let shadow_program =
+            create_program(
+                SHADOW_VERTEX_SHADER,
+                SHADOW_FRAGMENT_SHADER,
+            );
+
         let mut shadow_fbo = 0;
         let mut shadow_depth_tex = 0;
 
         unsafe {
-            gl::GenFramebuffers(1, &mut shadow_fbo);
-            gl::GenTextures(1, &mut shadow_depth_tex);
-            gl::BindTexture(gl::TEXTURE_2D, shadow_depth_tex);
-            gl::TexImage2D(
-                gl::TEXTURE_2D, 0, gl::DEPTH_COMPONENT as i32,
-                SHADOW_RES, SHADOW_RES, 0, gl::DEPTH_COMPONENT, gl::FLOAT, std::ptr::null()
+            gl::GenFramebuffers(
+                1,
+                &mut shadow_fbo,
             );
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_BORDER as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_BORDER as i32);
-            let border_color = [1.0, 1.0, 1.0, 1.0];
-            gl::TexParameterfv(gl::TEXTURE_2D, gl::TEXTURE_BORDER_COLOR, border_color.as_ptr());
 
-            gl::BindFramebuffer(gl::FRAMEBUFFER, shadow_fbo);
-            gl::FramebufferTexture2D(gl::FRAMEBUFFER, gl::DEPTH_ATTACHMENT, gl::TEXTURE_2D, shadow_depth_tex, 0);
+            gl::GenTextures(
+                1,
+                &mut shadow_depth_tex,
+            );
+
+            gl::BindTexture(
+                gl::TEXTURE_2D,
+                shadow_depth_tex,
+            );
+
+            gl::TexImage2D(
+                gl::TEXTURE_2D,
+                0,
+                gl::DEPTH_COMPONENT as i32,
+                SHADOW_RES,
+                SHADOW_RES,
+                0,
+                gl::DEPTH_COMPONENT,
+                gl::FLOAT,
+                std::ptr::null(),
+            );
+
+            gl::TexParameteri(
+                gl::TEXTURE_2D,
+                gl::TEXTURE_MIN_FILTER,
+                gl::NEAREST as i32,
+            );
+
+            gl::TexParameteri(
+                gl::TEXTURE_2D,
+                gl::TEXTURE_MAG_FILTER,
+                gl::NEAREST as i32,
+            );
+
+            gl::TexParameteri(
+                gl::TEXTURE_2D,
+                gl::TEXTURE_WRAP_S,
+                gl::CLAMP_TO_BORDER as i32,
+            );
+
+            gl::TexParameteri(
+                gl::TEXTURE_2D,
+                gl::TEXTURE_WRAP_T,
+                gl::CLAMP_TO_BORDER as i32,
+            );
+
+            let border_color = [
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+            ];
+
+            gl::TexParameterfv(
+                gl::TEXTURE_2D,
+                gl::TEXTURE_BORDER_COLOR,
+                border_color.as_ptr(),
+            );
+
+            gl::BindFramebuffer(
+                gl::FRAMEBUFFER,
+                shadow_fbo,
+            );
+
+            gl::FramebufferTexture2D(
+                gl::FRAMEBUFFER,
+                gl::DEPTH_ATTACHMENT,
+                gl::TEXTURE_2D,
+                shadow_depth_tex,
+                0,
+            );
+
             gl::DrawBuffer(gl::NONE);
             gl::ReadBuffer(gl::NONE);
-            gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+
+            gl::BindFramebuffer(
+                gl::FRAMEBUFFER,
+                0,
+            );
         }
 
         Self {
@@ -223,8 +295,8 @@ impl Renderer {
             shadow_fbo,
             shadow_depth_tex,
 
-            width,
-            height,
+            width: width.max(1.0),
+            height: height.max(1.0),
         }
     }
 
@@ -285,9 +357,7 @@ impl Renderer {
                 18,
             );
 
-            gl::BindVertexArray(
-                0,
-            );
+            gl::BindVertexArray(0);
 
             gl::Enable(
                 gl::DEPTH_TEST,
@@ -302,317 +372,1083 @@ impl Renderer {
         physics: &PhysicsWorld,
         drag_start: Option<WorldCoord>,
     ) {
-        let camera_pos = editor.camera.get_position();
-        let view = editor.camera.get_view_matrix();
-        let target = editor.camera.target;
+        let camera_pos =
+            editor.camera.get_position();
 
-        let projection = glam::camera::rh::proj::opengl::perspective(
-            60.0_f32.to_radians(),
-            self.width / self.height,
-            0.1,
-            1000.0,
-        );
+        let view =
+            editor.camera.get_view_matrix();
 
-        let view_projection = projection * view;
+        let target =
+            editor.camera.target;
 
-        // 1. Setup light space matrix for directional light shadows
-        let light_dir = world.lighting.global_light_direction.normalize();
-        let light_pos = target - light_dir * 50.0;
-        let light_view = Mat4::look_at_rh(light_pos, target, Vec3::Y);
-        let light_proj = glam::camera::rh::proj::opengl::orthographic(-30.0, 30.0, -30.0, 30.0, 0.1, 100.0);
-        let light_space_matrix = light_proj * light_view;
+        let aspect_ratio =
+            self.width / self.height.max(1.0);
+
+        let projection =
+            glam::camera::rh::proj::opengl::perspective(
+                60.0_f32.to_radians(),
+                aspect_ratio,
+                0.1,
+                1000.0,
+            );
+
+        let view_projection =
+            projection * view;
+
+        let mut light_direction =
+            world.lighting.global_light_direction;
+
+        if light_direction.length_squared() > 0.000001 {
+            light_direction =
+                light_direction.normalize();
+        } else {
+            light_direction =
+                Vec3::new(
+                    -0.5,
+                    -1.0,
+                    -0.5,
+                ).normalize();
+        }
+
+        let light_pos =
+            target - light_direction * 50.0;
+
+        let light_view =
+            Mat4::look_at_rh(
+                light_pos,
+                target,
+                Vec3::Y,
+            );
+
+        let light_proj =
+            glam::camera::rh::proj::opengl::orthographic(
+                -30.0,
+                30.0,
+                -30.0,
+                30.0,
+                0.1,
+                100.0,
+            );
+
+        let light_space_matrix =
+            light_proj * light_view;
 
         unsafe {
-            // --- Establish Authoritative Render State ---
-            // Opaque world geometry requires depth testing and back-face culling.
-            // We do not rely on state from previous frames or other UI passes.
-            gl::Enable(gl::DEPTH_TEST);
-            gl::DepthMask(gl::TRUE);
-            gl::DepthFunc(gl::LESS);
+            gl::Enable(
+                gl::DEPTH_TEST,
+            );
 
-            gl::Enable(gl::CULL_FACE);
-            gl::CullFace(gl::BACK);
-            gl::FrontFace(gl::CCW);
+            gl::DepthMask(
+                gl::TRUE,
+            );
 
-            // Blending is disabled for the opaque pass to ensure depth writes
-            // are clean and no accidental accumulation occurs.
-            gl::Disable(gl::BLEND);
+            gl::DepthFunc(
+                gl::LESS,
+            );
 
-            // 2. Shadow Pass
-            gl::BindFramebuffer(gl::FRAMEBUFFER, self.shadow_fbo);
-            gl::Viewport(0, 0, SHADOW_RES, SHADOW_RES);
-            gl::Clear(gl::DEPTH_BUFFER_BIT);
-            gl::UseProgram(self.shadow_program);
+            gl::Enable(
+                gl::CULL_FACE,
+            );
 
-            let s_lsm_name = CString::new("u_light_space_matrix").unwrap();
-            let s_lsm_loc = gl::GetUniformLocation(self.shadow_program, s_lsm_name.as_ptr());
-            gl::UniformMatrix4fv(s_lsm_loc, 1, gl::FALSE, light_space_matrix.to_cols_array().as_ptr());
+            gl::CullFace(
+                gl::BACK,
+            );
 
-            let s_model_name = CString::new("u_model").unwrap();
-            let s_model_loc = gl::GetUniformLocation(self.shadow_program, s_model_name.as_ptr());
+            gl::FrontFace(
+                gl::CCW,
+            );
 
-            gl::BindVertexArray(self.block_vao);
-            // Draw Blocks in Shadow Pass
+            gl::Disable(
+                gl::BLEND,
+            );
+
+            //
+            // Shadow pass.
+            //
+
+            gl::BindFramebuffer(
+                gl::FRAMEBUFFER,
+                self.shadow_fbo,
+            );
+
+            gl::Viewport(
+                0,
+                0,
+                SHADOW_RES,
+                SHADOW_RES,
+            );
+
+            gl::Clear(
+                gl::DEPTH_BUFFER_BIT,
+            );
+
+            gl::UseProgram(
+                self.shadow_program,
+            );
+
+            let s_lsm_name =
+                CString::new(
+                    "u_light_space_matrix",
+                ).unwrap();
+
+            let s_lsm_location =
+                gl::GetUniformLocation(
+                    self.shadow_program,
+                    s_lsm_name.as_ptr(),
+                );
+
+            gl::UniformMatrix4fv(
+                s_lsm_location,
+                1,
+                gl::FALSE,
+                light_space_matrix
+                    .to_cols_array()
+                    .as_ptr(),
+            );
+
+            let s_model_name =
+                CString::new(
+                    "u_model",
+                ).unwrap();
+
+            let s_model_location =
+                gl::GetUniformLocation(
+                    self.shadow_program,
+                    s_model_name.as_ptr(),
+                );
+
+            gl::BindVertexArray(
+                self.block_vao,
+            );
+
             for coord in world.active_blocks() {
-                if let Some(cell) = world.get(coord) {
-                    if cell.cell_type == CellType::Block && cell.visible && cell.solid {
-                        let should_draw = match editor.mode {
+                if let Some(cell) =
+                    world.get(coord)
+                {
+                    let renderable_cell =
+                        cell.cell_type == CellType::Block
+                            || cell.cell_type == CellType::SpawnPoint;
+
+                    if !renderable_cell
+                        || !cell.visible
+                        || !cell.solid
+                    {
+                        continue;
+                    }
+
+                    let should_draw =
+                        match editor.mode {
                             EditorMode::Editor => true,
                             EditorMode::Play => cell.anchored,
                         };
-                        if should_draw {
-                            let model = Mat4::from_translation(Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32));
-                            gl::UniformMatrix4fv(s_model_loc, 1, gl::FALSE, model.to_cols_array().as_ptr());
-                            gl::DrawArrays(gl::TRIANGLES, 0, self.block_vertex_count);
-                        }
+
+                    if !should_draw {
+                        continue;
                     }
+
+                    let model =
+                        Mat4::from_translation(
+                            Vec3::new(
+                                coord.x as f32,
+                                coord.y as f32,
+                                coord.z as f32,
+                            ),
+                        );
+
+                    gl::UniformMatrix4fv(
+                        s_model_location,
+                        1,
+                        gl::FALSE,
+                        model.to_cols_array().as_ptr(),
+                    );
+
+                    gl::DrawArrays(
+                        gl::TRIANGLES,
+                        0,
+                        self.block_vertex_count,
+                    );
                 }
             }
-            // Draw Physics Bodies in Shadow Pass
+
             if editor.mode == EditorMode::Play {
                 for body in &physics.bodies {
-                    if body.solid {
-                        let model = Mat4::from_translation(body.position);
-                        gl::UniformMatrix4fv(s_model_loc, 1, gl::FALSE, model.to_cols_array().as_ptr());
-                        gl::DrawArrays(gl::TRIANGLES, 0, self.block_vertex_count);
+                    if !body.solid {
+                        continue;
                     }
+
+                    let model =
+                        Mat4::from_translation(
+                            body.position,
+                        );
+
+                    gl::UniformMatrix4fv(
+                        s_model_location,
+                        1,
+                        gl::FALSE,
+                        model.to_cols_array().as_ptr(),
+                    );
+
+                    gl::DrawArrays(
+                        gl::TRIANGLES,
+                        0,
+                        self.block_vertex_count,
+                    );
                 }
             }
 
-            // 3. Main Pass
-            gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
-            gl::Viewport(0, 0, self.width as i32, self.height as i32);
-            gl::ClearColor(0.0, 0.0, 0.0, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-            gl::UseProgram(self.grid_program);
+            //
+            // Main rendering pass.
+            //
 
-            // Set View Projection
-            let vp_name = CString::new("u_view_projection").unwrap();
-            let vp_location = gl::GetUniformLocation(self.grid_program, vp_name.as_ptr());
-            gl::UniformMatrix4fv(vp_location, 1, gl::FALSE, view_projection.to_cols_array().as_ptr());
+            gl::BindFramebuffer(
+                gl::FRAMEBUFFER,
+                0,
+            );
 
-            let model_name = CString::new("u_model").unwrap();
-            let model_location = gl::GetUniformLocation(self.grid_program, model_name.as_ptr());
+            gl::Viewport(
+                0,
+                0,
+                self.width as i32,
+                self.height as i32,
+            );
 
-            let base_color_name = CString::new("u_base_color").unwrap();
-            let base_color_location = gl::GetUniformLocation(self.grid_program, base_color_name.as_ptr());
-            gl::Uniform3f(base_color_location, 1.0, 1.0, 1.0); // Default to white
+            gl::ClearColor(
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+            );
 
-            let alpha_name = CString::new("u_alpha").unwrap();
-            let alpha_location = gl::GetUniformLocation(self.grid_program, alpha_name.as_ptr());
-            gl::Uniform1f(alpha_location, 1.0); // Default to opaque
+            gl::Clear(
+                gl::COLOR_BUFFER_BIT
+                    | gl::DEPTH_BUFFER_BIT,
+            );
 
-            // --- Set Lighting Uniforms ---
-            let ambient_name = CString::new("u_ambient_intensity").unwrap();
-            let ambient_location = gl::GetUniformLocation(self.grid_program, ambient_name.as_ptr());
-            gl::Uniform1f(ambient_location, world.lighting.ambient_intensity);
+            gl::UseProgram(
+                self.grid_program,
+            );
 
-            let global_enabled_name = CString::new("u_global_light_enabled").unwrap();
-            let global_enabled_location = gl::GetUniformLocation(self.grid_program, global_enabled_name.as_ptr());
-            gl::Uniform1i(global_enabled_location, if world.lighting.global_light_enabled { 1 } else { 0 });
+            let vp_name =
+                CString::new(
+                    "u_view_projection",
+                ).unwrap();
 
-            let global_dir_name = CString::new("u_global_light_direction").unwrap();
-            let global_dir_location = gl::GetUniformLocation(self.grid_program, global_dir_name.as_ptr());
-            gl::Uniform3f(global_dir_location, world.lighting.global_light_direction.x, world.lighting.global_light_direction.y, world.lighting.global_light_direction.z);
+            let vp_location =
+                gl::GetUniformLocation(
+                    self.grid_program,
+                    vp_name.as_ptr(),
+                );
 
-            let global_color_name = CString::new("u_global_light_color").unwrap();
-            let global_color_location = gl::GetUniformLocation(self.grid_program, global_color_name.as_ptr());
-            gl::Uniform3f(global_color_location, world.lighting.global_light_color.x, world.lighting.global_light_color.y, world.lighting.global_light_color.z);
+            gl::UniformMatrix4fv(
+                vp_location,
+                1,
+                gl::FALSE,
+                view_projection
+                    .to_cols_array()
+                    .as_ptr(),
+            );
 
-            let global_intensity_name = CString::new("u_global_light_intensity").unwrap();
-            let global_intensity_location = gl::GetUniformLocation(self.grid_program, global_intensity_name.as_ptr());
-            gl::Uniform1f(global_intensity_location, world.lighting.global_light_intensity);
+            let model_name =
+                CString::new(
+                    "u_model",
+                ).unwrap();
 
-            // --- Set Shadow Uniforms ---
-            let lsm_name = CString::new("u_light_space_matrix").unwrap();
-            let lsm_location = gl::GetUniformLocation(self.grid_program, lsm_name.as_ptr());
-            gl::UniformMatrix4fv(lsm_location, 1, gl::FALSE, light_space_matrix.to_cols_array().as_ptr());
+            let model_location =
+                gl::GetUniformLocation(
+                    self.grid_program,
+                    model_name.as_ptr(),
+                );
 
-            let shadows_enabled_name = CString::new("u_shadows_enabled").unwrap();
-            let shadows_enabled_location = gl::GetUniformLocation(self.grid_program, shadows_enabled_name.as_ptr());
-            gl::Uniform1i(shadows_enabled_location, if world.lighting.shadows_enabled { 1 } else { 0 });
+            let base_color_name =
+                CString::new(
+                    "u_base_color",
+                ).unwrap();
 
-            gl::ActiveTexture(gl::TEXTURE0);
-            gl::BindTexture(gl::TEXTURE_2D, self.shadow_depth_tex);
-            let shadow_map_name = CString::new("u_shadow_map").unwrap();
-            let shadow_map_location = gl::GetUniformLocation(self.grid_program, shadow_map_name.as_ptr());
-            gl::Uniform1i(shadow_map_location, 0);
+            let base_color_location =
+                gl::GetUniformLocation(
+                    self.grid_program,
+                    base_color_name.as_ptr(),
+                );
 
-            // --- Set Point Lights ---
-            let mut point_lights = Vec::new();
-            for coord in world.active_blocks() {
-                if let Some(cell) = world.get(coord) {
-                    if cell.cell_type == CellType::Light {
-                        point_lights.push((coord, cell));
-                        if point_lights.len() >= 16 { break; }
-                    }
-                }
-            }
+            gl::Uniform3f(
+                base_color_location,
+                1.0,
+                1.0,
+                1.0,
+            );
 
-            let count_name = CString::new("u_point_light_count").unwrap();
-            let count_location = gl::GetUniformLocation(self.grid_program, count_name.as_ptr());
-            gl::Uniform1i(count_location, point_lights.len() as i32);
+            let alpha_name =
+                CString::new(
+                    "u_alpha",
+                ).unwrap();
 
-            for (i, (coord, cell)) in point_lights.iter().enumerate() {
-                let base = format!("u_point_lights[{}]", i);
+            let alpha_location =
+                gl::GetUniformLocation(
+                    self.grid_program,
+                    alpha_name.as_ptr(),
+                );
 
-                let pos_name = CString::new(format!("{}.position", base)).unwrap();
-                let pos_loc = gl::GetUniformLocation(self.grid_program, pos_name.as_ptr());
-                gl::Uniform3f(pos_loc, coord.x as f32, coord.y as f32, coord.z as f32);
+            gl::Uniform1f(
+                alpha_location,
+                1.0,
+            );
 
-                let color_name = CString::new(format!("{}.color", base)).unwrap();
-                let color_loc = gl::GetUniformLocation(self.grid_program, color_name.as_ptr());
-                gl::Uniform3f(color_loc, cell.light_color.x, cell.light_color.y, cell.light_color.z);
+            //
+            // Global lighting.
+            //
 
-                let intensity_name = CString::new(format!("{}.intensity", base)).unwrap();
-                let intensity_loc = gl::GetUniformLocation(self.grid_program, intensity_name.as_ptr());
-                gl::Uniform1f(intensity_loc, cell.light_intensity);
+            let ambient_name =
+                CString::new(
+                    "u_ambient_intensity",
+                ).unwrap();
 
-                let range_name = CString::new(format!("{}.range", base)).unwrap();
-                let range_loc = gl::GetUniformLocation(self.grid_program, range_name.as_ptr());
-                gl::Uniform1f(range_loc, cell.light_range);
-            }
+            let ambient_location =
+                gl::GetUniformLocation(
+                    self.grid_program,
+                    ambient_name.as_ptr(),
+                );
 
-            // --- Draw Blocks ---
-            gl::BindVertexArray(self.block_vao);
-            for coord in world.active_blocks() {
-                if let Some(cell) = world.get(coord) {
-                    if cell.cell_type == CellType::Block && cell.visible {
-                        let should_draw = match editor.mode {
-                            EditorMode::Editor => true,
-                            EditorMode::Play => cell.anchored,
-                        };
-                        if should_draw {
-                            gl::Uniform3f(base_color_location, cell.color_rgb.x, cell.color_rgb.y, cell.color_rgb.z);
-                            let model = Mat4::from_translation(Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32));
-                            gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
-                            gl::DrawArrays(gl::TRIANGLES, 0, self.block_vertex_count);
-                        }
-                    }
-                }
-            }
+            gl::Uniform1f(
+                ambient_location,
+                world.lighting.ambient_intensity,
+            );
 
-            // --- Draw Physics Bodies ---
-            if editor.mode == EditorMode::Play {
-                for body in &physics.bodies {
-                    if body.visible {
-                        gl::Uniform3f(base_color_location, body.color_rgb.x, body.color_rgb.y, body.color_rgb.z);
-                        let model = Mat4::from_translation(body.position);
-                        gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
-                        gl::DrawArrays(gl::TRIANGLES, 0, self.block_vertex_count);
-                    }
-                }
-            }
+            let global_enabled_name =
+                CString::new(
+                    "u_global_light_enabled",
+                ).unwrap();
 
-            // --- Draw Helpers (No Lighting/Shadows) ---
-            let plane = crate::editor::grid::select_grid_plane(camera_pos, target);
+            let global_enabled_location =
+                gl::GetUniformLocation(
+                    self.grid_program,
+                    global_enabled_name.as_ptr(),
+                );
 
-            // Helpers like the grid and axes require blending for semi-transparent
-            // highlights and anti-aliasing.
-            gl::Enable(gl::BLEND);
-            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-
-            if editor.mode == EditorMode::Editor {
-                let (_normal, anchor_offset) = match plane {
-                    GridPlane::Xz => (Vec3::Y, editor.anchor.y as f32),
-                    GridPlane::Yz => (Vec3::X, editor.anchor.x as f32),
-                    GridPlane::Xy => (Vec3::Z, editor.anchor.z as f32),
-                };
-
-                let center = if let Some(hover) = editor.hovered_cell {
-                    Vec3::new(hover.x as f32, hover.y as f32, hover.z as f32)
+            gl::Uniform1i(
+                global_enabled_location,
+                if world.lighting.global_light_enabled {
+                    1
                 } else {
-                    match plane {
-                        GridPlane::Xz => Vec3::new(target.x.floor(), anchor_offset, target.z.floor()),
-                        GridPlane::Yz => Vec3::new(anchor_offset, target.y.floor(), target.z.floor()),
-                        GridPlane::Xy => Vec3::new(target.x.floor(), target.y.floor(), anchor_offset),
+                    0
+                },
+            );
+
+            let global_dir_name =
+                CString::new(
+                    "u_global_light_direction",
+                ).unwrap();
+
+            let global_dir_location =
+                gl::GetUniformLocation(
+                    self.grid_program,
+                    global_dir_name.as_ptr(),
+                );
+
+            gl::Uniform3f(
+                global_dir_location,
+                world.lighting.global_light_direction.x,
+                world.lighting.global_light_direction.y,
+                world.lighting.global_light_direction.z,
+            );
+
+            let global_color_name =
+                CString::new(
+                    "u_global_light_color",
+                ).unwrap();
+
+            let global_color_location =
+                gl::GetUniformLocation(
+                    self.grid_program,
+                    global_color_name.as_ptr(),
+                );
+
+            gl::Uniform3f(
+                global_color_location,
+                world.lighting.global_light_color.x,
+                world.lighting.global_light_color.y,
+                world.lighting.global_light_color.z,
+            );
+
+            let global_intensity_name =
+                CString::new(
+                    "u_global_light_intensity",
+                ).unwrap();
+
+            let global_intensity_location =
+                gl::GetUniformLocation(
+                    self.grid_program,
+                    global_intensity_name.as_ptr(),
+                );
+
+            gl::Uniform1f(
+                global_intensity_location,
+                world.lighting.global_light_intensity,
+            );
+
+            //
+            // Shadow uniforms.
+            //
+
+            let lsm_name =
+                CString::new(
+                    "u_light_space_matrix",
+                ).unwrap();
+
+            let lsm_location =
+                gl::GetUniformLocation(
+                    self.grid_program,
+                    lsm_name.as_ptr(),
+                );
+
+            gl::UniformMatrix4fv(
+                lsm_location,
+                1,
+                gl::FALSE,
+                light_space_matrix
+                    .to_cols_array()
+                    .as_ptr(),
+            );
+
+            let shadows_enabled_name =
+                CString::new(
+                    "u_shadows_enabled",
+                ).unwrap();
+
+            let shadows_enabled_location =
+                gl::GetUniformLocation(
+                    self.grid_program,
+                    shadows_enabled_name.as_ptr(),
+                );
+
+            gl::Uniform1i(
+                shadows_enabled_location,
+                if world.lighting.shadows_enabled {
+                    1
+                } else {
+                    0
+                },
+            );
+
+            gl::ActiveTexture(
+                gl::TEXTURE0,
+            );
+
+            gl::BindTexture(
+                gl::TEXTURE_2D,
+                self.shadow_depth_tex,
+            );
+
+            let shadow_map_name =
+                CString::new(
+                    "u_shadow_map",
+                ).unwrap();
+
+            let shadow_map_location =
+                gl::GetUniformLocation(
+                    self.grid_program,
+                    shadow_map_name.as_ptr(),
+                );
+
+            gl::Uniform1i(
+                shadow_map_location,
+                0,
+            );
+
+            //
+            // Point lights.
+            //
+
+            let mut point_lights = Vec::new();
+
+            for coord in world.active_blocks() {
+                if let Some(cell) =
+                    world.get(coord)
+                {
+                    if cell.cell_type
+                        == CellType::Light
+                    {
+                        point_lights.push(
+                            (coord, cell),
+                        );
+
+                        if point_lights.len()
+                            >= 16
+                        {
+                            break;
+                        }
                     }
+                }
+            }
+
+            let count_name =
+                CString::new(
+                    "u_point_light_count",
+                ).unwrap();
+
+            let count_location =
+                gl::GetUniformLocation(
+                    self.grid_program,
+                    count_name.as_ptr(),
+                );
+
+            gl::Uniform1i(
+                count_location,
+                point_lights.len() as i32,
+            );
+
+            for (
+                i,
+                (coord, cell),
+            ) in point_lights
+                .iter()
+                .enumerate()
+            {
+                let base =
+                    format!(
+                        "u_point_lights[{}]",
+                        i,
+                    );
+
+                let pos_name =
+                    CString::new(
+                        format!(
+                            "{}.position",
+                            base,
+                        ),
+                    ).unwrap();
+
+                let pos_location =
+                    gl::GetUniformLocation(
+                        self.grid_program,
+                        pos_name.as_ptr(),
+                    );
+
+                gl::Uniform3f(
+                    pos_location,
+                    coord.x as f32,
+                    coord.y as f32,
+                    coord.z as f32,
+                );
+
+                let color_name =
+                    CString::new(
+                        format!(
+                            "{}.color",
+                            base,
+                        ),
+                    ).unwrap();
+
+                let color_location =
+                    gl::GetUniformLocation(
+                        self.grid_program,
+                        color_name.as_ptr(),
+                    );
+
+                gl::Uniform3f(
+                    color_location,
+                    cell.light_color.x,
+                    cell.light_color.y,
+                    cell.light_color.z,
+                );
+
+                let intensity_name =
+                    CString::new(
+                        format!(
+                            "{}.intensity",
+                            base,
+                        ),
+                    ).unwrap();
+
+                let intensity_location =
+                    gl::GetUniformLocation(
+                        self.grid_program,
+                        intensity_name.as_ptr(),
+                    );
+
+                gl::Uniform1f(
+                    intensity_location,
+                    cell.light_intensity,
+                );
+
+                let range_name =
+                    CString::new(
+                        format!(
+                            "{}.range",
+                            base,
+                        ),
+                    ).unwrap();
+
+                let range_location =
+                    gl::GetUniformLocation(
+                        self.grid_program,
+                        range_name.as_ptr(),
+                    );
+
+                gl::Uniform1f(
+                    range_location,
+                    cell.light_range,
+                );
+            }
+
+            //
+            // Authored World cells.
+            //
+
+            gl::BindVertexArray(
+                self.block_vao,
+            );
+
+            for coord in world.active_blocks() {
+                if let Some(cell) =
+                    world.get(coord)
+                {
+                    let renderable_cell =
+                        cell.cell_type == CellType::Block
+                            || cell.cell_type == CellType::SpawnPoint;
+
+                    if !renderable_cell
+                        || !cell.visible
+                    {
+                        continue;
+                    }
+
+                    let should_draw =
+                        match editor.mode {
+                            EditorMode::Editor => true,
+                            EditorMode::Play => cell.anchored,
+                        };
+
+                    if !should_draw {
+                        continue;
+                    }
+
+                    gl::Uniform3f(
+                        base_color_location,
+                        cell.color_rgb.x,
+                        cell.color_rgb.y,
+                        cell.color_rgb.z,
+                    );
+
+                    let model =
+                        Mat4::from_translation(
+                            Vec3::new(
+                                coord.x as f32,
+                                coord.y as f32,
+                                coord.z as f32,
+                            ),
+                        );
+
+                    gl::UniformMatrix4fv(
+                        model_location,
+                        1,
+                        gl::FALSE,
+                        model.to_cols_array().as_ptr(),
+                    );
+
+                    gl::DrawArrays(
+                        gl::TRIANGLES,
+                        0,
+                        self.block_vertex_count,
+                    );
+                }
+            }
+
+            //
+            // Runtime Physics bodies.
+            //
+
+            if editor.mode
+                == EditorMode::Play
+            {
+                for body in &physics.bodies {
+                    if !body.visible {
+                        continue;
+                    }
+
+                    gl::Uniform3f(
+                        base_color_location,
+                        body.color_rgb.x,
+                        body.color_rgb.y,
+                        body.color_rgb.z,
+                    );
+
+                    let model =
+                        Mat4::from_translation(
+                            body.position,
+                        );
+
+                    gl::UniformMatrix4fv(
+                        model_location,
+                        1,
+                        gl::FALSE,
+                        model.to_cols_array().as_ptr(),
+                    );
+
+                    gl::DrawArrays(
+                        gl::TRIANGLES,
+                        0,
+                        self.block_vertex_count,
+                    );
+                }
+            }
+
+            //
+            // Editor helpers.
+            //
+
+            let plane =
+                crate::editor::grid::select_grid_plane(
+                    camera_pos,
+                    target,
+                );
+
+            gl::Enable(
+                gl::BLEND,
+            );
+
+            gl::BlendFunc(
+                gl::SRC_ALPHA,
+                gl::ONE_MINUS_SRC_ALPHA,
+            );
+
+            if editor.mode
+                == EditorMode::Editor
+            {
+                let (
+                    _normal,
+                    anchor_offset,
+                ) = match plane {
+                    GridPlane::Xz => (
+                        Vec3::Y,
+                        editor.anchor.y as f32,
+                    ),
+
+                    GridPlane::Yz => (
+                        Vec3::X,
+                        editor.anchor.x as f32,
+                    ),
+
+                    GridPlane::Xy => (
+                        Vec3::Z,
+                        editor.anchor.z as f32,
+                    ),
                 };
 
-                let model = Mat4::from_translation(center);
-                gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
+                let center =
+                    if let Some(hover) =
+                        editor.hovered_cell
+                    {
+                        Vec3::new(
+                            hover.x as f32,
+                            hover.y as f32,
+                            hover.z as f32,
+                        )
+                    } else {
+                        match plane {
+                            GridPlane::Xz =>
+                                Vec3::new(
+                                    target.x.floor(),
+                                    anchor_offset,
+                                    target.z.floor(),
+                                ),
 
-                self.bind_grid_vao(plane);
-                gl::DrawArrays(gl::LINES, 0, self.get_grid_count(plane));
+                            GridPlane::Yz =>
+                                Vec3::new(
+                                    anchor_offset,
+                                    target.y.floor(),
+                                    target.z.floor(),
+                                ),
+
+                            GridPlane::Xy =>
+                                Vec3::new(
+                                    target.x.floor(),
+                                    target.y.floor(),
+                                    anchor_offset,
+                                ),
+                        }
+                    };
+
+                let model =
+                    Mat4::from_translation(
+                        center,
+                    );
+
+                gl::UniformMatrix4fv(
+                    model_location,
+                    1,
+                    gl::FALSE,
+                    model.to_cols_array().as_ptr(),
+                );
+
+                self.bind_grid_vao(
+                    plane,
+                );
+
+                gl::DrawArrays(
+                    gl::LINES,
+                    0,
+                    self.get_grid_count(
+                        plane,
+                    ),
+                );
             }
 
-            if editor.mode == EditorMode::Editor {
-                let anchor_pos = Vec3::new(editor.anchor.x as f32, editor.anchor.y as f32, editor.anchor.z as f32);
-                let model = Mat4::from_translation(anchor_pos);
-                gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
+            if editor.mode
+                == EditorMode::Editor
+            {
+                let anchor_pos =
+                    Vec3::new(
+                        editor.anchor.x as f32,
+                        editor.anchor.y as f32,
+                        editor.anchor.z as f32,
+                    );
 
-                gl::BindVertexArray(self.anchor_vao);
-                gl::DrawArrays(gl::LINES, 0, self.anchor_vertex_count);
+                let model =
+                    Mat4::from_translation(
+                        anchor_pos,
+                    );
 
-                if let Some(hover) = editor.hovered_cell {
-                    let model = Mat4::from_translation(Vec3::new(hover.x as f32, hover.y as f32, hover.z as f32));
-                    gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
-                    gl::BindVertexArray(self.highlight_vao);
-                    gl::DrawArrays(gl::LINES, 0, self.highlight_vertex_count);
+                gl::UniformMatrix4fv(
+                    model_location,
+                    1,
+                    gl::FALSE,
+                    model.to_cols_array().as_ptr(),
+                );
+
+                gl::BindVertexArray(
+                    self.anchor_vao,
+                );
+
+                gl::DrawArrays(
+                    gl::LINES,
+                    0,
+                    self.anchor_vertex_count,
+                );
+
+                if let Some(hover) =
+                    editor.hovered_cell
+                {
+                    let model =
+                        Mat4::from_translation(
+                            Vec3::new(
+                                hover.x as f32,
+                                hover.y as f32,
+                                hover.z as f32,
+                            ),
+                        );
+
+                    gl::UniformMatrix4fv(
+                        model_location,
+                        1,
+                        gl::FALSE,
+                        model.to_cols_array().as_ptr(),
+                    );
+
+                    gl::BindVertexArray(
+                        self.highlight_vao,
+                    );
+
+                    gl::DrawArrays(
+                        gl::LINES,
+                        0,
+                        self.highlight_vertex_count,
+                    );
                 }
 
-                let model = Mat4::from_translation(anchor_pos);
-                gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
-                gl::BindVertexArray(self.axis_vao);
-                gl::DrawArrays(gl::LINES, 0, self.axis_vertex_count);
+                let model =
+                    Mat4::from_translation(
+                        anchor_pos,
+                    );
+
+                gl::UniformMatrix4fv(
+                    model_location,
+                    1,
+                    gl::FALSE,
+                    model.to_cols_array().as_ptr(),
+                );
+
+                gl::BindVertexArray(
+                    self.axis_vao,
+                );
+
+                gl::DrawArrays(
+                    gl::LINES,
+                    0,
+                    self.axis_vertex_count,
+                );
             }
 
-            // --- Render Ghost Preview ---
-            if editor.mode == EditorMode::Editor {
-                if let (Some(start), Some(end)) = (drag_start, editor.hovered_cell) {
-                    let x_min = start.x.min(end.x);
-                    let x_max = start.x.max(end.x);
-                    let y_min = start.y.min(end.y);
-                    let y_max = start.y.max(end.y);
-                    let z_min = start.z.min(end.z);
-                    let z_max = start.z.max(end.z);
+            //
+            // Ghost preview.
+            //
 
-                    gl::Enable(gl::BLEND);
-                    gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-                    gl::DepthMask(gl::FALSE);
-                    gl::Uniform1f(alpha_location, 0.4); // 40% opaque for ghost
+            if editor.mode
+                == EditorMode::Editor
+            {
+                if let (
+                    Some(start),
+                    Some(end),
+                ) = (
+                    drag_start,
+                    editor.hovered_cell,
+                ) {
+                    let x_min =
+                        start.x.min(end.x);
+
+                    let x_max =
+                        start.x.max(end.x);
+
+                    let y_min =
+                        start.y.min(end.y);
+
+                    let y_max =
+                        start.y.max(end.y);
+
+                    let z_min =
+                        start.z.min(end.z);
+
+                    let z_max =
+                        start.z.max(end.z);
+
+                    gl::Enable(
+                        gl::BLEND,
+                    );
+
+                    gl::BlendFunc(
+                        gl::SRC_ALPHA,
+                        gl::ONE_MINUS_SRC_ALPHA,
+                    );
+
+                    gl::DepthMask(
+                        gl::FALSE,
+                    );
+
+                    gl::Uniform1f(
+                        alpha_location,
+                        0.4,
+                    );
 
                     match editor.current_tool {
                         crate::editor::EditorTool::Build => {
-                            gl::BindVertexArray(self.block_vao);
-                            let color = editor.build_template.color_rgb;
-                            gl::Uniform3f(base_color_location, color.x, color.y, color.z);
+                            gl::BindVertexArray(
+                                self.block_vao,
+                            );
+
+                            let color =
+                                editor
+                                    .build_template
+                                    .color_rgb;
+
+                            gl::Uniform3f(
+                                base_color_location,
+                                color.x,
+                                color.y,
+                                color.z,
+                            );
 
                             for x in x_min..=x_max {
                                 for y in y_min..=y_max {
                                     for z in z_min..=z_max {
-                                        let model = Mat4::from_translation(Vec3::new(x as f32, y as f32, z as f32));
-                                        gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
-                                        gl::DrawArrays(gl::TRIANGLES, 0, self.block_vertex_count);
+                                        let model =
+                                            Mat4::from_translation(
+                                                Vec3::new(
+                                                    x as f32,
+                                                    y as f32,
+                                                    z as f32,
+                                                ),
+                                            );
+
+                                        gl::UniformMatrix4fv(
+                                            model_location,
+                                            1,
+                                            gl::FALSE,
+                                            model
+                                                .to_cols_array()
+                                                .as_ptr(),
+                                        );
+
+                                        gl::DrawArrays(
+                                            gl::TRIANGLES,
+                                            0,
+                                            self.block_vertex_count,
+                                        );
                                     }
                                 }
                             }
                         }
+
                         crate::editor::EditorTool::Erase => {
-                            gl::BindVertexArray(self.highlight_vao);
-                            gl::Uniform3f(base_color_location, 1.0, 0.2, 0.2); // Red ghost for erase
+                            gl::BindVertexArray(
+                                self.highlight_vao,
+                            );
+
+                            gl::Uniform3f(
+                                base_color_location,
+                                1.0,
+                                0.2,
+                                0.2,
+                            );
 
                             for x in x_min..=x_max {
                                 for y in y_min..=y_max {
                                     for z in z_min..=z_max {
-                                        let model = Mat4::from_translation(Vec3::new(x as f32, y as f32, z as f32));
-                                        gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
-                                        gl::DrawArrays(gl::LINES, 0, self.highlight_vertex_count);
+                                        let model =
+                                            Mat4::from_translation(
+                                                Vec3::new(
+                                                    x as f32,
+                                                    y as f32,
+                                                    z as f32,
+                                                ),
+                                            );
+
+                                        gl::UniformMatrix4fv(
+                                            model_location,
+                                            1,
+                                            gl::FALSE,
+                                            model
+                                                .to_cols_array()
+                                                .as_ptr(),
+                                        );
+
+                                        gl::DrawArrays(
+                                            gl::LINES,
+                                            0,
+                                            self.highlight_vertex_count,
+                                        );
                                     }
                                 }
                             }
                         }
+
                         _ => {}
                     }
-                    gl::DepthMask(gl::TRUE);
-                    gl::Uniform1f(alpha_location, 1.0);
+
+                    gl::DepthMask(
+                        gl::TRUE,
+                    );
+
+                    gl::Uniform1f(
+                        alpha_location,
+                        1.0,
+                    );
                 }
             }
+
+            gl::DepthMask(
+                gl::TRUE,
+            );
+
+            gl::Enable(
+                gl::DEPTH_TEST,
+            );
+
+            gl::Enable(
+                gl::CULL_FACE,
+            );
 
             gl::BindVertexArray(0);
         }
     }
-
 
     fn bind_grid_vao(
         &self,
@@ -646,9 +1482,14 @@ impl Renderer {
         plane: GridPlane,
     ) -> i32 {
         match plane {
-            GridPlane::Xz => self.grid_count_xz,
-            GridPlane::Yz => self.grid_count_yz,
-            GridPlane::Xy => self.grid_count_xy,
+            GridPlane::Xz =>
+                self.grid_count_xz,
+
+            GridPlane::Yz =>
+                self.grid_count_yz,
+
+            GridPlane::Xy =>
+                self.grid_count_xy,
         }
     }
 }
@@ -678,8 +1519,15 @@ impl Drop for Renderer {
                 self.shadow_program,
             );
 
-            gl::DeleteFramebuffers(1, &self.shadow_fbo);
-            gl::DeleteTextures(1, &self.shadow_depth_tex);
+            gl::DeleteFramebuffers(
+                1,
+                &self.shadow_fbo,
+            );
+
+            gl::DeleteTextures(
+                1,
+                &self.shadow_depth_tex,
+            );
 
             gl::DeleteVertexArrays(
                 1,
@@ -768,7 +1616,8 @@ fn create_grid_plane_vao(
 }
 
 fn create_axes() -> (u32, u32, i32) {
-    let length = 3.0;
+    let length =
+        3.0;
 
     let mut vertices =
         Vec::new();
@@ -806,8 +1655,11 @@ fn create_highlight_box() -> (u32, u32, i32) {
     let color =
         [1.0, 0.8, 0.1, 0.9];
 
-    let min = 0.0;
-    let max = 1.0;
+    let min =
+        0.0;
+
+    let max =
+        1.0;
 
     add_line(
         &mut vertices,
@@ -905,13 +1757,17 @@ fn create_anchor_marker() -> (u32, u32, i32) {
     let color =
         [0.0, 1.0, 1.0, 1.0];
 
-    let radius = 0.1;
+    let radius =
+        0.1;
 
     let center =
         [0.0, 0.0, 0.0];
 
-    let latitudes = 8;
-    let longitudes = 16;
+    let latitudes =
+        8;
+
+    let longitudes =
+        16;
 
     use std::f32::consts::PI;
 
@@ -947,7 +1803,6 @@ fn create_anchor_marker() -> (u32, u32, i32) {
 
             add_line(
                 &mut vertices,
-
                 [
                     lon1.cos() * r
                         + center[0],
@@ -955,7 +1810,6 @@ fn create_anchor_marker() -> (u32, u32, i32) {
                     lon1.sin() * r
                         + center[2],
                 ],
-
                 [
                     lon2.cos() * r
                         + center[0],
@@ -963,7 +1817,6 @@ fn create_anchor_marker() -> (u32, u32, i32) {
                     lon2.sin() * r
                         + center[2],
                 ],
-
                 color,
             );
         }
@@ -1000,7 +1853,6 @@ fn create_anchor_marker() -> (u32, u32, i32) {
 
             add_line(
                 &mut vertices,
-
                 [
                     cos_lon
                         * lat1.cos()
@@ -1014,7 +1866,6 @@ fn create_anchor_marker() -> (u32, u32, i32) {
                         * radius
                         + center[2],
                 ],
-
                 [
                     cos_lon
                         * lat2.cos()
@@ -1028,7 +1879,6 @@ fn create_anchor_marker() -> (u32, u32, i32) {
                         * radius
                         + center[2],
                 ],
-
                 color,
             );
         }
@@ -1040,25 +1890,81 @@ fn create_anchor_marker() -> (u32, u32, i32) {
 }
 
 fn create_block_cube() -> (u32, u32, i32) {
-    let mut vertices = Vec::new();
-    let color = [1.0, 1.0, 1.0, 1.0]; // White so uniform color_rgb is exact
-    let min = 0.0;
-    let max = 1.0;
+    let mut vertices =
+        Vec::new();
 
-    // +Y (Top)
-    add_quad(&mut vertices, [min, max, min], [min, max, max], [max, max, max], [max, max, min], color, [0.0, 1.0, 0.0]);
-    // -Y (Bottom)
-    add_quad(&mut vertices, [min, min, min], [max, min, min], [max, min, max], [min, min, max], color, [0.0, -1.0, 0.0]);
-    // +Z (Front)
-    add_quad(&mut vertices, [min, min, max], [max, min, max], [max, max, max], [min, max, max], color, [0.0, 0.0, 1.0]);
-    // -Z (Back)
-    add_quad(&mut vertices, [min, min, min], [min, max, min], [max, max, min], [max, min, min], color, [0.0, 0.0, -1.0]);
-    // -X (Left)
-    add_quad(&mut vertices, [min, min, min], [min, min, max], [min, max, max], [min, max, min], color, [-1.0, 0.0, 0.0]);
-    // +X (Right)
-    add_quad(&mut vertices, [max, min, min], [max, max, min], [max, max, max], [max, min, max], color, [1.0, 0.0, 0.0]);
+    let color =
+        [1.0, 1.0, 1.0, 1.0];
 
-    upload_vertices_3d(&vertices)
+    let min =
+        0.0;
+
+    let max =
+        1.0;
+
+    add_quad(
+        &mut vertices,
+        [min, max, min],
+        [min, max, max],
+        [max, max, max],
+        [max, max, min],
+        color,
+        [0.0, 1.0, 0.0],
+    );
+
+    add_quad(
+        &mut vertices,
+        [min, min, min],
+        [max, min, min],
+        [max, min, max],
+        [min, min, max],
+        color,
+        [0.0, -1.0, 0.0],
+    );
+
+    add_quad(
+        &mut vertices,
+        [min, min, max],
+        [max, min, max],
+        [max, max, max],
+        [min, max, max],
+        color,
+        [0.0, 0.0, 1.0],
+    );
+
+    add_quad(
+        &mut vertices,
+        [min, min, min],
+        [min, max, min],
+        [max, max, min],
+        [max, min, min],
+        color,
+        [0.0, 0.0, -1.0],
+    );
+
+    add_quad(
+        &mut vertices,
+        [min, min, min],
+        [min, min, max],
+        [min, max, max],
+        [min, max, min],
+        color,
+        [-1.0, 0.0, 0.0],
+    );
+
+    add_quad(
+        &mut vertices,
+        [max, min, min],
+        [max, max, min],
+        [max, max, max],
+        [max, min, max],
+        color,
+        [1.0, 0.0, 0.0],
+    );
+
+    upload_vertices_3d(
+        &vertices,
+    )
 }
 
 fn create_home_logo() -> (u32, u32) {
@@ -1159,6 +2065,7 @@ void main() {
 
 const GRID_VERTEX_SHADER: &str = r#"
 #version 330 core
+
 layout (location = 0) in vec3 a_position;
 layout (location = 1) in vec3 a_normal;
 layout (location = 2) in vec4 a_color;
@@ -1172,23 +2079,41 @@ out vec4 v_color;
 out vec3 v_world_pos;
 
 void main() {
-    vec4 world_pos = u_model * vec4(a_position, 1.0);
-    v_world_pos = world_pos.xyz;
-    gl_Position = u_view_projection * world_pos;
+    vec4 world_pos =
+        u_model * vec4(
+            a_position,
+            1.0
+        );
 
-    // Normal in world space.
-    v_normal = mat3(u_model) * a_normal;
-    v_color = vec4(a_color.rgb * u_base_color, a_color.a);
+    v_world_pos =
+        world_pos.xyz;
+
+    gl_Position =
+        u_view_projection
+            * world_pos;
+
+    v_normal =
+        mat3(u_model)
+            * a_normal;
+
+    v_color =
+        vec4(
+            a_color.rgb
+                * u_base_color,
+            a_color.a
+        );
 }
 "#;
 
 const GRID_FRAGMENT_SHADER: &str = r#"
 #version 330 core
+
 in vec3 v_normal;
 in vec4 v_color;
 in vec3 v_world_pos;
 
 uniform float u_ambient_intensity;
+
 uniform bool u_global_light_enabled;
 uniform vec3 u_global_light_direction;
 uniform vec3 u_global_light_color;
@@ -1202,6 +2127,7 @@ struct PointLight {
 };
 
 #define MAX_POINT_LIGHTS 16
+
 uniform int u_point_light_count;
 uniform PointLight u_point_lights[MAX_POINT_LIGHTS];
 
@@ -1213,80 +2139,221 @@ uniform float u_alpha;
 out vec4 FragColor;
 
 float calculate_shadow(vec3 world_pos) {
-    vec4 light_space_pos = u_light_space_matrix * vec4(world_pos, 1.0);
-    vec3 proj_coords = light_space_pos.xyz / light_space_pos.w;
-    proj_coords = proj_coords * 0.5 + 0.5;
+    vec4 light_space_pos =
+        u_light_space_matrix
+            * vec4(
+                world_pos,
+                1.0
+            );
 
-    if (proj_coords.z > 1.0) return 0.0;
+    vec3 proj_coords =
+        light_space_pos.xyz
+            / light_space_pos.w;
 
-    float current_depth = proj_coords.z;
-    float bias = 0.005;
-    float shadow = 0.0;
-    vec2 texel_size = 1.0 / textureSize(u_shadow_map, 0);
+    proj_coords =
+        proj_coords * 0.5
+            + 0.5;
 
-    // Simple PCF
-    for(int x = -1; x <= 1; ++x) {
-        for(int y = -1; y <= 1; ++y) {
-            float pcf_depth = texture(u_shadow_map, proj_coords.xy + vec2(x, y) * texel_size).r;
-            shadow += current_depth - bias > pcf_depth ? 1.0 : 0.0;
+    if (
+        proj_coords.z > 1.0
+        ||
+        proj_coords.x < 0.0
+        ||
+        proj_coords.x > 1.0
+        ||
+        proj_coords.y < 0.0
+        ||
+        proj_coords.y > 1.0
+    ) {
+        return 0.0;
+    }
+
+    float current_depth =
+        proj_coords.z;
+
+    float bias =
+        0.005;
+
+    float shadow =
+        0.0;
+
+    vec2 texel_size =
+        1.0
+        / textureSize(
+            u_shadow_map,
+            0
+        );
+
+    for (
+        int x = -1;
+        x <= 1;
+        ++x
+    ) {
+        for (
+            int y = -1;
+            y <= 1;
+            ++y
+        ) {
+            float pcf_depth =
+                texture(
+                    u_shadow_map,
+                    proj_coords.xy
+                        + vec2(
+                            x,
+                            y
+                        )
+                        * texel_size
+                ).r;
+
+            shadow +=
+                current_depth - bias
+                    > pcf_depth
+                ? 1.0
+                : 0.0;
         }
     }
-    shadow /= 9.0;
+
+    shadow /=
+        9.0;
 
     return shadow;
 }
 
 void main() {
-    vec3 normal = normalize(v_normal);
+    vec3 normal =
+        normalize(
+            v_normal
+        );
 
-    // Ambient
-    vec3 ambient = v_color.rgb * u_ambient_intensity;
+    vec3 ambient =
+        v_color.rgb
+            * u_ambient_intensity;
 
-    // Global Directional Light
-    vec3 diffuse = vec3(0.0);
-    if (u_global_light_enabled) {
-        vec3 L = normalize(-u_global_light_direction);
-        float diff = max(dot(normal, L), 0.0);
+    vec3 diffuse =
+        vec3(0.0);
 
-        float shadow = u_shadows_enabled ? calculate_shadow(v_world_pos) : 0.0;
-        diffuse = (1.0 - shadow) * v_color.rgb * diff * u_global_light_color * u_global_light_intensity;
+    if (
+        u_global_light_enabled
+    ) {
+        vec3 L =
+            normalize(
+                -u_global_light_direction
+            );
+
+        float diff =
+            max(
+                dot(
+                    normal,
+                    L
+                ),
+                0.0
+            );
+
+        float shadow =
+            u_shadows_enabled
+                ? calculate_shadow(
+                    v_world_pos
+                )
+                : 0.0;
+
+        diffuse =
+            (1.0 - shadow)
+            * v_color.rgb
+            * diff
+            * u_global_light_color
+            * u_global_light_intensity;
     }
 
-    // Point Lights
-    vec3 point_contribution = vec3(0.0);
-    for (int i = 0; i < u_point_light_count; i++) {
-        vec3 L_vec = u_point_lights[i].position - v_world_pos;
-        float dist = length(L_vec);
+    vec3 point_contribution =
+        vec3(0.0);
 
-        if (dist < u_point_lights[i].range) {
-            vec3 L = normalize(L_vec);
-            float diff = max(dot(normal, L), 0.0);
+    for (
+        int i = 0;
+        i < u_point_light_count;
+        i++
+    ) {
+        vec3 L_vec =
+            u_point_lights[i].position
+                - v_world_pos;
 
-            float attenuation = 1.0 - (dist / u_point_lights[i].range);
-            attenuation *= attenuation;
+        float dist =
+            length(
+                L_vec
+            );
 
-            point_contribution += v_color.rgb * diff * u_point_lights[i].color * u_point_lights[i].intensity * attenuation;
+        if (
+            dist
+                < u_point_lights[i].range
+        ) {
+            vec3 L =
+                normalize(
+                    L_vec
+                );
+
+            float diff =
+                max(
+                    dot(
+                        normal,
+                        L
+                    ),
+                    0.0
+                );
+
+            float attenuation =
+                1.0
+                - (
+                    dist
+                    / u_point_lights[i].range
+                );
+
+            attenuation *=
+                attenuation;
+
+            point_contribution +=
+                v_color.rgb
+                * diff
+                * u_point_lights[i].color
+                * u_point_lights[i].intensity
+                * attenuation;
         }
     }
 
-    vec3 result = ambient + diffuse + point_contribution;
-    FragColor = vec4(result, v_color.a * u_alpha);
+    vec3 result =
+        ambient
+        + diffuse
+        + point_contribution;
+
+    FragColor =
+        vec4(
+            result,
+            v_color.a * u_alpha
+        );
 }
 "#;
 
 const SHADOW_VERTEX_SHADER: &str = r#"
 #version 330 core
+
 layout (location = 0) in vec3 a_position;
+
 uniform mat4 u_light_space_matrix;
 uniform mat4 u_model;
+
 void main() {
-    gl_Position = u_light_space_matrix * u_model * vec4(a_position, 1.0);
+    gl_Position =
+        u_light_space_matrix
+            * u_model
+            * vec4(
+                a_position,
+                1.0
+            );
 }
 "#;
 
 const SHADOW_FRAGMENT_SHADER: &str = r#"
 #version 330 core
+
 void main() {
-    // Depth is written automatically
+    // Depth is written automatically.
 }
 "#;

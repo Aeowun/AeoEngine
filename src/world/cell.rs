@@ -9,6 +9,7 @@ pub enum CellType {
     Player,
     NPC,
     Light,
+    SpawnPoint,
 }
 
 #[derive(Clone, Debug)]
@@ -70,6 +71,18 @@ impl Cell {
             light_intensity: 5.0,
             light_range: 10.0,
             light_shadows: true,
+        }
+    }
+
+    pub fn new_spawn_point() -> Self {
+        Self {
+            cell_type: CellType::SpawnPoint,
+            visible: true,
+            solid: true,
+            anchored: true,
+            texture: "Block_tx".to_string(),
+            color_rgb: Vec3::new(0.5, 0.5, 0.5),
+            ..Default::default()
         }
     }
 }
