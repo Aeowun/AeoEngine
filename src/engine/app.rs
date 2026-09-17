@@ -177,9 +177,30 @@ impl App {
                 if let PhysicalKey::Code(key) =
                     physical_key
                 {
-                    if *state == ElementState::Pressed {
+                    let was_pressed = *state == ElementState::Pressed;
+                    if was_pressed {
                         self.keys_down.insert(*key);
+                    } else {
+                        self.keys_down.remove(key);
+                    }
 
+                    if (*key == KeyCode::ShiftLeft || *key == KeyCode::ShiftRight)
+                        && self.view == View::Editor
+                        && self.editor.mode == EditorMode::Editor
+                    {
+                        let ppp = egui_ctx.pixels_per_point();
+                        let mouse_logical = egui::pos2(
+                            self.mouse_pos.0 as f32 / ppp,
+                            self.mouse_pos.1 as f32 / ppp,
+                        );
+                        let in_viewport = self.editor.viewport_rect.contains(mouse_logical);
+
+                        if in_viewport && !egui_ctx.wants_pointer_input() {
+                            self.update_hover();
+                        }
+                    }
+
+                    if was_pressed {
                         let ctrl = self.keys_down.contains(&KeyCode::ControlLeft)
                             || self.keys_down.contains(&KeyCode::ControlRight);
 
@@ -538,8 +559,25 @@ impl App {
                 &self.world,
             );
 
-            if let Some(coord) = hit {
-                self.editor.hovered_cell = Some(coord);
+            if let Some((coord, normal)) = hit {
+                if self.editor.current_tool == EditorTool::Build {
+                    let shift_down = self.keys_down.contains(&KeyCode::ShiftLeft)
+                        || self.keys_down.contains(&KeyCode::ShiftRight);
+
+                    if !shift_down {
+                        // Offset by normal to place on surface
+                        self.editor.hovered_cell = Some(crate::world::WorldCoord::new(
+                            coord.x + normal.x as i32,
+                            coord.y + normal.y as i32,
+                            coord.z + normal.z as i32,
+                        ));
+                    } else {
+                        // Overwrite
+                        self.editor.hovered_cell = Some(coord);
+                    }
+                } else {
+                    self.editor.hovered_cell = Some(coord);
+                }
                 return;
             }
 
@@ -868,12 +906,6 @@ impl App {
                 self.jump_requested =
                     false;
             } else {
-                if self.is_left_mouse_down && self.editor.current_tool == EditorTool::Select {
-                    if let (Some(start), Some(end)) = (self.drag_start_coord, self.editor.hovered_cell) {
-                        self.apply_tool_to_range(start, end);
-                    }
-                }
-
                 self.physics_clock.reset();
                 self.character_system.clear();
                 self.physics_world.bodies.clear();

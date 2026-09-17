@@ -70,7 +70,7 @@ pub fn raycast_world(
     height: f32,
     camera: &CameraController,
     world: &crate::world::World,
-) -> Option<WorldCoord> {
+) -> Option<(WorldCoord, Vec3)> {
     let view = camera.get_view_matrix();
 
     let projection = glam::camera::rh::proj::opengl::perspective(
@@ -115,6 +115,7 @@ pub fn raycast_world(
 
     let max_dist = 200.0;
     let mut dist = 0.0;
+    let mut hit_normal = Vec3::ZERO;
 
     while dist < max_dist {
         if let Some(cell) = world.get(map_pos) {
@@ -126,7 +127,7 @@ pub fn raycast_world(
             };
 
             if eligible && cell.visible {
-                return Some(map_pos);
+                return Some((map_pos, hit_normal));
             }
         }
 
@@ -134,14 +135,17 @@ pub fn raycast_world(
             dist = side_dist.x;
             side_dist.x += delta_dist.x;
             map_pos.x += step.x as i32;
+            hit_normal = Vec3::new(-step.x, 0.0, 0.0);
         } else if side_dist.y < side_dist.z {
             dist = side_dist.y;
             side_dist.y += delta_dist.y;
             map_pos.y += step.y as i32;
+            hit_normal = Vec3::new(0.0, -step.y, 0.0);
         } else {
             dist = side_dist.z;
             side_dist.z += delta_dist.z;
             map_pos.z += step.z as i32;
+            hit_normal = Vec3::new(0.0, 0.0, -step.z);
         }
     }
 
