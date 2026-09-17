@@ -186,27 +186,75 @@ Version `0.5.0` establishes the first complete runtime character and third perso
 
 ---
 
+## 0.6.0
+
+### Added
+
+* Expanded editor World hierarchy with grouped authored cell types and coordinate-based entries.
+* Hierarchy selection integrated with the existing editor selection and Properties system.
+* Multi-cell editor selection through viewport drag selection.
+* Persistent selection outlines for multiple selected cells.
+* Toggleable Plane and Top-Block picking modes.
+* Camera-ray based depth-aware picking for visible authored world cells.
+* Top-Block Build surface targeting.
+* Face-aware Build placement for stacking on existing surfaces.
+* Shift + Build overwrite behavior in Top-Block mode.
+* Editor keyboard shortcuts for Save, Delete, Undo, Redo, Focus, Escape, and tool switching.
+* Authored-world Undo/Redo support for Build, Erase, and Delete operations.
+* Camera focus on the active selection.
+* Light build type with dedicated Light cell defaults and editor ghost preview.
+* Improved editor center/anchor visibility.
+* Top-Block mode work-area grid visibility control.
+
+### Changed
+
+* Select and Navigate can now choose the top visible authored block instead of always using grid-plane depth.
+* Build and Erase can use the same Plane/Top-Block picking toggle while retaining grid-plane behavior in Plane mode.
+* Top-Block Build places new cells outward from the face being targeted instead of replacing the hit cell by default.
+* Shift + Build restores intentional overwrite behavior for the hovered cell.
+* Escape behavior is context-sensitive in Editor mode while preserving Stop Play and Main Menu behavior.
+* Editor world interaction is blocked when the mouse is interacting with egui controls outside the 3D viewport.
+* Play mode falls back to the normal editor camera when no runtime character is active.
+* Cursor capture follows the presence of an active gameplay character rather than Play mode alone.
+* The work-area grid is hidden when Plane picking is disabled.
+* The WORLD panel now functions as an authored-world hierarchy rather than only a lighting/physics settings panel.
+
+### Fixed
+
+* Prevented egui menu and panel clicks from accidentally triggering Build, Erase, Select, Navigate, or editor camera input.
+* Fixed Select drag behavior so selection does not invoke Build/Erase world editing.
+* Fixed Top-Block Build placing new blocks inside the block being targeted.
+* Added correct face-normal based placement for surface stacking.
+* Added Shift-based immediate Build target updates.
+* Prevented Play mode from depending on an uninitialized gameplay camera when no character exists.
+* Preserved editor camera state when switching between Editor and Play modes.
+* Preserved empty-space Build access through the existing grid fallback when Top-Block picking finds no authored target.
+
+### Notes
+
+Version `0.6.0` expands AeoEngine from a basic voxel editor into a more capable world-authoring workspace, with hierarchy navigation, multi-selection, depth-aware picking, surface construction, editor history, and stronger separation between editor input and runtime behavior.
+
+---
+
 ## Current Development
 
 ### In Progress
 
-* Camera relative player movement controls.
+* Physics mass/density integration.
+* Continued refinement and testing of Top-Block ray picking and face detection.
+* Further definition of `FxBlock` authoring and rendering behavior.
+* Determining the proper authored/runtime model for NPCs.
 * Further third person player control refinement.
 * Character interaction with dynamic PhysicsBodies.
-* SpawnPoint driven character appearance authoring and persistence.
 
----
+### Planned
 
-## Future
-
-Planned engine work includes:
-
-* Dynamic point lights.
-* Expanded lighting controls.
-* Shadow refinement.
-* Additional character animation and gameplay states.
-* Expanded rendering and material systems.
-* Additional character controller features.
+* Project-owned asset library using `.assets`.
+* Controlled project asset importing.
+* Project texture support for authored Blocks.
+* Expanded rendering and material capabilities.
+* Additional lighting and shadow refinement.
+* Additional character gameplay states and systems.
 
 ---
 
@@ -230,7 +278,7 @@ A new engine capability or major feature milestone.
 
 Example:
 
-`0.5.0` — Character and third person gameplay foundation.
+`0.6.0` — Expanded editor authoring, hierarchy, selection, picking, surface building, and editor history.
 
 ### PATCH
 
