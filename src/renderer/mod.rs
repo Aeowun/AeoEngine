@@ -378,7 +378,9 @@ impl Renderer {
         let view;
         let target;
 
-        if editor.mode == EditorMode::Play {
+        let use_gameplay_cam = editor.mode == EditorMode::Play && character_system.has_characters();
+
+        if use_gameplay_cam {
             camera_pos = gameplay_camera.current_position;
             view = gameplay_camera.get_view_matrix();
             target = gameplay_camera.current_target;
@@ -1138,6 +1140,7 @@ impl Renderer {
 
             if editor.mode
                 == EditorMode::Editor
+                && editor.plane_picking
             {
                 let (
                     _normal,
@@ -1280,6 +1283,19 @@ impl Renderer {
                     );
                 }
 
+                // --- Selection Outlines ---
+                gl::BindVertexArray(self.highlight_vao);
+                gl::Uniform3f(base_color_location, 0.2, 0.6, 1.0); // Blueish selection
+                for &coord in &editor.selected_coords {
+                    let model = Mat4::from_translation(Vec3::new(
+                        coord.x as f32,
+                        coord.y as f32,
+                        coord.z as f32,
+                    ));
+                    gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
+                    gl::DrawArrays(gl::LINES, 0, self.highlight_vertex_count);
+                }
+
                 let model =
                     Mat4::from_translation(
                         anchor_pos,
@@ -1355,48 +1371,95 @@ impl Renderer {
 
                     match editor.current_tool {
                         crate::editor::EditorTool::Build => {
-                            gl::BindVertexArray(
-                                self.block_vao,
-                            );
+                            let is_light =
+                                editor.build_template.cell_type
+                                    == crate::world::CellType::Light;
 
-                            let color =
-                                editor
-                                    .build_template
-                                    .color_rgb;
+                            if is_light {
+                                gl::BindVertexArray(
+                                    self.highlight_vao,
+                                );
 
-                            gl::Uniform3f(
-                                base_color_location,
-                                color.x,
-                                color.y,
-                                color.z,
-                            );
+                                gl::Uniform3f(
+                                    base_color_location,
+                                    1.0,
+                                    1.0,
+                                    0.2,
+                                );
 
-                            for x in x_min..=x_max {
-                                for y in y_min..=y_max {
-                                    for z in z_min..=z_max {
-                                        let model =
-                                            Mat4::from_translation(
-                                                Vec3::new(
-                                                    x as f32,
-                                                    y as f32,
-                                                    z as f32,
-                                                ),
+                                for x in x_min..=x_max {
+                                    for y in y_min..=y_max {
+                                        for z in z_min..=z_max {
+                                            let model =
+                                                Mat4::from_translation(
+                                                    Vec3::new(
+                                                        x as f32,
+                                                        y as f32,
+                                                        z as f32,
+                                                    ),
+                                                );
+
+                                            gl::UniformMatrix4fv(
+                                                model_location,
+                                                1,
+                                                gl::FALSE,
+                                                model
+                                                    .to_cols_array()
+                                                    .as_ptr(),
                                             );
 
-                                        gl::UniformMatrix4fv(
-                                            model_location,
-                                            1,
-                                            gl::FALSE,
-                                            model
-                                                .to_cols_array()
-                                                .as_ptr(),
-                                        );
+                                            gl::DrawArrays(
+                                                gl::LINES,
+                                                0,
+                                                self.highlight_vertex_count,
+                                            );
+                                        }
+                                    }
+                                }
+                            } else {
+                                gl::BindVertexArray(
+                                    self.block_vao,
+                                );
 
-                                        gl::DrawArrays(
-                                            gl::TRIANGLES,
-                                            0,
-                                            self.block_vertex_count,
-                                        );
+                                let color =
+                                    editor
+                                        .build_template
+                                        .color_rgb;
+
+                                gl::Uniform3f(
+                                    base_color_location,
+                                    color.x,
+                                    color.y,
+                                    color.z,
+                                );
+
+                                for x in x_min..=x_max {
+                                    for y in y_min..=y_max {
+                                        for z in z_min..=z_max {
+                                            let model =
+                                                Mat4::from_translation(
+                                                    Vec3::new(
+                                                        x as f32,
+                                                        y as f32,
+                                                        z as f32,
+                                                    ),
+                                                );
+
+                                            gl::UniformMatrix4fv(
+                                                model_location,
+                                                1,
+                                                gl::FALSE,
+                                                model
+                                                    .to_cols_array()
+                                                    .as_ptr(),
+                                            );
+
+                                            gl::DrawArrays(
+                                                gl::TRIANGLES,
+                                                0,
+                                                self.block_vertex_count,
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -1783,10 +1846,17 @@ fn create_anchor_marker() -> (u32, u32, i32) {
         [0.0, 1.0, 1.0, 1.0];
 
     let radius =
-        0.1;
+        0.15;
 
     let center =
         [0.0, 0.0, 0.0];
+
+    let cross_size = 0.3;
+
+    // Add crosshair lines for better visual clarity.
+    add_line(&mut vertices, [-cross_size, 0.0, 0.0], [cross_size, 0.0, 0.0], color);
+    add_line(&mut vertices, [0.0, -cross_size, 0.0], [0.0, cross_size, 0.0], color);
+    add_line(&mut vertices, [0.0, 0.0, -cross_size], [0.0, 0.0, cross_size], color);
 
     let latitudes =
         8;

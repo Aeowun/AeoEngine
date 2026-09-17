@@ -76,20 +76,57 @@ pub fn draw_tool_bar(ui: &mut Ui, editor: &mut Editor) {
         draw_tool_button(ui, &mut editor.current_tool, EditorTool::Build, "Build");
         draw_tool_button(ui, &mut editor.current_tool, EditorTool::Erase, "Erase");
 
+        ui.separator();
+
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Picking:").strong());
+            let pick_text = if editor.plane_picking { "Plane [ ON ]" } else { "Plane [ OFF ]" };
+            if ui.button(pick_text).clicked() {
+                editor.plane_picking = !editor.plane_picking;
+            }
+        });
+
         if editor.current_tool == EditorTool::Build {
             ui.separator();
 
             // Block Type Dropdown
-            ui.menu_button(RichText::new(format!("Block: {:?} ▼", editor.build_template.cell_type)).strong(), |ui| {
-                if ui.selectable_label(editor.build_template.cell_type == crate::world::CellType::Block, "Cube").clicked() {
-                    editor.build_template.cell_type = crate::world::CellType::Block;
-                    ui.close_menu();
-                }
-                if ui.selectable_label(editor.build_template.cell_type == crate::world::CellType::SpawnPoint, "Spawn point").clicked() {
-                    editor.build_template.cell_type = crate::world::CellType::SpawnPoint;
-                    ui.close_menu();
-                }
-            });
+            ui.menu_button(
+                RichText::new(format!("Block: {:?} ▼", editor.build_template.cell_type)).strong(),
+                |ui| {
+                    if ui
+                        .selectable_label(
+                            editor.build_template.cell_type == crate::world::CellType::Block,
+                            "Cube",
+                        )
+                        .clicked()
+                    {
+                        editor.build_template = crate::world::Cell::new_block();
+                        ui.close_menu();
+                    }
+
+                    if ui
+                        .selectable_label(
+                            editor.build_template.cell_type == crate::world::CellType::SpawnPoint,
+                            "Spawn point",
+                        )
+                        .clicked()
+                    {
+                        editor.build_template = crate::world::Cell::new_spawn_point();
+                        ui.close_menu();
+                    }
+
+                    if ui
+                        .selectable_label(
+                            editor.build_template.cell_type == crate::world::CellType::Light,
+                            "Light",
+                        )
+                        .clicked()
+                    {
+                        editor.build_template = crate::world::Cell::new_light();
+                        ui.close_menu();
+                    }
+                },
+            );
 
             ui.separator();
 

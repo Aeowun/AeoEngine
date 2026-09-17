@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use winit::event::{
     ElementState,
     MouseButton,
@@ -8,18 +10,17 @@ use winit::keyboard::{
     KeyCode,
     PhysicalKey,
 };
-use std::time::Instant;
 
-use crate::renderer::Renderer;
 use crate::editor::{
     Editor,
     EditorTool,
 };
+use crate::project::ProjectManager;
+use crate::renderer::Renderer;
 use crate::world::{
     CellType,
     World,
 };
-use crate::project::ProjectManager;
 
 use super::{
     physics,
@@ -34,196 +35,125 @@ use super::{
 /// low level rendering implementation, the world storage rules, or the editor
 /// implementation itself. Those systems remain in their own modules.
 ///
-/// The important ownership rule is that World remains the authoritative
-/// authored scene. PhysicsWorld is temporary runtime state used while the
-/// editor is in Play mode. The renderer consumes those systems when drawing.
-///
-/// The Home view is the project selection and project creation screen.
-/// The Editor view contains the actual world editing environment.
+/// World remains the authoritative authored scene. PhysicsWorld is temporary
+/// runtime state used while the editor is in Play mode.
 pub struct App {
-    /// Current high level application screen.
-    ///
-    /// Home displays the project interface.
-    /// Editor displays the world editor.
     pub view: View,
-
-    /// OpenGL renderer responsible for drawing the application.
     pub renderer: Renderer,
-
-    /// Editor state including tools, camera, selection, hover state, and
-    /// editor specific interface state.
     pub editor: Editor,
-
-    /// Authoritative authored world.
-    ///
-    /// Editor operations modify this world directly. During Play mode the
-    /// physics system works from a runtime representation of this state.
     pub world: World,
-
-    /// Project management state including the current project and recent
-    /// project information.
     pub project_manager: ProjectManager,
 
-    /// Time recorded at the end of the previous application update.
-    ///
-    /// This is used to calculate frame time for the fixed physics clock.
     pub last_frame_instant: Instant,
-
-    /// Fixed timestep accumulator used by the runtime physics simulation.
-    ///
-    /// Physics does not depend directly on the variable render frame rate.
-    /// The clock converts variable frame time into repeated fixed simulation
-    /// steps.
     pub physics_clock: physics::PhysicsClock,
-
-    /// Temporary runtime physics state.
-    ///
-    /// These bodies represent moving runtime objects while Play mode is
-    /// active. They are not the authoritative saved world.
     pub physics_world: physics::PhysicsWorld,
-
-    /// Editor mode used during the previous update.
-    ///
-    /// This allows App to detect the transition from Editor mode into Play
-    /// mode so the authored world can be registered into the physics world
-    /// once at the beginning of a play session.
     pub last_mode: EditorMode,
 
-    /// True when the New Project dialog is currently visible.
     pub show_new_project_dialog: bool,
-
-    /// Text currently entered into the New Project name field.
     pub new_project_name: String,
-
-    /// True when the Open Project dialog is currently visible.
     pub show_open_project_dialog: bool,
 
-    /// True while the middle mouse button is held.
-    ///
-    /// This state is used by the editor camera orbit controls.
     pub is_middle_mouse_down: bool,
-
-    /// Previous cursor position while a middle mouse camera gesture is active.
     pub last_cursor_pos: Option<(f64, f64)>,
-
-    /// Most recently received window cursor position.
-    ///
-    /// This remains in window coordinates. The picker converts this position
-    /// when it needs to calculate a world grid location.
     pub mouse_pos: (f64, f64),
 
-    /// State for left mouse button drag actions (Build/Erase).
     pub is_left_mouse_down: bool,
-
-    /// Starting grid coordinate for a drag operation.
     pub drag_start_coord: Option<crate::world::WorldCoord>,
 
-    /// Keyboard keys currently held by the user.
-    ///
-    /// App records physical key state so movement can be evaluated during the
-    /// regular update instead of depending on individual key press events.
     pub keys_down: std::collections::HashSet<KeyCode>,
-
-    /// True if a jump was requested this frame.
-    ///
-    /// This is transient and reset after the physics update.
     pub jump_requested: bool,
 
-    /// Management system for all active runtime characters.
-    ///
-    /// This handles spawning, ownership, and lifecycle of players and NPCs
-    /// during Play mode.
     pub character_system: crate::character::CharacterSystem,
 
-    /// Dedicated camera used during Play mode.
-    ///
-    /// This camera follows the active player character and remains independent
-    /// of the editor camera state.
+    /// Dedicated runtime camera used only during Play mode.
     pub gameplay_camera: crate::renderer::camera::GameplayCamera,
 
-    /// Snapshot of the editor camera state captured when entering Play mode.
-    ///
-    /// This is restored when returning to Editor mode to ensure the authored
-    /// perspective is preserved.
-    pub saved_editor_camera: Option<crate::renderer::camera::CameraController>,
+    /// Saved editor camera restored when leaving Play mode.
+    pub saved_editor_camera:
+        Option<crate::renderer::camera::CameraController>,
 }
 
 impl App {
-    /// Creates the initial application state.
-    ///
-    /// The application starts on the Home screen. A new empty World is created
-    /// here and is later replaced by loaded project data when a project is
-    /// opened or created.
     pub fn new(width: f32, height: f32) -> Self {
         Self {
             view: View::Home,
 
-            renderer: Renderer::new(width, height),
+            renderer: Renderer::new(
+                width,
+                height,
+            ),
 
             editor: Editor::new(),
 
             world: World::new(),
 
-            project_manager: ProjectManager::new(),
+            project_manager:
+                ProjectManager::new(),
 
-            last_frame_instant: Instant::now(),
+            last_frame_instant:
+                Instant::now(),
 
-            physics_clock: physics::PhysicsClock::new(),
+            physics_clock:
+                physics::PhysicsClock::new(),
 
-            physics_world: physics::PhysicsWorld::new(),
+            physics_world:
+                physics::PhysicsWorld::new(),
 
-            last_mode: EditorMode::default(),
+            last_mode:
+                EditorMode::default(),
 
-            show_new_project_dialog: false,
+            show_new_project_dialog:
+                false,
 
-            new_project_name: String::new(),
+            new_project_name:
+                String::new(),
 
-            show_open_project_dialog: false,
+            show_open_project_dialog:
+                false,
 
-            is_middle_mouse_down: false,
+            is_middle_mouse_down:
+                false,
 
-            last_cursor_pos: None,
+            last_cursor_pos:
+                None,
 
-            mouse_pos: (0.0, 0.0),
+            mouse_pos:
+                (0.0, 0.0),
 
-            is_left_mouse_down: false,
+            is_left_mouse_down:
+                false,
 
-            drag_start_coord: None,
+            drag_start_coord:
+                None,
 
-            keys_down: std::collections::HashSet::new(),
+            keys_down:
+                std::collections::HashSet::new(),
 
-            jump_requested: false,
+            jump_requested:
+                false,
 
-            character_system: crate::character::CharacterSystem::new(),
+            character_system:
+                crate::character::CharacterSystem::new(),
 
-            gameplay_camera: crate::renderer::camera::GameplayCamera::new(),
+            gameplay_camera:
+                crate::renderer::camera::GameplayCamera::new(),
 
-            saved_editor_camera: None,
+            saved_editor_camera:
+                None,
         }
     }
 
-    /// Receives window input events from winit.
+    /// Handles window events used by the application and editor.
     ///
-    /// App is responsible for deciding which application systems should react
-    /// to each event. egui has already received the same event before this
-    /// function is called.
-    ///
-    /// Keyboard input is gated when egui is requesting keyboard ownership.
-    /// Pointer input is currently gated using egui pointer state for normal
-    /// clicks, hover, and wheel input.
-    ///
-    /// Middle mouse is handled separately so the editor camera can maintain
-    /// its drag state across cursor movement.
+    /// Play camera mouse look is intentionally not handled through
+    /// WindowEvent::CursorMoved. Play receives relative DeviceEvent mouse
+    /// motion through App::on_mouse_motion instead.
     pub fn on_window_event(
         &mut self,
         event: &WindowEvent,
         egui_ctx: &egui::Context,
     ) {
         match event {
-            // Window size changed.
-            //
-            // Renderer dimensions must be updated whenever the native window
-            // changes size so subsequent rendering uses the new dimensions.
             WindowEvent::Resized(size) => {
                 self.renderer.resize(
                     size.width as f32,
@@ -231,25 +161,27 @@ impl App {
                 );
             }
 
-            // Keyboard input event.
-            //
-            // Physical key codes are used here so the editor movement and
-            // shortcut state does not depend on keyboard text layout.
             WindowEvent::KeyboardInput {
-                event: winit::event::KeyEvent {
-                    physical_key,
-                    state,
-                    ..
-                },
+                event:
+                    winit::event::KeyEvent {
+                        physical_key,
+                        state,
+                        ..
+                    },
                 ..
             } => {
                 if egui_ctx.wants_keyboard_input() {
                     return;
                 }
 
-                if let PhysicalKey::Code(key) = physical_key {
+                if let PhysicalKey::Code(key) =
+                    physical_key
+                {
                     if *state == ElementState::Pressed {
                         self.keys_down.insert(*key);
+
+                        let ctrl = self.keys_down.contains(&KeyCode::ControlLeft)
+                            || self.keys_down.contains(&KeyCode::ControlRight);
 
                         match key {
                             // G toggles between Home and Editor.
@@ -261,18 +193,101 @@ impl App {
                                 };
                             }
 
-                            // H and Escape return to Home when currently
-                            // editing.
-                            KeyCode::KeyH | KeyCode::Escape => {
+                            KeyCode::KeyS => {
+                                if ctrl && self.view == View::Editor {
+                                    self.save_project();
+                                }
+                            }
+
+                            KeyCode::KeyZ => {
+                                if ctrl && self.view == View::Editor {
+                                    if let Some(prev) = self.editor.history.undo_stack.pop() {
+                                        self.editor.history.redo_stack.push(self.world.cells.clone());
+                                        self.world.cells = prev;
+                                    }
+                                }
+                            }
+
+                            KeyCode::KeyY => {
+                                if ctrl && self.view == View::Editor {
+                                    if let Some(next) = self.editor.history.redo_stack.pop() {
+                                        self.editor.history.undo_stack.push(self.world.cells.clone());
+                                        self.world.cells = next;
+                                    }
+                                }
+                            }
+
+                            KeyCode::Delete => {
+                                if self.view == View::Editor && !self.editor.selected_coords.is_empty() {
+                                    self.editor.history.push(self.world.cells.clone());
+                                    for coord in &self.editor.selected_coords {
+                                        self.world.cells.remove(coord);
+                                    }
+                                    self.editor.selected_coords.clear();
+                                    self.editor.selected_coord = None;
+                                }
+                            }
+
+                            KeyCode::KeyF => {
+                                if self.view == View::Editor && !self.editor.selected_coords.is_empty() {
+                                    let mut min = glam::Vec3::new(f32::MAX, f32::MAX, f32::MAX);
+                                    let mut max = glam::Vec3::new(f32::MIN, f32::MIN, f32::MIN);
+                                    for coord in &self.editor.selected_coords {
+                                        let p = glam::Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32);
+                                        min = min.min(p);
+                                        max = max.max(p);
+                                    }
+                                    let center = (min + max) / 2.0;
+                                    self.editor.camera.target = center;
+                                    self.editor.anchor = crate::world::WorldCoord::new(
+                                        center.x.round() as i32,
+                                        center.y.round() as i32,
+                                        center.z.round() as i32,
+                                    );
+                                }
+                            }
+
+                            KeyCode::Digit1 => {
                                 if self.view == View::Editor {
-                                    self.exit_to_home();
-                                } else {
-                                    self.view = View::Home;
+                                    self.editor.current_tool = EditorTool::Navigate;
+                                }
+                            }
+                            KeyCode::Digit2 => {
+                                if self.view == View::Editor {
+                                    self.editor.current_tool = EditorTool::Select;
+                                }
+                            }
+                            KeyCode::Digit3 => {
+                                if self.view == View::Editor {
+                                    self.editor.current_tool = EditorTool::Build;
+                                }
+                            }
+                            KeyCode::Digit4 => {
+                                if self.view == View::Editor {
+                                    self.editor.current_tool = EditorTool::Erase;
+                                }
+                            }
+
+                            KeyCode::Escape => {
+                                if self.editor.mode == EditorMode::Play {
+                                    self.editor.mode = EditorMode::Editor;
+                                } else if self.view == View::Editor {
+                                    if self.is_left_mouse_down {
+                                        self.is_left_mouse_down = false;
+                                        self.drag_start_coord = None;
+                                    } else if !self.editor.selected_coords.is_empty() {
+                                        self.editor.selected_coords.clear();
+                                        self.editor.selected_coord = None;
+                                    } else {
+                                        self.exit_to_home();
+                                    }
                                 }
                             }
 
                             KeyCode::Space => {
-                                if self.view == View::Editor && self.editor.mode == EditorMode::Play {
+                                if self.view == View::Editor
+                                    && self.editor.mode == EditorMode::Play
+                                {
                                     self.jump_requested = true;
                                 }
                             }
@@ -285,28 +300,39 @@ impl App {
                 }
             }
 
-            // Mouse button input.
-            //
-            // Middle mouse is tracked separately because it controls the
-            // editor camera orbit gesture.
             WindowEvent::MouseInput {
                 state,
                 button,
                 ..
             } => {
-                let ppp = egui_ctx.pixels_per_point();
-                let mouse_logical = egui::pos2(
-                    self.mouse_pos.0 as f32 / ppp,
-                    self.mouse_pos.1 as f32 / ppp,
-                );
+                let ppp =
+                    egui_ctx.pixels_per_point();
+
+                let mouse_logical =
+                    egui::pos2(
+                        self.mouse_pos.0 as f32
+                            / ppp,
+                        self.mouse_pos.1 as f32
+                            / ppp,
+                    );
+
                 let in_viewport =
-                    self.editor.viewport_rect.contains(mouse_logical);
+                    self.editor
+                        .viewport_rect
+                        .contains(mouse_logical);
 
-                if *button == MouseButton::Middle {
-                    self.is_middle_mouse_down =
-                        *state == ElementState::Pressed;
+                let wants_pointer = egui_ctx.wants_pointer_input();
 
-                    if !self.is_middle_mouse_down {
+                if *button ==
+                    MouseButton::Middle
+                {
+                    if *state == ElementState::Pressed {
+                        if !in_viewport || wants_pointer {
+                            return;
+                        }
+                        self.is_middle_mouse_down = true;
+                    } else {
+                        self.is_middle_mouse_down = false;
                         self.last_cursor_pos = None;
                     }
 
@@ -314,129 +340,166 @@ impl App {
                 }
 
                 if *button == MouseButton::Left {
-                    if *state == ElementState::Pressed {
-                        self.is_left_mouse_down = true;
-                        self.drag_start_coord = self.editor.hovered_cell;
+                    if *state
+                        == ElementState::Pressed
+                    {
+                        if !in_viewport || wants_pointer {
+                            return;
+                        }
 
-                        // Immediate actions (Navigate, Select) trigger on press.
-                        if self.editor.current_tool == EditorTool::Navigate
-                            || self.editor.current_tool == EditorTool::Select
+                        self.is_left_mouse_down =
+                            true;
+
+                        self.drag_start_coord =
+                            self.editor.hovered_cell;
+
+                        if self.editor.current_tool
+                            == EditorTool::Navigate
+                            || self.editor.current_tool
+                                == EditorTool::Select
                         {
                             self.on_click();
                         }
                     } else {
-                        self.is_left_mouse_down = false;
-
-                        // Range actions (Build, Erase) trigger on release.
-                        if self.editor.current_tool == EditorTool::Build
-                            || self.editor.current_tool == EditorTool::Erase
-                        {
-                            if let (Some(start), Some(end)) =
-                                (self.drag_start_coord, self.editor.hovered_cell)
+                        if self.is_left_mouse_down {
+                            if self.editor.current_tool
+                                == EditorTool::Build
+                                || self.editor.current_tool
+                                    == EditorTool::Erase
+                                || self.editor.current_tool
+                                    == EditorTool::Select
                             {
-                                self.apply_tool_to_range(start, end);
+                                if let (
+                                    Some(start),
+                                    Some(end),
+                                ) = (
+                                    self.drag_start_coord,
+                                    self.editor.hovered_cell,
+                                ) {
+                                    self.apply_tool_to_range(
+                                        start,
+                                        end,
+                                    );
+                                }
                             }
                         }
 
-                        self.drag_start_coord = None;
+                        self.is_left_mouse_down =
+                            false;
+
+                        self.drag_start_coord =
+                            None;
                     }
 
                     return;
                 }
 
-                // Normal pointer actions are ignored when outside the central viewport.
                 if !in_viewport {
                     return;
                 }
             }
 
-            // Cursor movement event.
-            //
-            // The raw window cursor position is stored first. The editor
-            // hover system can then use that position when calculating the
-            // current grid cell.
+            /// CursorMoved remains the editor cursor path.
+            ///
+            /// Play camera look does not use the cursor's absolute position
+            /// or WindowEvent::CursorMoved delta.
             WindowEvent::CursorMoved {
                 position,
                 ..
             } => {
-                let dx = position.x - self.mouse_pos.0;
-                let dy = position.y - self.mouse_pos.1;
+                let dx =
+                    position.x
+                        - self.mouse_pos.0;
 
-                self.mouse_pos = (
-                    position.x,
-                    position.y,
-                );
+                let dy =
+                    position.y
+                        - self.mouse_pos.1;
 
-                let ppp = egui_ctx.pixels_per_point();
-                let mouse_logical = egui::pos2(
-                    position.x as f32 / ppp,
-                    position.y as f32 / ppp,
-                );
+                self.mouse_pos =
+                    (
+                        position.x,
+                        position.y,
+                    );
+
+                let ppp =
+                    egui_ctx.pixels_per_point();
+
+                let mouse_logical =
+                    egui::pos2(
+                        position.x as f32
+                            / ppp,
+                        position.y as f32
+                            / ppp,
+                    );
+
                 let in_viewport =
-                    self.editor.viewport_rect.contains(mouse_logical);
+                    self.editor
+                        .viewport_rect
+                        .contains(mouse_logical);
 
-                if self.editor.mode == EditorMode::Play {
-                    self.gameplay_camera.orbit(
+                if in_viewport
+                    && self.editor.mode
+                        == crate::engine::EditorMode::Editor
+                {
+                    self.update_hover();
+                } else {
+                    self.editor.hovered_cell =
+                        None;
+                }
+
+                if self.is_middle_mouse_down
+                    && self.editor.mode
+                        == EditorMode::Editor
+                {
+                    self.editor.camera.orbit(
                         dx as f32,
                         dy as f32,
                     );
                 }
-
-                // Hover is only active when the pointer is inside the central viewport.
-                if in_viewport
-                    && self.editor.mode == crate::engine::EditorMode::Editor
-                {
-                    self.update_hover();
-                } else {
-                    self.editor.hovered_cell = None;
-                }
-
-                // Once middle mouse is held, mouse movement is converted
-                // into camera orbit movement.
-                if self.is_middle_mouse_down {
-                    if self.editor.mode == EditorMode::Editor {
-                        self.editor.camera.orbit(
-                            dx as f32,
-                            dy as f32,
-                        );
-                    }
-                }
             }
 
-            // Mouse wheel input.
-            //
-            // Wheel movement controls editor camera zoom. Pointer ownership
-            // is checked before changing the camera so controls used by egui
-            // do not also change the editor camera.
             WindowEvent::MouseWheel {
                 delta,
                 ..
             } => {
-                let ppp = egui_ctx.pixels_per_point();
-                let mouse_logical = egui::pos2(
-                    self.mouse_pos.0 as f32 / ppp,
-                    self.mouse_pos.1 as f32 / ppp,
-                );
-                let in_viewport =
-                    self.editor.viewport_rect.contains(mouse_logical);
+                let ppp =
+                    egui_ctx.pixels_per_point();
 
-                if !in_viewport {
+                let mouse_logical =
+                    egui::pos2(
+                        self.mouse_pos.0 as f32
+                            / ppp,
+                        self.mouse_pos.1 as f32
+                            / ppp,
+                    );
+
+                let in_viewport =
+                    self.editor
+                        .viewport_rect
+                        .contains(mouse_logical);
+
+                if !in_viewport || egui_ctx.wants_pointer_input() {
                     return;
                 }
 
                 let y = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => *y,
+                    MouseScrollDelta::LineDelta(
+                        _,
+                        y,
+                    ) => *y,
 
-                    MouseScrollDelta::PixelDelta(pos) => {
-                        (pos.y / 100.0) as f32
+                    MouseScrollDelta::PixelDelta(
+                        pos,
+                    ) => {
+                        (pos.y / 100.0)
+                            as f32
                     }
                 };
 
-                if self.editor.mode == EditorMode::Editor {
+                if self.editor.mode
+                    == EditorMode::Editor
+                {
                     self.editor.camera.zoom(y);
-
-                    // Camera movement can change which grid location lies under
-                    // the cursor, so hover is refreshed after zoom.
                     self.update_hover();
                 }
             }
@@ -445,15 +508,50 @@ impl App {
         }
     }
 
-    /// Recalculates the editor hover cell from the current mouse position.
+    /// Applies raw relative mouse movement to the gameplay camera.
     ///
-    /// The picker receives the renderer dimensions and camera so it can turn
-    /// the cursor location into a ray and determine which editor grid cell is
-    /// currently under the mouse.
-    ///
-    /// App does not perform the picking math itself. That responsibility stays
-    /// inside the editor grid picking system.
+    /// This is the Play mode mouse look path. Absolute cursor position is not
+    /// used to determine orientation.
+    pub fn on_mouse_motion(
+        &mut self,
+        dx: f64,
+        dy: f64,
+    ) {
+        if self.view == View::Editor
+            && self.editor.mode == EditorMode::Play
+        {
+            self.gameplay_camera.orbit(
+                dx as f32,
+                dy as f32,
+            );
+        }
+    }
+
     fn update_hover(&mut self) {
+        if !self.editor.plane_picking {
+            let hit = crate::editor::grid::picking::raycast_world(
+                self.mouse_pos.0 as f32,
+                self.mouse_pos.1 as f32,
+                self.renderer.width(),
+                self.renderer.height(),
+                &self.editor.camera,
+                &self.world,
+            );
+
+            if let Some(coord) = hit {
+                self.editor.hovered_cell = Some(coord);
+                return;
+            }
+
+            // No ray hit. Select and Erase do not fall back to the plane.
+            if self.editor.current_tool == EditorTool::Select
+                || self.editor.current_tool == EditorTool::Erase
+            {
+                self.editor.hovered_cell = None;
+                return;
+            }
+        }
+
         self.editor.hovered_cell =
             crate::editor::grid::picking::update_hover(
                 self.mouse_pos.0 as f32,
@@ -465,24 +563,28 @@ impl App {
             );
     }
 
-    /// Handles immediate editor actions (Navigate, Select).
-    ///
-    /// These actions trigger on mouse press rather than release.
     fn on_click(&mut self) {
         if self.view == View::Editor
-            && self.editor.mode == crate::engine::EditorMode::Editor
+            && self.editor.mode
+                == crate::engine::EditorMode::Editor
         {
-            if let Some(hover) = self.editor.hovered_cell {
+            if let Some(hover) =
+                self.editor.hovered_cell
+            {
                 match self.editor.current_tool {
-                    // Navigate changes the editor anchor.
                     EditorTool::Navigate => {
                         self.editor.set_anchor(hover);
                     }
 
-                    // Select changes the currently inspected world cell.
                     EditorTool::Select => {
-                        self.editor.selected_coord = Some(hover);
-                        self.editor.show_properties_window = true;
+                        self.editor.selected_coord =
+                            Some(hover);
+                        self.editor.selected_coords =
+                            vec![hover];
+
+                        self.editor
+                            .show_properties_window =
+                            true;
                     }
 
                     _ => {}
@@ -491,42 +593,59 @@ impl App {
         }
     }
 
-    /// Applies the current tool (Build, Erase) to a range of cells.
-    ///
-    /// This handles single clicks (start == end), lines (one axis drag),
-    /// and rectangular planes (two axis drag).
     fn apply_tool_to_range(
         &mut self,
         start: crate::world::WorldCoord,
         end: crate::world::WorldCoord,
     ) {
         if self.view != View::Editor
-            || self.editor.mode != crate::engine::EditorMode::Editor
+            || self.editor.mode
+                != crate::engine::EditorMode::Editor
         {
             return;
         }
 
-        let x_min = start.x.min(end.x);
-        let x_max = start.x.max(end.x);
-        let y_min = start.y.min(end.y);
-        let y_max = start.y.max(end.y);
-        let z_min = start.z.min(end.z);
-        let z_max = start.z.max(end.z);
+        if self.editor.current_tool == EditorTool::Select {
+            self.editor.selected_coords.clear();
+            self.editor.selected_coord = None;
+        } else {
+            self.editor.history.push(self.world.cells.clone());
+        }
+
+        let x_min =
+            start.x.min(end.x);
+
+        let x_max =
+            start.x.max(end.x);
+
+        let y_min =
+            start.y.min(end.y);
+
+        let y_max =
+            start.y.max(end.y);
+
+        let z_min =
+            start.z.min(end.z);
+
+        let z_max =
+            start.z.max(end.z);
 
         for x in x_min..=x_max {
             for y in y_min..=y_max {
                 for z in z_min..=z_max {
-                    let coord = crate::world::WorldCoord::new(
-                        x,
-                        y,
-                        z,
-                    );
+                    let coord =
+                        crate::world::WorldCoord::new(
+                            x,
+                            y,
+                            z,
+                        );
 
                     match self.editor.current_tool {
-                        // Build writes a new Block cell into the authored World using current settings.
                         EditorTool::Build => {
-                            let mut cell =
-                                self.editor.build_template.clone();
+                            let cell =
+                                self.editor
+                                    .build_template
+                                    .clone();
 
                             self.world.set_cell(
                                 coord,
@@ -540,12 +659,19 @@ impl App {
                             }
                         }
 
-                        // Erase replaces the selected grid location with Empty.
                         EditorTool::Erase => {
                             self.world.set_cell(
                                 coord,
                                 CellType::Empty,
                             );
+                        }
+
+                        EditorTool::Select => {
+                            if self.world.get(coord).is_some() {
+                                self.editor.selected_coords.push(coord);
+                                // Primary selection is the most recentauthored cell in the range.
+                                self.editor.selected_coord = Some(coord);
+                            }
                         }
 
                         _ => {}
@@ -555,18 +681,12 @@ impl App {
         }
     }
 
-    /// Performs one variable frame update.
-    ///
-    /// Physics is handled through the fixed timestep clock rather than by
-    /// directly using frame_time as the simulation step.
-    ///
-    /// Editor camera movement, world management requests, and project save
-    /// requests are also processed here.
     pub fn update(
         &mut self,
         egui_ctx: &egui::Context,
     ) {
-        let now = Instant::now();
+        let now =
+            Instant::now();
 
         let frame_time =
             now.duration_since(
@@ -574,67 +694,64 @@ impl App {
             )
             .as_secs_f32();
 
-        self.last_frame_instant = now;
+        self.last_frame_instant =
+            now;
 
         if self.view == View::Editor {
-            // --- Mode Transition Logic ---
-
-            // 1. Entering Play Mode
-            if self.editor.mode == EditorMode::Play
-                && self.last_mode == EditorMode::Editor
+            if self.editor.mode
+                == EditorMode::Play
+                && self.last_mode
+                    == EditorMode::Editor
             {
-                // Snapshot the editor camera state before physics takes over.
                 self.saved_editor_camera =
-                    Some(self.editor.camera.clone());
+                    Some(
+                        self.editor.camera.clone(),
+                    );
 
                 self.physics_world
-                    .register_from_world(&self.world);
+                    .register_from_world(
+                        &self.world,
+                    );
 
                 self.character_system
                     .spawn_player(&self.world);
             }
 
-            // 2. Returning to Editor Mode
-            if self.editor.mode == EditorMode::Editor
-                && self.last_mode == EditorMode::Play
+            if self.editor.mode
+                == EditorMode::Editor
+                && self.last_mode
+                    == EditorMode::Play
             {
-                // Restore the authored perspective exactly as it was.
                 if let Some(saved) =
-                    self.saved_editor_camera.take()
+                    self.saved_editor_camera
+                        .take()
                 {
-                    self.editor.camera = saved;
+                    self.editor.camera =
+                        saved;
                 }
 
-                // Clear accumulated simulation time and runtime state.
                 self.physics_clock.reset();
-                self.character_system.clear();
-                self.physics_world.bodies.clear();
+
+                self.character_system
+                    .clear();
+
+                self.physics_world
+                    .bodies
+                    .clear();
             }
 
-            self.last_mode = self.editor.mode;
+            self.last_mode =
+                self.editor.mode;
 
-            if self.editor.mode == EditorMode::Play {
-                let gravity = self.world.gravity;
+            if self.editor.mode
+                == EditorMode::Play
+            {
+                let gravity =
+                    self.world.gravity;
 
                 let p_world =
                     &mut self.physics_world;
 
-                // Edge scrolling rotates the gameplay camera around the player.
-                const EDGE_MARGIN: f32 = 50.0;
-                const EDGE_YAW_SPEED: f32 = 1.5;
-                const EDGE_PITCH_SPEED: f32 = 1.0;
-
-                // The editor viewport remains the boundary for Play-only
-                // edge scrolling. This does not move the player or camera
-                // target through the world.
-                let viewport =
-                    self.editor.viewport_rect;
-
-                let pixels_per_point =
-                    egui_ctx.pixels_per_point();
-
-                // Capture horizontal movement input and transform it based on the
-                // gameplay camera's horizontal orientation.
                 let mut raw_input =
                     glam::Vec2::ZERO;
 
@@ -663,17 +780,22 @@ impl App {
                 }
 
                 let world_move_input =
-                    if raw_input.length_squared() > 0.001 {
+                    if raw_input
+                        .length_squared()
+                        > 0.001
+                    {
                         let (
                             cam_fwd,
                             cam_right,
-                        ) = self.gameplay_camera
-                            .get_horizontal_basis();
+                        ) =
+                            self.gameplay_camera
+                                .get_horizontal_basis();
 
-                        // Horizontal forward/right are 3D vectors with y=0.
                         let world_vec =
-                            cam_right * raw_input.x
-                            + cam_fwd * raw_input.y;
+                            cam_right
+                                * raw_input.x
+                                + cam_fwd
+                                    * raw_input.y;
 
                         glam::Vec2::new(
                             world_vec.x,
@@ -684,83 +806,6 @@ impl App {
                         glam::Vec2::ZERO
                     };
 
-                // Edge scrolling changes gameplay camera yaw and pitch.
-                // The camera still orbits around the player and never moves
-                // the player's world-space pivot.
-                let mut edge_yaw =
-                    0.0_f32;
-
-                let mut edge_pitch =
-                    0.0_f32;
-
-                if viewport.is_positive() {
-                    let mouse_pt =
-                        egui::pos2(
-                            self.mouse_pos.0 as f32
-                                / pixels_per_point,
-                            self.mouse_pos.1 as f32
-                                / pixels_per_point,
-                        );
-
-                    if mouse_pt.x
-                        < viewport.min.x + EDGE_MARGIN
-                    {
-                        edge_yaw = -(
-                            1.0
-                                - (
-                                    (mouse_pt.x - viewport.min.x)
-                                        / EDGE_MARGIN
-                                )
-                                .clamp(
-                                    0.0,
-                                    1.0,
-                                )
-                        );
-                    } else if mouse_pt.x
-                        > viewport.max.x - EDGE_MARGIN
-                    {
-                        edge_yaw =
-                            1.0
-                                - (
-                                    (viewport.max.x - mouse_pt.x)
-                                        / EDGE_MARGIN
-                                )
-                                .clamp(
-                                    0.0,
-                                    1.0,
-                                );
-                    }
-
-                    if mouse_pt.y
-                        < viewport.min.y + EDGE_MARGIN
-                    {
-                        edge_pitch = -(
-                            1.0
-                                - (
-                                    (mouse_pt.y - viewport.min.y)
-                                        / EDGE_MARGIN
-                                )
-                                .clamp(
-                                    0.0,
-                                    1.0,
-                                )
-                        );
-                    } else if mouse_pt.y
-                        > viewport.max.y - EDGE_MARGIN
-                    {
-                        edge_pitch =
-                            1.0
-                                - (
-                                    (viewport.max.y - mouse_pt.y)
-                                        / EDGE_MARGIN
-                                )
-                                .clamp(
-                                    0.0,
-                                    1.0,
-                                );
-                    }
-                }
-
                 let character_system =
                     &mut self.character_system;
 
@@ -770,13 +815,9 @@ impl App {
                 let gameplay_camera =
                     &mut self.gameplay_camera;
 
-                // Physics uses the fixed simulation clock so the same amount
-                // of simulation time produces the same sequence of fixed
-                // physics steps regardless of render frame rate.
                 self.physics_clock.update(
                     frame_time,
                     |dt| {
-                        // Gravity changes velocity first.
                         p_world.apply_gravity(
                             gravity,
                             dt,
@@ -796,11 +837,10 @@ impl App {
                             .refresh_dynamic_support();
 
                         p_world
-                            .update_sleeping(gravity);
+                            .update_sleeping(
+                                gravity,
+                            );
 
-                        // Character Update
-                        // Characters interact with the voxel world using
-                        // fixed simulation steps.
                         character_system.update(
                             world,
                             dt,
@@ -808,34 +848,11 @@ impl App {
                             self.jump_requested,
                         );
 
-                        // Edge scroll feeds the existing orbit controls.
-                        //
-                        // Convert the desired angular speed into the same
-                        // input units used by GameplayCamera::orbit().
-                        if edge_yaw != 0.0
-                            || edge_pitch != 0.0
-                        {
-                            let yaw_input =
-                                edge_yaw
-                                    * EDGE_YAW_SPEED
-                                    * dt
-                                    / crate::renderer::camera::ORBIT_SENSITIVITY;
-
-                            let pitch_input =
-                                edge_pitch
-                                    * EDGE_PITCH_SPEED
-                                    * dt
-                                    / crate::renderer::camera::ORBIT_SENSITIVITY;
-
-                            gameplay_camera.orbit(
-                                yaw_input,
-                                pitch_input,
-                            );
-                        }
+                        let _ =
+                            gameplay_camera;
                     },
                 );
 
-                // Update gameplay camera to follow the primary character.
                 if let Some(player) =
                     self.character_system
                         .get_active_characters()
@@ -848,17 +865,20 @@ impl App {
                         );
                 }
 
-                // Reset transient input flags after the physics simulation.
-                self.jump_requested = false;
+                self.jump_requested =
+                    false;
             } else {
-                // Leaving Play clears accumulated simulation time and runtime state.
+                if self.is_left_mouse_down && self.editor.current_tool == EditorTool::Select {
+                    if let (Some(start), Some(end)) = (self.drag_start_coord, self.editor.hovered_cell) {
+                        self.apply_tool_to_range(start, end);
+                    }
+                }
+
                 self.physics_clock.reset();
                 self.character_system.clear();
                 self.physics_world.bodies.clear();
             }
 
-            // Camera movement is blocked while egui is requesting keyboard
-            // interaction.
             if egui_ctx.wants_keyboard_input() {
                 return;
             }
@@ -890,15 +910,14 @@ impl App {
                 move_vec.x += 1.0;
             }
 
-            if move_vec != glam::Vec2::ZERO {
+            if move_vec !=
+                glam::Vec2::ZERO
+            {
                 self.editor.camera.move_target(
                     move_vec.x,
                     move_vec.y,
                 );
 
-                /// Navigation coordinate fields follow the camera target so
-                /// the navigation UI continues to describe the current editor
-                /// focus.
                 let target =
                     self.editor.camera.target;
 
@@ -915,23 +934,24 @@ impl App {
                         .to_string();
             }
 
-            /// A clear request replaces the current authored world with a new
-            /// empty world.
             if self.editor.needs_clear_world {
-                self.world = World::new();
-                self.editor.needs_clear_world = false;
+                self.editor.history.push(self.world.cells.clone());
+                self.world =
+                    World::new();
 
-                println!("World cleared.");
+                self.editor.needs_clear_world =
+                    false;
+
+                println!(
+                    "World cleared."
+                );
             }
 
-            /// Save requests are processed here so editor UI code can request
-            /// a save without directly performing filesystem work from the UI.
             if self.editor.needs_save {
                 self.save_project();
                 self.editor.needs_save = false;
             }
 
-            /// Exit requests return the application to the Home screen.
             if self.editor.needs_exit {
                 self.exit_to_home();
                 self.editor.needs_exit = false;
@@ -939,108 +959,226 @@ impl App {
         }
     }
 
-    /// Leaves the current editor session and returns to Home.
-    ///
-    /// The authored project is saved before the current World and runtime
-    /// physics state are discarded.
-    ///
-    /// The runtime PhysicsWorld is temporary and therefore does not become the
-    /// source of truth when leaving the editor.
     pub fn exit_to_home(&mut self) {
-        // Reset the editor mode before unloading the editor session.
         self.editor.mode =
             crate::engine::EditorMode::Editor;
 
-        // Save the current authored project before unloading it.
         self.save_project();
 
-        // Discard the in memory authored world currently loaded into the App.
-        self.world = World::new();
+        self.world =
+            World::new();
 
-        // Discard temporary runtime physics bodies and characters.
-        self.physics_world.bodies.clear();
-        self.character_system.clear();
+        self.physics_world
+            .bodies
+            .clear();
 
-        // The project manager no longer owns an active project.
-        self.project_manager.current_project =
-            None;
+        self.character_system
+            .clear();
 
-        // Home becomes the active application view.
+        self.project_manager
+            .current_project = None;
+
+        self.editor.history.undo_stack.clear();
+        self.editor.history.redo_stack.clear();
+
         self.view = View::Home;
     }
 
-    /// Builds the egui interface for the current application view.
-    ///
-    /// The Home view contains the project management interface.
-    /// The Editor view delegates UI construction to Editor::show_ui.
-    ///
-    /// UI actions request state changes during the current frame. next_view is
-    /// used so the active view is changed after the current UI hierarchy has
-    /// finished being built.
     pub fn update_ui(
         &mut self,
         ctx: &egui::Context,
     ) {
-        let mut next_view = None;
+        let mut next_view =
+            None;
 
-        if self.view == View::Home {
-            /// Main project window.
-            ///
-            /// This is the current Home screen interface. It is not the
-            /// OpenGL triangle or other renderer background. Those visuals are
-            /// produced by Renderer::render_home.
-            egui::Window::new("Projects")
+        if self.view ==
+            View::Home
+        {
+            egui::Window::new(
+                "Projects",
+            )
+            .anchor(
+                egui::Align2::CENTER_CENTER,
+                [0.0, 0.0],
+            )
+            .collapsible(false)
+            .resizable(false)
+            .show(
+                ctx,
+                |ui| {
+                    if ui
+                        .button("New Project")
+                        .clicked()
+                    {
+                        self.show_new_project_dialog =
+                            true;
+
+                        self.show_open_project_dialog =
+                            false;
+                    }
+
+                    if ui
+                        .button("Open Project")
+                        .clicked()
+                    {
+                        self.show_open_project_dialog =
+                            true;
+
+                        self.show_new_project_dialog =
+                            false;
+                    }
+
+                    if !self
+                        .project_manager
+                        .recent_projects
+                        .is_empty()
+                    {
+                        ui.separator();
+
+                        ui.label(
+                            "Recent Projects",
+                        );
+
+                        let recent =
+                            self.project_manager
+                                .recent_projects
+                                .clone();
+
+                        for path in recent {
+                            let name =
+                                path.file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy();
+
+                            if ui
+                                .button(
+                                    format!(
+                                        "{}",
+                                        name
+                                    ),
+                                )
+                                .clicked()
+                            {
+                                if self
+                                    .project_manager
+                                    .open_project(
+                                        path,
+                                    )
+                                {
+                                    self.load_project();
+
+                                    next_view =
+                                        Some(
+                                            View::Editor,
+                                        );
+                                } else {
+                                    self.project_manager
+                                        .load_recent();
+                                }
+                            }
+                        }
+                    }
+                },
+            );
+
+            if self.show_new_project_dialog {
+                egui::Window::new(
+                    "New Project",
+                )
                 .anchor(
                     egui::Align2::CENTER_CENTER,
-                    [0.0, 0.0],
+                    [0.0, 100.0],
                 )
                 .collapsible(false)
-                .resizable(false)
                 .show(
                     ctx,
                     |ui| {
-                        /// Starts the New Project flow.
-                        if ui
-                            .button("New Project")
-                            .clicked()
-                        {
-                            self.show_new_project_dialog =
-                                true;
+                        ui.horizontal(
+                            |ui| {
+                                ui.label(
+                                    "Name:",
+                                );
 
-                            self.show_open_project_dialog =
-                                false;
-                        }
+                                ui.text_edit_singleline(
+                                    &mut self
+                                        .new_project_name,
+                                );
+                            },
+                        );
 
-                        /// Starts the Open Project flow.
-                        if ui
-                            .button("Open Project")
-                            .clicked()
-                        {
-                            self.show_open_project_dialog =
-                                true;
+                        ui.horizontal(
+                            |ui| {
+                                if ui
+                                    .button(
+                                        "Create",
+                                    )
+                                    .clicked()
+                                {
+                                    if self
+                                        .project_manager
+                                        .create_project(
+                                            &self
+                                                .new_project_name,
+                                        )
+                                        .is_some()
+                                    {
+                                        self.load_project();
 
-                            self.show_new_project_dialog =
-                                false;
-                        }
+                                        next_view =
+                                            Some(
+                                                View::Editor,
+                                            );
 
-                        /// Recent projects are only shown when at least one
-                        /// project has been recorded by the project manager.
-                        if !self
-                            .project_manager
-                            .recent_projects
+                                        self
+                                            .show_new_project_dialog =
+                                            false;
+
+                                        self
+                                            .new_project_name
+                                            .clear();
+                                    }
+                                }
+
+                                if ui
+                                    .button(
+                                        "Cancel",
+                                    )
+                                    .clicked()
+                                {
+                                    self
+                                        .show_new_project_dialog =
+                                        false;
+                                }
+                            },
+                        );
+                    },
+                );
+            }
+
+            if self.show_open_project_dialog {
+                egui::Window::new(
+                    "Open Project",
+                )
+                .anchor(
+                    egui::Align2::CENTER_CENTER,
+                    [0.0, 100.0],
+                )
+                .collapsible(false)
+                .show(
+                    ctx,
+                    |ui| {
+                        let projects =
+                            self.project_manager
+                                .list_projects();
+
+                        if projects
                             .is_empty()
                         {
-                            ui.separator();
                             ui.label(
-                                "Recent Projects",
+                                "No projects found in UserData.",
                             );
-
-                            let recent =
-                                self.project_manager
-                                    .recent_projects
-                                    .clone();
-
-                            for path in recent {
+                        } else {
+                            for path in projects {
                                 let name =
                                     path.file_name()
                                         .unwrap_or_default()
@@ -1067,179 +1205,45 @@ impl App {
                                             Some(
                                                 View::Editor,
                                             );
-                                    } else {
-                                        self.project_manager
-                                            .load_recent();
+
+                                        self
+                                            .show_open_project_dialog =
+                                            false;
                                     }
                                 }
                             }
                         }
+
+                        if ui
+                            .button(
+                                "Cancel",
+                            )
+                            .clicked()
+                        {
+                            self
+                                .show_open_project_dialog =
+                                false;
+                        }
                     },
                 );
-
-            /// New Project dialog.
-            if self.show_new_project_dialog {
-                egui::Window::new("New Project")
-                    .anchor(
-                        egui::Align2::CENTER_CENTER,
-                        [0.0, 100.0],
-                    )
-                    .collapsible(false)
-                    .show(
-                        ctx,
-                        |ui| {
-                            ui.horizontal(
-                                |ui| {
-                                    ui.label("Name:");
-
-                                    ui.text_edit_singleline(
-                                        &mut self
-                                            .new_project_name,
-                                    );
-                                },
-                            );
-
-                            ui.horizontal(
-                                |ui| {
-                                    /// Creates the project and loads it into
-                                    /// the editor when successful.
-                                    if ui
-                                        .button("Create")
-                                        .clicked()
-                                    {
-                                        if self
-                                            .project_manager
-                                            .create_project(
-                                                &self
-                                                    .new_project_name,
-                                            )
-                                            .is_some()
-                                        {
-                                            self.load_project();
-
-                                            next_view =
-                                                Some(
-                                                    View::Editor,
-                                                );
-
-                                            self
-                                                .show_new_project_dialog =
-                                                false;
-
-                                            self
-                                                .new_project_name
-                                                .clear();
-                                        }
-                                    }
-
-                                    /// Cancels the creation dialog without
-                                    /// changing the current project.
-                                    if ui
-                                        .button("Cancel")
-                                        .clicked()
-                                    {
-                                        self
-                                            .show_new_project_dialog =
-                                            false;
-                                    }
-                                },
-                            );
-                        },
-                    );
             }
-
-            /// Open Project dialog.
-            if self.show_open_project_dialog {
-                egui::Window::new("Open Project")
-                    .anchor(
-                        egui::Align2::CENTER_CENTER,
-                        [0.0, 100.0],
-                    )
-                    .collapsible(false)
-                    .show(
-                        ctx,
-                        |ui| {
-                            let projects =
-                                self.project_manager
-                                    .list_projects();
-
-                            if projects.is_empty() {
-                                ui.label(
-                                    "No projects found in UserData.",
-                                );
-                            } else {
-                                for path in projects {
-                                    let name =
-                                        path.file_name()
-                                            .unwrap_or_default()
-                                            .to_string_lossy();
-
-                                    if ui
-                                        .button(
-                                            format!(
-                                                "{}",
-                                                name
-                                            ),
-                                        )
-                                        .clicked()
-                                    {
-                                        if self
-                                            .project_manager
-                                            .open_project(
-                                                path,
-                                            )
-                                        {
-                                            self.load_project();
-
-                                            next_view =
-                                                Some(
-                                                    View::Editor,
-                                                );
-
-                                            self
-                                                .show_open_project_dialog =
-                                                false;
-                                        }
-                                    }
-                                }
-                            }
-
-                            /// Closes the project dialog without opening
-                            /// anything.
-                            if ui
-                                .button("Cancel")
-                                .clicked()
-                            {
-                                self
-                                    .show_open_project_dialog =
-                                    false;
-                            }
-                        },
-                    );
-            }
-        } else if self.view == View::Editor {
-            /// Editor owns the actual editor interface. App only passes the
-            /// current egui context and the authoritative World.
+        } else if self.view ==
+            View::Editor
+        {
             self.editor.show_ui(
                 ctx,
                 &mut self.world,
             );
         }
 
-        /// Apply any requested screen transition after UI generation.
-        if let Some(view) = next_view {
-            self.view = view;
+        if let Some(view) =
+            next_view
+        {
+            self.view =
+                view;
         }
     }
 
-    /// Draws the current application view.
-    ///
-    /// Home rendering is handled by Renderer::render_home.
-    /// Editor rendering is handled by Renderer::render_editor.
-    ///
-    /// The renderer receives immutable world and physics references because
-    /// rendering should represent current state rather than modify ownership
-    /// of the scene or simulation.
     pub fn render(&self) {
         match self.view {
             View::Home => {
@@ -1263,18 +1267,14 @@ impl App {
         }
     }
 
-    /// Loads the active project World and camera state from disk.
-    ///
-    /// World persistence owns the world file format. App only selects the file
-    /// belonging to the current project and asks the persistence layer to load
-    /// it.
     pub fn load_project(&mut self) {
         if let Some(project_path) =
             &self.project_manager.current_project
         {
-            /// Load authored world data.
             let world_path =
-                project_path.join("world.dat");
+                project_path.join(
+                    "world.dat",
+                );
 
             if let Err(e) =
                 crate::world::persistence::load_world(
@@ -1293,11 +1293,10 @@ impl App {
                 );
             }
 
-            /// Camera state is stored separately from the World because the
-            /// camera belongs to the editor session rather than the authored
-            /// scene itself.
             let camera_path =
-                project_path.join("camera.dat");
+                project_path.join(
+                    "camera.dat",
+                );
 
             if camera_path.exists() {
                 if let Ok(content) =
@@ -1316,57 +1315,42 @@ impl App {
                             parts[0]
                                 .parse()
                                 .unwrap_or(
-                                    self.editor
-                                        .camera
-                                        .yaw,
+                                    self.editor.camera.yaw,
                                 );
 
                         self.editor.camera.pitch =
                             parts[1]
                                 .parse()
                                 .unwrap_or(
-                                    self.editor
-                                        .camera
-                                        .pitch,
+                                    self.editor.camera.pitch,
                                 );
 
                         self.editor.camera.distance =
                             parts[2]
                                 .parse()
                                 .unwrap_or(
-                                    self.editor
-                                        .camera
-                                        .distance,
+                                    self.editor.camera.distance,
                                 );
 
                         self.editor.camera.target.x =
                             parts[3]
                                 .parse()
                                 .unwrap_or(
-                                    self.editor
-                                        .camera
-                                        .target
-                                        .x,
+                                    self.editor.camera.target.x,
                                 );
 
                         self.editor.camera.target.y =
                             parts[4]
                                 .parse()
                                 .unwrap_or(
-                                    self.editor
-                                        .camera
-                                        .target
-                                        .y,
+                                    self.editor.camera.target.y,
                                 );
 
                         self.editor.camera.target.z =
                             parts[5]
                                 .parse()
                                 .unwrap_or(
-                                    self.editor
-                                        .camera
-                                        .target
-                                        .z,
+                                    self.editor.camera.target.z,
                                 );
 
                         println!(
@@ -1379,17 +1363,14 @@ impl App {
         }
     }
 
-    /// Saves the current authored project and editor camera state.
-    ///
-    /// Physics runtime bodies are intentionally not saved here. The authored
-    /// World remains the persistent scene representation.
     pub fn save_project(&self) {
         if let Some(project_path) =
             &self.project_manager.current_project
         {
-            /// Save the authoritative World.
             let world_path =
-                project_path.join("world.dat");
+                project_path.join(
+                    "world.dat",
+                );
 
             if let Err(e) =
                 crate::world::persistence::save_world(
@@ -1408,22 +1389,24 @@ impl App {
                 );
             }
 
-            /// Save the editor camera separately from the authored World.
             let camera_path =
-                project_path.join("camera.dat");
+                project_path.join(
+                    "camera.dat",
+                );
 
             let cam =
                 &self.editor.camera;
 
-            let content = format!(
-                "{} {} {} {} {} {}",
-                cam.yaw,
-                cam.pitch,
-                cam.distance,
-                cam.target.x,
-                cam.target.y,
-                cam.target.z,
-            );
+            let content =
+                format!(
+                    "{} {} {} {} {} {}",
+                    cam.yaw,
+                    cam.pitch,
+                    cam.distance,
+                    cam.target.x,
+                    cam.target.y,
+                    cam.target.z,
+                );
 
             if let Err(e) =
                 std::fs::write(

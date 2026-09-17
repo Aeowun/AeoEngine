@@ -62,3 +62,88 @@ pub fn update_hover(
 
     None
 }
+
+pub fn raycast_world(
+    mx: f32,
+    my: f32,
+    width: f32,
+    height: f32,
+    camera: &CameraController,
+    world: &crate::world::World,
+) -> Option<WorldCoord> {
+    let view = camera.get_view_matrix();
+
+    let projection = glam::camera::rh::proj::opengl::perspective(
+        60.0_f32.to_radians(),
+        width / height,
+        0.1,
+        1000.0,
+    );
+
+    let x = (2.0 * mx) / width - 1.0;
+    let y = 1.0 - (2.0 * my) / height;
+
+    let inv_vp = (projection * view).inverse();
+    let near = inv_vp.project_point3(Vec3::new(x, y, -1.0));
+    let far = inv_vp.project_point3(Vec3::new(x, y, 1.0));
+    let dir = (far - near).normalize();
+
+    // DDA Algorithm for voxel traversal
+    let mut map_pos = WorldCoord::new(
+        near.x.floor() as i32,
+        near.y.floor() as i32,
+        near.z.floor() as i32,
+    );
+
+    let delta_dist = Vec3::new(
+        (1.0 / dir.x).abs(),
+        (1.0 / dir.y).abs(),
+        (1.0 / dir.z).abs(),
+    );
+
+    let step = Vec3::new(
+        if dir.x < 0.0 { -1.0 } else { 1.0 },
+        if dir.y < 0.0 { -1.0 } else { 1.0 },
+        if dir.z < 0.0 { -1.0 } else { 1.0 },
+    );
+
+    let mut side_dist = Vec3::new(
+        if dir.x < 0.0 { (near.x - map_pos.x as f32) * delta_dist.x } else { (map_pos.x as f32 + 1.0 - near.x) * delta_dist.x },
+        if dir.y < 0.0 { (near.y - map_pos.y as f32) * delta_dist.y } else { (map_pos.y as f32 + 1.0 - near.y) * delta_dist.y },
+        if dir.z < 0.0 { (near.z - map_pos.z as f32) * delta_dist.z } else { (map_pos.z as f32 + 1.0 - near.z) * delta_dist.z },
+    );
+
+    let max_dist = 200.0;
+    let mut dist = 0.0;
+
+    while dist < max_dist {
+        if let Some(cell) = world.get(map_pos) {
+            // Eligible: Block, SpawnPoint (and other authored types if they become visible)
+            // Invisible lights are specifically excluded.
+            let eligible = match cell.cell_type {
+                crate::world::CellType::Block | crate::world::CellType::SpawnPoint => true,
+                _ => false,
+            };
+
+            if eligible && cell.visible {
+                return Some(map_pos);
+            }
+        }
+
+        if side_dist.x < side_dist.y && side_dist.x < side_dist.z {
+            dist = side_dist.x;
+            side_dist.x += delta_dist.x;
+            map_pos.x += step.x as i32;
+        } else if side_dist.y < side_dist.z {
+            dist = side_dist.y;
+            side_dist.y += delta_dist.y;
+            map_pos.y += step.y as i32;
+        } else {
+            dist = side_dist.z;
+            side_dist.z += delta_dist.z;
+            map_pos.z += step.z as i32;
+        }
+    }
+
+    None
+}

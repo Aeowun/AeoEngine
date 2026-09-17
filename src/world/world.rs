@@ -3,6 +3,7 @@ use glam::Vec3;
 use super::cell::{Cell, CellType};
 use super::coordinate::WorldCoord;
 
+#[derive(Clone)]
 pub struct LightingSettings {
     pub shadows_enabled: bool,
     pub global_light_enabled: bool,
@@ -27,10 +28,11 @@ impl Default for LightingSettings {
     }
 }
 
+#[derive(Clone)]
 pub struct World {
     // Authored grid data. We use a HashMap because the world is unbounded
     // and most coordinates are empty.
-    cells: HashMap<WorldCoord, Cell>,
+    pub(crate) cells: HashMap<WorldCoord, Cell>,
 
     // The world wide gravity vector used by the physics simulation.
     pub gravity: Vec3,

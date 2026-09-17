@@ -1,4 +1,5 @@
-use crate::world::WorldCoord;
+use std::collections::HashMap;
+use crate::world::{WorldCoord, Cell};
 use crate::renderer::camera::CameraController;
 use crate::engine::EditorMode;
 use super::navigation::NavigationWindow;
@@ -26,18 +27,39 @@ pub enum ColorTarget {
     PropertyLight(WorldCoord),
 }
 
+pub struct History {
+    pub undo_stack: Vec<HashMap<WorldCoord, Cell>>,
+    pub redo_stack: Vec<HashMap<WorldCoord, Cell>>,
+}
+
+impl History {
+    pub fn new() -> Self {
+        Self {
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+        }
+    }
+
+    pub fn push(&mut self, cells: HashMap<WorldCoord, Cell>) {
+        self.undo_stack.push(cells);
+        self.redo_stack.clear();
+    }
+}
+
 pub struct Editor {
     pub mode: EditorMode,
     pub camera: CameraController,
     pub anchor: WorldCoord,
     pub hovered_cell: Option<WorldCoord>,
     pub selected_coord: Option<WorldCoord>,
+    pub selected_coords: Vec<WorldCoord>,
     pub current_tool: EditorTool,
 
     // Windows
     pub navigation_window: NavigationWindow,
     pub show_properties_window: bool,
     pub show_world_window: bool,
+    pub plane_picking: bool,
 
     // Layout
     pub right_panel_split: f32,
@@ -56,6 +78,8 @@ pub struct Editor {
 
     /// The central area of the editor screen not covered by side or top/bottom panels.
     pub viewport_rect: egui::Rect,
+
+    pub history: History,
 }
 
 impl Editor {
@@ -66,11 +90,13 @@ impl Editor {
             anchor: WorldCoord::new(0, 0, 0),
             hovered_cell: None,
             selected_coord: None,
+            selected_coords: Vec::new(),
             current_tool: EditorTool::Navigate,
 
             navigation_window: NavigationWindow::new(),
             show_properties_window: true,
             show_world_window: true,
+            plane_picking: true,
 
             right_panel_split: 0.5,
 
@@ -82,6 +108,7 @@ impl Editor {
             build_template: crate::world::Cell::new_block(),
             active_color_target: None,
             viewport_rect: egui::Rect::NOTHING,
+            history: History::new(),
         }
     }
 
@@ -442,7 +469,69 @@ impl Editor {
     }
 
     fn render_world_content(&mut self, ui: &mut egui::Ui, world: &mut crate::world::World) {
+        let active = world.active_blocks();
+
+        let mut blocks = Vec::new();
+        let mut lights = Vec::new();
+        let mut spawn_points = Vec::new();
+        let mut fx_blocks = Vec::new();
+        let mut players = Vec::new();
+        let mut npcs = Vec::new();
+
+        for coord in active {
+            if let Some(cell) = world.get(coord) {
+                match cell.cell_type {
+                    crate::world::CellType::Block => blocks.push(coord),
+                    crate::world::CellType::Light => lights.push(coord),
+                    crate::world::CellType::SpawnPoint => spawn_points.push(coord),
+                    crate::world::CellType::FxBlock => fx_blocks.push(coord),
+                    crate::world::CellType::Player => players.push(coord),
+                    crate::world::CellType::NPC => npcs.push(coord),
+                    crate::world::CellType::Empty => {}
+                }
+            }
+        }
+
+        let sort_fn = |a: &WorldCoord, b: &WorldCoord| {
+            a.x.cmp(&b.x)
+                .then(a.y.cmp(&b.y))
+                .then(a.z.cmp(&b.z))
+        };
+
+        blocks.sort_by(sort_fn);
+        lights.sort_by(sort_fn);
+        spawn_points.sort_by(sort_fn);
+        fx_blocks.sort_by(sort_fn);
+        players.sort_by(sort_fn);
+        npcs.sort_by(sort_fn);
+
         egui::ScrollArea::vertical().show(ui, |ui| {
+            // --- HIERARCHY ---
+            let tree_data = [
+                ("BLOCKS", &blocks),
+                ("LIGHTS", &lights),
+                ("SPAWN POINTS", &spawn_points),
+                ("FX BLOCKS", &fx_blocks),
+                ("PLAYERS", &players),
+                ("NPCs", &npcs),
+            ];
+
+            for (name, list) in tree_data {
+                egui::CollapsingHeader::new(format!("{} ({})", name, list.len()))
+                    .show(ui, |ui| {
+                        for &coord in list {
+                            let label = format!("({}, {}, {})", coord.x, coord.y, coord.z);
+                            let is_selected = self.selected_coord == Some(coord);
+                            if ui.selectable_label(is_selected, label).clicked() {
+                                self.selected_coord = Some(coord);
+                                self.selected_coords = vec![coord];
+                            }
+                        }
+                    });
+            }
+
+            ui.separator();
+
             // --- LIGHTING ---
             egui::CollapsingHeader::new("LIGHTING")
                 .default_open(true)
