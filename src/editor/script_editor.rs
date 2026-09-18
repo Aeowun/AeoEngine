@@ -81,11 +81,15 @@ pub struct ScriptEditor {
     pub scripts_list: Vec<PathBuf>,
     pub show_new_script_dialog: bool,
     pub new_script_name: String,
+    pub show_rename_dialog: bool,
+    pub rename_target: Option<PathBuf>,
+    pub rename_new_name: String,
     pub search_query: String,
     pub show_search: bool,
     pub search_results: Vec<SearchResult>,
 
     pub closing_path: Option<PathBuf>,
+    pub deleting_path: Option<PathBuf>,
 
     // UI state
     pub show_problems: bool,
@@ -107,10 +111,14 @@ impl ScriptEditor {
             scripts_list: Vec::new(),
             show_new_script_dialog: false,
             new_script_name: String::new(),
+            show_rename_dialog: false,
+            rename_target: None,
+            rename_new_name: String::new(),
             search_query: String::new(),
             show_search: false,
             search_results: Vec::new(),
             closing_path: None,
+            deleting_path: None,
             show_problems: true,
             show_output: true,
             output_log: Vec::new(),
@@ -222,6 +230,61 @@ impl ScriptEditor {
         }
     }
 
+    pub fn rename_script(&mut self, project_path: &PathBuf, old_path: PathBuf, new_name: &str) {
+        let new_name = new_name.trim();
+        if new_name.is_empty() {
+            self.output_log.push("Rename failed: Name cannot be empty.".to_string());
+            return;
+        }
+
+        let mut filename = new_name.to_string();
+        if !filename.ends_with(".aeo") {
+            filename.push_str(".aeo");
+        }
+
+        // Windows invalid characters check: \ / : * ? " < > |
+        if filename.chars().any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|')) {
+            self.output_log.push("Rename failed: Invalid characters in filename.".to_string());
+            return;
+        }
+
+        let new_path = project_path.join("scripts").join(&filename);
+        if new_path.exists() {
+            self.output_log.push(format!("Rename failed: {:?} already exists.", new_path));
+            return;
+        }
+
+        if let Err(e) = std::fs::rename(&old_path, &new_path) {
+            self.output_log.push(format!("Rename failed: {}", e));
+        } else {
+            // Update internal state
+            if let Some(mut doc) = self.open_documents.remove(&old_path) {
+                doc.path = new_path.clone();
+                self.open_documents.insert(new_path.clone(), doc);
+            }
+
+            if self.active_document.as_ref() == Some(&old_path) {
+                self.active_document = Some(new_path.clone());
+            }
+
+            self.refresh_scripts(&Some(project_path.clone()));
+            self.output_log.push(format!("Renamed to {:?}", filename));
+        }
+    }
+
+    pub fn delete_script(&mut self, project_path: &Option<PathBuf>, path: PathBuf) {
+        if let Err(e) = std::fs::remove_file(&path) {
+            self.output_log.push(format!("Delete failed: {}", e));
+        } else {
+            self.open_documents.remove(&path);
+            if self.active_document.as_ref() == Some(&path) {
+                self.active_document = self.open_documents.keys().next().cloned();
+            }
+            self.refresh_scripts(project_path);
+            self.output_log.push(format!("Deleted {:?}", path.file_name().unwrap_or_default()));
+        }
+    }
+
     pub fn perform_search(&mut self) {
         self.search_results.clear();
         if self.search_query.is_empty() { return; }
@@ -274,13 +337,74 @@ impl ScriptEditor {
                 });
         }
 
-        if let Some(path) = self.closing_path.clone() {
-            let mut close = false;
-            egui::Window::new("Unsaved Changes")
+        if self.show_rename_dialog {
+            egui::Window::new("Rename Script")
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .collapsible(false)
                 .show(ctx, |ui| {
-                    ui.label(format!("Save changes to {}?", path.file_name().unwrap_or_default().to_string_lossy()));
+                    ui.horizontal(|ui| {
+                        ui.label("New Name:");
+                        ui.text_edit_singleline(&mut self.rename_new_name);
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button("Rename").clicked() {
+                            if let (Some(root), Some(target)) = (project_path, self.rename_target.clone()) {
+                                self.rename_script(root, target, &self.rename_new_name.clone());
+                                self.show_rename_dialog = false;
+                                self.rename_new_name.clear();
+                                self.rename_target = None;
+                            }
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.show_rename_dialog = false;
+                            self.rename_target = None;
+                        }
+                    });
+                });
+        }
+
+        if let Some(path) = self.deleting_path.clone() {
+            // If we are already showing the dirty dialog for this path, don't show the confirmation
+            if self.closing_path.as_ref() != Some(&path) {
+                egui::Window::new("Confirm Delete")
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .collapsible(false)
+                    .show(ctx, |ui| {
+                        ui.label(format!("Are you sure you want to delete {:?}?", path.file_name().unwrap_or_default()));
+                        ui.add_space(10.0);
+                        ui.horizontal(|ui| {
+                            if ui.button("Delete").clicked() {
+                                let is_dirty = self.open_documents.get(&path).map_or(false, |d| d.dirty);
+                                if is_dirty {
+                                    self.closing_path = Some(path.clone());
+                                } else {
+                                    self.delete_script(project_path, path.clone());
+                                    self.deleting_path = None;
+                                }
+                            }
+                            if ui.button("Cancel").clicked() {
+                                self.deleting_path = None;
+                            }
+                        });
+                    });
+            }
+        }
+
+        if let Some(path) = self.closing_path.clone() {
+            let mut close = false;
+            let mut delete_after = false;
+
+            // Check if this closure is part of a deletion
+            let is_deletion = self.deleting_path.as_ref() == Some(&path);
+
+            egui::Window::new(if is_deletion { "Delete: Unsaved Changes" } else { "Unsaved Changes" })
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .collapsible(false)
+                .show(ctx, |ui| {
+                    ui.label(format!("Save changes to {} before {}?",
+                        path.file_name().unwrap_or_default().to_string_lossy(),
+                        if is_deletion { "deleting" } else { "closing" }
+                    ));
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
                         if ui.button("Save").clicked() {
@@ -288,22 +412,30 @@ impl ScriptEditor {
                                 doc.save().ok();
                             }
                             close = true;
+                            if is_deletion { delete_after = true; }
                         }
                         if ui.button("Don't Save").clicked() {
                             close = true;
+                            if is_deletion { delete_after = true; }
                         }
                         if ui.button("Cancel").clicked() {
                             self.closing_path = None;
+                            if is_deletion { self.deleting_path = None; }
                         }
                     });
                 });
 
             if close {
-                self.open_documents.remove(&path);
-                if self.active_document.as_ref() == Some(&path) {
-                    self.active_document = self.open_documents.keys().next().cloned();
+                if delete_after {
+                    self.delete_script(project_path, path.clone());
+                } else {
+                    self.open_documents.remove(&path);
+                    if self.active_document.as_ref() == Some(&path) {
+                        self.active_document = self.open_documents.keys().next().cloned();
+                    }
                 }
                 self.closing_path = None;
+                if is_deletion { self.deleting_path = None; }
             }
         }
     }
@@ -377,11 +509,22 @@ impl ScriptEditor {
                                         if ui.selectable_label(is_active, label).clicked() {
                                             action_open = Some(path.clone());
                                         }
-                                        if self.open_documents.contains_key(path) {
-                                            if ui.small_button("x").clicked() {
-                                                action_close = Some(path.clone());
+
+                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                            if ui.small_button("x").on_hover_text("Delete").clicked() {
+                                                self.deleting_path = Some(path.clone());
                                             }
-                                        }
+                                            if ui.small_button("R").on_hover_text("Rename").clicked() {
+                                                self.show_rename_dialog = true;
+                                                self.rename_target = Some(path.clone());
+                                                self.rename_new_name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                                            }
+                                            if self.open_documents.contains_key(path) {
+                                                if ui.small_button("c").on_hover_text("Close").clicked() {
+                                                    action_close = Some(path.clone());
+                                                }
+                                            }
+                                        });
                                     });
                                 }
                             });
@@ -404,19 +547,37 @@ impl ScriptEditor {
                                     }
                                 });
 
-                                let theme = egui::TextEdit::multiline(&mut doc.source)
-                                    .font(egui::TextStyle::Monospace)
-                                    .code_editor()
-                                    .desired_width(f32::INFINITY)
-                                    .desired_rows(20)
-                                    .lock_focus(true);
+                                egui::ScrollArea::both().show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        // Gutter for line numbers
+                                        let line_count = doc.source.lines().count().max(1);
+                                        let gutter_width = (line_count.to_string().len() as f32 * 8.0).max(24.0);
 
-                                let response = ui.add(theme);
+                                        ui.allocate_ui(egui::vec2(gutter_width, ui.available_height()), |ui| {
+                                            let mut gutter_text = String::new();
+                                            for i in 1..=line_count {
+                                                gutter_text.push_str(&format!("{}\n", i));
+                                            }
+                                            ui.add(egui::Label::new(egui::RichText::new(gutter_text)
+                                                .monospace()
+                                                .color(egui::Color32::from_gray(120))
+                                                .size(12.0)));
+                                        });
 
-                                if response.changed() {
-                                    doc.dirty = doc.source != doc.original_source;
-                                    doc.reparse();
-                                }
+                                        let theme = egui::TextEdit::multiline(&mut doc.source)
+                                            .font(egui::TextStyle::Monospace)
+                                            .code_editor()
+                                            .desired_width(f32::INFINITY)
+                                            .lock_focus(true);
+
+                                        let response = ui.add(theme);
+
+                                        if response.changed() {
+                                            doc.dirty = doc.source != doc.original_source;
+                                            doc.reparse();
+                                        }
+                                    });
+                                });
                             });
                         }
                     } else {

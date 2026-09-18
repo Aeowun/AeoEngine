@@ -1075,8 +1075,6 @@ impl App {
 
     pub fn save_project(&mut self) {
         if let Some(project_path) = &self.project_manager.current_project {
-            self.editor.script_editor.refresh_scripts(&Some(project_path.clone()));
-
             let world_path = project_path.join("world.dat");
 
             if let Err(e) = crate::world::persistence::save_world(&self.world, &world_path) {

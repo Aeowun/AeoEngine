@@ -699,45 +699,44 @@ impl Renderer {
 
             for coord in world.active_blocks() {
                 if let Some(cell) = world.get(coord) {
-                    if cell.cell_type == CellType::Light {
-                        if editor.mode == EditorMode::Editor {
-                            gl::BindVertexArray(self.billboard_vao);
-                            gl::Uniform1i(use_tex_location, 1);
+                    // Editor-only bulb visualization centered inside the light cell
+                    if cell.cell_type == CellType::Light && editor.mode == EditorMode::Editor {
+                        gl::BindVertexArray(self.billboard_vao);
+                        gl::Uniform1i(use_tex_location, 1);
 
-                            let tex = self.get_texture("lightbulb");
-                            gl::ActiveTexture(gl::TEXTURE1);
-                            gl::BindTexture(gl::TEXTURE_2D, tex);
+                        let tex = self.get_texture("lightbulb");
+                        gl::ActiveTexture(gl::TEXTURE1);
+                        gl::BindTexture(gl::TEXTURE_2D, tex);
 
-                            // Billboard logic: centered on cube, facing camera, small size.
-                            let center = Vec3::new(
-                                coord.x as f32 + 0.5,
-                                coord.y as f32 + 0.5,
-                                coord.z as f32 + 0.5,
-                            );
+                        // Billboard logic: centered on cube, facing camera, small size (35% of cell).
+                        let center = Vec3::new(
+                            coord.x as f32 + 0.5,
+                            coord.y as f32 + 0.5,
+                            coord.z as f32 + 0.5,
+                        );
 
-                            let scale = 0.4;
-                            let model = Mat4::from_cols(
-                                cam_right.extend(0.0) * scale,
-                                cam_up.extend(0.0) * scale,
-                                Vec3::ZERO.extend(0.0), // Forward doesn't matter for flat quad
-                                center.extend(1.0),
-                            );
+                        let scale = 0.35;
+                        let model = Mat4::from_cols(
+                            cam_right.extend(0.0) * scale,
+                            cam_up.extend(0.0) * scale,
+                            Vec3::ZERO.extend(0.0),
+                            center.extend(1.0),
+                        );
 
-                            gl::UniformMatrix4fv(
-                                model_location,
-                                1,
-                                gl::FALSE,
-                                model.to_cols_array().as_ptr(),
-                            );
+                        gl::UniformMatrix4fv(
+                            model_location,
+                            1,
+                            gl::FALSE,
+                            model.to_cols_array().as_ptr(),
+                        );
 
-                            gl::Uniform3f(base_color_location, 1.0, 1.0, 1.0);
-                            gl::DrawArrays(gl::TRIANGLES, 0, 6);
-                        }
-                        continue;
+                        gl::Uniform3f(base_color_location, 1.0, 1.0, 1.0);
+                        gl::DrawArrays(gl::TRIANGLES, 0, 6);
                     }
 
-                    let renderable_cell =
-                        cell.cell_type == CellType::Block || cell.cell_type == CellType::SpawnPoint;
+                    let renderable_cell = cell.cell_type == CellType::Block
+                        || cell.cell_type == CellType::SpawnPoint
+                        || cell.cell_type == CellType::Light;
 
                     if !renderable_cell || !cell.visible {
                         continue;
