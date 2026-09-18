@@ -57,6 +57,46 @@ pub fn draw_color_edit(ui: &mut Ui, editor: &mut Editor, target: ColorTarget, co
     });
 }
 
+pub fn draw_texture_edit(ui: &mut Ui, texture: &mut String) {
+    ui.horizontal(|ui| {
+        ui.label("Texture:");
+        ui.text_edit_singleline(texture);
+        if ui.button("Import...").clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("PNG Image", &["png"])
+                .pick_file() {
+
+                let textures_dir = std::path::Path::new(".assets/textures");
+                if !textures_dir.exists() {
+                    let _ = std::fs::create_dir_all(textures_dir);
+                }
+
+                let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+                let stem = path.file_stem().unwrap().to_string_lossy().to_string();
+                let mut dest_path = textures_dir.join(&file_name);
+
+                if dest_path.exists() {
+                    for i in 1..1000 {
+                        let new_name = format!("{}_{}.png", stem, i);
+                        let p = textures_dir.join(&new_name);
+                        if !p.exists() {
+                            dest_path = p;
+                            break;
+                        }
+                    }
+                }
+
+                if let Err(e) = std::fs::copy(&path, &dest_path) {
+                    eprintln!("Failed to copy texture: {}", e);
+                } else {
+                    let final_stem = dest_path.file_stem().unwrap().to_string_lossy().to_string();
+                    *texture = final_stem;
+                }
+            }
+        }
+    });
+}
+
 pub fn draw_tool_bar(ui: &mut Ui, editor: &mut Editor) {
     ui.horizontal(|ui| {
         ui.label(RichText::new("Mode").strong());
@@ -141,10 +181,7 @@ pub fn draw_tool_bar(ui: &mut Ui, editor: &mut Editor) {
 
                 ui.checkbox(&mut editor.build_template.visible, "Visible");
 
-                ui.horizontal(|ui| {
-                    ui.label("Texture:");
-                    ui.text_edit_singleline(&mut editor.build_template.texture);
-                });
+                draw_texture_edit(ui, &mut editor.build_template.texture);
             });
 
             ui.separator();

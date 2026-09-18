@@ -396,10 +396,7 @@ impl Editor {
                                 cell.color_rgb = color;
                             });
 
-                            ui.horizontal(|ui| {
-                                ui.label("Texture:");
-                                ui.text_edit_singleline(&mut cell.texture);
-                            });
+                            tools::draw_texture_edit(ui, &mut cell.texture);
                         });
                 }
             });

@@ -582,6 +582,303 @@ A Player or NPC runtime character should not automatically be treated as a simpl
 
 ---
 
+# Planned Performance & Scalability
+
+The current engine architecture is intentionally prototype-oriented, but several systems have known scalability limits.
+
+These are **planned engineering improvements**, not claims that the current implementation is incapable of handling large scenes. Actual optimization decisions should be guided by profiling and representative workloads.
+
+## World Rendering Scalability
+
+The current authored World stores cells individually, and the active-block collection currently requires the renderer to iterate through the stored authored cells.
+
+This is appropriate for small and medium authored worlds, but very large worlds will eventually require spatial partitioning and more efficient rendering.
+
+Current conceptual path:
+
+```text
+World
+  ↓
+Stored authored cells
+  ↓
+Active block collection
+  ↓
+Renderer
+  ↓
+Individual block rendering
+```
+
+A future scalable path may use:
+
+```text
+World
+  ↓
+Spatial chunks
+  ↓
+Visible chunks
+  ↓
+Chunk meshes
+  ↓
+GPU rendering
+```
+
+### Planned Options
+
+#### Option A — Chunked World Storage
+
+Partition the authored world into fixed-size spatial chunks.
+
+```text
+World
+├── Chunk (0,0,0)
+├── Chunk (1,0,0)
+├── Chunk (0,1,0)
+└── Chunk (1,1,0)
+```
+
+The renderer can then determine which chunks are relevant to the current camera instead of traversing the entire world.
+
+Benefits:
+
+* Better large-world scalability.
+* Natural foundation for streaming.
+* Faster spatial queries.
+* Provides a foundation for future chunk meshing.
+
+#### Option B — Chunked Storage + Mesh Generation
+
+Combine chunking with generated render meshes.
+
+Instead of submitting every block independently:
+
+```text
+Blocks
+ ↓
+Chunk
+ ↓
+Generated mesh
+ ↓
+GPU
+```
+
+The mesh can be rebuilt only when the affected authored cells change.
+
+This provides a path toward:
+
+* Reduced draw calls.
+* Reduced per-block rendering overhead.
+* Greedy meshing or face culling.
+* Efficient large authored environments.
+
+The exact meshing strategy remains an implementation decision.
+
+---
+
+## Dynamic Physics Scalability
+
+The current dynamic collision system performs pairwise collision checks between dynamic bodies.
+
+Conceptually:
+
+```text
+Body A ↔ Body B
+Body A ↔ Body C
+Body A ↔ Body D
+...
+Body B ↔ Body C
+...
+```
+
+This is effectively an **O(n²)** broad-phase approach.
+
+It is suitable for a small number of runtime physics bodies, but the cost grows rapidly as the number of dynamic bodies increases.
+
+### Planned Options
+
+#### Option A — Spatial Hash / Uniform Grid
+
+Divide the physics world into spatial regions and only test bodies occupying nearby regions.
+
+```text
+Physics bodies
+      ↓
+Spatial grid
+      ↓
+Nearby candidates
+      ↓
+Collision tests
+```
+
+This is relatively straightforward and fits well with a voxel-oriented engine.
+
+#### Option B — Dedicated Broad-Phase Structure
+
+Introduce a more general broad-phase system such as:
+
+* Spatial hash.
+* Sweep-and-prune.
+* BVH.
+* Another spatial acceleration structure appropriate to the final physics requirements.
+
+The broad phase would identify possible collision pairs before the existing narrow-phase collision tests run.
+
+The narrow-phase collision implementation can therefore remain separate from the broad-phase optimization.
+
+---
+
+## Continuous Collision Detection
+
+The current runtime collision system uses discrete collision testing after position integration.
+
+A sufficiently fast body could theoretically move through a thin collider between physics samples.
+
+This is a known limitation of discrete collision detection.
+
+### Planned Options
+
+#### Option A — Swept Collision
+
+Test the volume swept between the previous and new body positions.
+
+```text
+Previous position
+        ↓
+   swept volume
+        ↓
+New position
+```
+
+This can prevent fast-moving bodies from passing through thin colliders.
+
+#### Option B — Selective Continuous Collision Detection
+
+Rather than enabling continuous collision detection for every body, use it only for bodies where tunneling is important.
+
+Potential candidates include:
+
+* Fast projectiles.
+* Small high-speed objects.
+* Characters moving at high velocity.
+* Other explicitly configured physics bodies.
+
+This avoids applying the additional cost to every runtime object.
+
+---
+
+## Runtime Mesh Rendering
+
+Some runtime rendering paths currently create, upload, draw, and destroy OpenGL vertex objects as part of the draw operation.
+
+Conceptually:
+
+```text
+GenVertexArray
+GenBuffer
+BufferData
+Draw
+DeleteBuffer
+DeleteVertexArray
+```
+
+Doing this repeatedly is functional but creates unnecessary GPU resource-management overhead.
+
+### Planned Options
+
+#### Option A — Persistent Mesh Buffers
+
+Create the VAO/VBO once and retain them for the lifetime of the renderable object.
+
+```text
+Create
+  ↓
+Upload
+  ↓
+Draw
+  ↓
+Draw
+  ↓
+Draw
+  ↓
+Destroy on shutdown
+```
+
+If geometry changes, the existing buffer can be updated rather than recreated.
+
+This is the preferred direction for stable runtime meshes.
+
+#### Option B — Shared Mesh Resources
+
+Introduce reusable renderer mesh resources so multiple objects can reference the same GPU geometry.
+
+```text
+Mesh Resource
+      ↑
+ ┌────┼────┐
+ │    │    │
+Body Body Body
+```
+
+This becomes particularly useful when many runtime objects share the same mesh.
+
+It also provides a foundation for future instanced rendering and batching.
+
+---
+
+## Rendering Optimization Roadmap
+
+The current renderer is intentionally simple enough to support rapid engine development.
+
+Future optimization can proceed incrementally:
+
+```text
+Current
+  ↓
+Persistent GPU buffers
+  ↓
+Visibility / frustum culling
+  ↓
+Spatial chunks
+  ↓
+Chunk mesh generation
+  ↓
+Batching / instancing
+  ↓
+Further profiling-driven optimization
+```
+
+Not every stage is required for every project size.
+
+The engine should retain the simpler implementation while workloads remain small, and introduce more complex systems when profiling demonstrates a meaningful benefit.
+
+---
+
+## Performance Engineering Principle
+
+Performance improvements should preserve the existing authored/runtime boundary.
+
+The intended architecture remains:
+
+```text
+Authored World
+      ↓
+Spatial / render representation
+      ↓
+Renderer
+
+Authored World
+      ↓
+Runtime conversion
+      ↓
+PhysicsWorld / Characters
+```
+
+Optimization systems should accelerate these paths without turning runtime state into the authoritative authored representation.
+
+Performance work should be validated using measured profiling data rather than assumptions based solely on theoretical complexity.
+
+---
+
+
 # Future Asset Workflow
 
 A project asset library is planned using:

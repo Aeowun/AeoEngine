@@ -4,6 +4,8 @@ pub mod shader;
 
 use glam::{Mat4, Vec3};
 use std::ffi::CString;
+use std::collections::HashMap;
+use std::cell::RefCell;
 
 use crate::editor::{Editor, GridPlane};
 use crate::engine::physics::PhysicsWorld;
@@ -15,6 +17,8 @@ use self::mesh::{
     add_quad,
     upload_vertices_2d,
     upload_vertices_3d,
+    add_block_quad,
+    upload_block_vertices_3d,
 };
 
 use self::shader::create_program;
@@ -69,6 +73,9 @@ pub struct Renderer {
     shadow_program: u32,
     shadow_fbo: u32,
     shadow_depth_tex: u32,
+
+    textures: RefCell<HashMap<String, u32>>,
+    fallback_tex: u32,
 
     width: f32,
     height: f32,
@@ -254,49 +261,93 @@ impl Renderer {
                 gl::FRAMEBUFFER,
                 0,
             );
-        }
 
-        Self {
-            home_program,
-            home_vao,
-            home_vbo,
+            let mut textures = HashMap::new();
 
-            grid_program,
+            // Create a 1x1 white fallback texture
+            let mut fallback_tex = 0;
+            unsafe {
+                gl::GenTextures(1, &mut fallback_tex);
+                gl::BindTexture(gl::TEXTURE_2D, fallback_tex);
+                let white_data: [u8; 4] = [255, 255, 255, 255];
+                gl::TexImage2D(
+                    gl::TEXTURE_2D,
+                    0,
+                    gl::RGBA as i32,
+                    1,
+                    1,
+                    0,
+                    gl::RGBA,
+                    gl::UNSIGNED_BYTE,
+                    white_data.as_ptr() as *const _,
+                );
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+                gl::BindTexture(gl::TEXTURE_2D, 0);
+            }
 
-            grid_vao_xz,
-            grid_vbo_xz,
-            grid_count_xz,
+            // Load the default brick texture and map it to the "Block_tx" identifier
+            if let Some(tex) = load_texture_from_file(".assets/textures/brick.png") {
+                textures.insert("Block_tx".to_string(), tex);
+                textures.insert("brick".to_string(), tex);
+            }
 
-            grid_vao_yz,
-            grid_vbo_yz,
-            grid_count_yz,
+            let mut this = Self {
+                home_program,
+                home_vao,
+                home_vbo,
 
-            grid_vao_xy,
-            grid_vbo_xy,
-            grid_count_xy,
+                grid_program,
 
-            axis_vao,
-            axis_vbo,
-            axis_vertex_count,
+                grid_vao_xz,
+                grid_vbo_xz,
+                grid_count_xz,
 
-            highlight_vao,
-            highlight_vbo,
-            highlight_vertex_count,
+                grid_vao_yz,
+                grid_vbo_yz,
+                grid_count_yz,
 
-            anchor_vao,
-            anchor_vbo,
-            anchor_vertex_count,
+                grid_vao_xy,
+                grid_vbo_xy,
+                grid_count_xy,
 
-            block_vao,
-            block_vbo,
-            block_vertex_count,
+                axis_vao,
+                axis_vbo,
+                axis_vertex_count,
 
-            shadow_program,
-            shadow_fbo,
-            shadow_depth_tex,
+                highlight_vao,
+                highlight_vbo,
+                highlight_vertex_count,
 
-            width: width.max(1.0),
-            height: height.max(1.0),
+                anchor_vao,
+                anchor_vbo,
+                anchor_vertex_count,
+
+                block_vao,
+                block_vbo,
+                block_vertex_count,
+
+                shadow_program,
+                shadow_fbo,
+                shadow_depth_tex,
+
+                textures: RefCell::new(textures),
+                fallback_tex,
+
+                width: width.max(1.0),
+                height: height.max(1.0),
+            };
+
+            // Set default sampler uniform to texture unit 1
+            gl::UseProgram(grid_program);
+            let tex_name = CString::new("u_texture").unwrap();
+            let tex_loc = gl::GetUniformLocation(grid_program, tex_name.as_ptr());
+            if tex_loc != -1 {
+                gl::Uniform1i(tex_loc, 1);
+            }
+            gl::UseProgram(0);
+
+            return this;
         }
     }
 
@@ -316,6 +367,32 @@ impl Renderer {
                 self.height as i32,
             );
         }
+    }
+
+    pub fn get_texture(&self, identifier: &str) -> u32 {
+        let mut map = self.textures.borrow_mut();
+        if let Some(&tex) = map.get(identifier) {
+            return tex;
+        }
+
+        // Try to load it if not found (identifier is treated as filename)
+        let path = format!(".assets/textures/{}", identifier);
+        // Also try with .png extension if missing
+        let paths_to_try = vec![
+            path.clone(),
+            format!("{}.png", path),
+        ];
+
+        for p in paths_to_try {
+            if std::path::Path::new(&p).exists() {
+                if let Some(tex) = load_texture_from_file(&p) {
+                    map.insert(identifier.to_string(), tex);
+                    return tex;
+                }
+            }
+        }
+
+        self.fallback_tex
     }
 
     pub fn width(&self) -> f32 {
@@ -702,6 +779,11 @@ impl Renderer {
                 1.0,
             );
 
+            // Fetch and initialize the use_texture gate uniform to a safe default of false
+            let use_tex_name = CString::new("u_use_texture").unwrap();
+            let use_tex_location = gl::GetUniformLocation(self.grid_program, use_tex_name.as_ptr());
+            gl::Uniform1i(use_tex_location, 0);
+
             //
             // Global lighting.
             //
@@ -863,6 +945,10 @@ impl Renderer {
                 0,
             );
 
+            // Bind the fallback texture to Texture Unit 1 for the main grid_program pass
+            gl::ActiveTexture(gl::TEXTURE1);
+            gl::BindTexture(gl::TEXTURE_2D, self.fallback_tex);
+
             //
             // Point lights.
             //
@@ -1007,6 +1093,8 @@ impl Renderer {
                 self.block_vao,
             );
 
+            gl::Uniform1i(use_tex_location, 1);
+
             for coord in world.active_blocks() {
                 if let Some(cell) =
                     world.get(coord)
@@ -1030,6 +1118,10 @@ impl Renderer {
                     if !should_draw {
                         continue;
                     }
+
+                    let tex = self.get_texture(&cell.texture);
+                    gl::ActiveTexture(gl::TEXTURE1);
+                    gl::BindTexture(gl::TEXTURE_2D, tex);
 
                     gl::Uniform3f(
                         base_color_location,
@@ -1061,6 +1153,8 @@ impl Renderer {
                     );
                 }
             }
+
+            gl::Uniform1i(use_tex_location, 0);
 
             //
             // Runtime Physics bodies.
@@ -1617,6 +1711,15 @@ impl Drop for Renderer {
                 &self.shadow_depth_tex,
             );
 
+            gl::DeleteTextures(
+                1,
+                &self.fallback_tex,
+            );
+
+            for &tex in self.textures.borrow().values() {
+                gl::DeleteTextures(1, &tex);
+            }
+
             gl::DeleteVertexArrays(
                 1,
                 &self.grid_vao_xz,
@@ -1997,67 +2100,24 @@ fn create_block_cube() -> (u32, u32, i32) {
     let max =
         1.0;
 
-    add_quad(
-        &mut vertices,
-        [min, max, min],
-        [min, max, max],
-        [max, max, max],
-        [max, max, min],
-        color,
-        [0.0, 1.0, 0.0],
-    );
+    // Normalizing all faces to a consistent basis:
+    // v1->v2 = Horizontal, v1->v4 = Vertical (relative to face normal)
+    // CCW Winding maintained for all faces.
 
-    add_quad(
-        &mut vertices,
-        [min, min, min],
-        [max, min, min],
-        [max, min, max],
-        [min, min, max],
-        color,
-        [0.0, -1.0, 0.0],
-    );
+    // Top (+Y)
+    add_block_quad(&mut vertices, [min, max, max], [max, max, max], [max, max, min], [min, max, min], color, [0.0, 1.0, 0.0]);
+    // Bottom (-Y)
+    add_block_quad(&mut vertices, [min, min, min], [max, min, min], [max, min, max], [min, min, max], color, [0.0, -1.0, 0.0]);
+    // Front (+Z)
+    add_block_quad(&mut vertices, [min, min, max], [max, min, max], [max, max, max], [min, max, max], color, [0.0, 0.0, 1.0]);
+    // Back (-Z)
+    add_block_quad(&mut vertices, [max, min, min], [min, min, min], [min, max, min], [max, max, min], color, [0.0, 0.0, -1.0]);
+    // Left (-X)
+    add_block_quad(&mut vertices, [min, min, min], [min, min, max], [min, max, max], [min, max, min], color, [-1.0, 0.0, 0.0]);
+    // Right (+X)
+    add_block_quad(&mut vertices, [max, min, max], [max, min, min], [max, max, min], [max, max, max], color, [1.0, 0.0, 0.0]);
 
-    add_quad(
-        &mut vertices,
-        [min, min, max],
-        [max, min, max],
-        [max, max, max],
-        [min, max, max],
-        color,
-        [0.0, 0.0, 1.0],
-    );
-
-    add_quad(
-        &mut vertices,
-        [min, min, min],
-        [min, max, min],
-        [max, max, min],
-        [max, min, min],
-        color,
-        [0.0, 0.0, -1.0],
-    );
-
-    add_quad(
-        &mut vertices,
-        [min, min, min],
-        [min, min, max],
-        [min, max, max],
-        [min, max, min],
-        color,
-        [-1.0, 0.0, 0.0],
-    );
-
-    add_quad(
-        &mut vertices,
-        [max, min, min],
-        [max, max, min],
-        [max, max, max],
-        [max, min, max],
-        color,
-        [1.0, 0.0, 0.0],
-    );
-
-    upload_vertices_3d(
+    upload_block_vertices_3d(
         &vertices,
     )
 }
@@ -2124,6 +2184,41 @@ fn create_home_logo() -> (u32, u32) {
     )
 }
 
+fn load_texture_from_file(path: &str) -> Option<u32> {
+    match image::open(path) {
+        Ok(img) => {
+            let rgba = img.to_rgba8();
+            let (w, h) = rgba.dimensions();
+            let mut tex = 0;
+            unsafe {
+                gl::GenTextures(1, &mut tex);
+                gl::BindTexture(gl::TEXTURE_2D, tex);
+                gl::TexImage2D(
+                    gl::TEXTURE_2D,
+                    0,
+                    gl::RGBA as i32,
+                    w as i32,
+                    h as i32,
+                    0,
+                    gl::RGBA,
+                    gl::UNSIGNED_BYTE,
+                    rgba.as_raw().as_ptr() as *const _,
+                );
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
+                gl::BindTexture(gl::TEXTURE_2D, 0);
+            }
+            Some(tex)
+        }
+        Err(e) => {
+            eprintln!("Failed to load texture {}: {:?}", path, e);
+            None
+        }
+    }
+}
+
 const HOME_VERTEX_SHADER: &str = r#"
 #version 330 core
 
@@ -2164,6 +2259,7 @@ const GRID_VERTEX_SHADER: &str = r#"
 layout (location = 0) in vec3 a_position;
 layout (location = 1) in vec3 a_normal;
 layout (location = 2) in vec4 a_color;
+layout (location = 3) in vec2 a_uv;
 
 uniform mat4 u_view_projection;
 uniform mat4 u_model;
@@ -2172,6 +2268,7 @@ uniform vec3 u_base_color;
 out vec3 v_normal;
 out vec4 v_color;
 out vec3 v_world_pos;
+out vec2 v_uv;
 
 void main() {
     vec4 world_pos =
@@ -2197,6 +2294,8 @@ void main() {
                 * u_base_color,
             a_color.a
         );
+
+    v_uv = a_uv;
 }
 "#;
 
@@ -2206,6 +2305,7 @@ const GRID_FRAGMENT_SHADER: &str = r#"
 in vec3 v_normal;
 in vec4 v_color;
 in vec3 v_world_pos;
+in vec2 v_uv;
 
 uniform float u_ambient_intensity;
 
@@ -2230,6 +2330,9 @@ uniform sampler2D u_shadow_map;
 uniform mat4 u_light_space_matrix;
 uniform bool u_shadows_enabled;
 uniform float u_alpha;
+
+uniform sampler2D u_texture;
+uniform bool u_use_texture;
 
 out vec4 FragColor;
 
@@ -2320,8 +2423,11 @@ void main() {
             v_normal
         );
 
+    vec4 tex_color = texture(u_texture, v_uv);
+    vec3 color = v_color.rgb * tex_color.rgb;
+
     vec3 ambient =
-        v_color.rgb
+        color
             * u_ambient_intensity;
 
     vec3 diffuse =
@@ -2353,7 +2459,7 @@ void main() {
 
         diffuse =
             (1.0 - shadow)
-            * v_color.rgb
+            * color
             * diff
             * u_global_light_color
             * u_global_light_intensity;
@@ -2405,7 +2511,7 @@ void main() {
                 attenuation;
 
             point_contribution +=
-                v_color.rgb
+                color
                 * diff
                 * u_point_lights[i].color
                 * u_point_lights[i].intensity
@@ -2421,7 +2527,7 @@ void main() {
     FragColor =
         vec4(
             result,
-            v_color.a * u_alpha
+            v_color.a * tex_color.a * u_alpha
         );
 }
 "#;

@@ -205,6 +205,13 @@ Version `0.5.0` establishes the first complete runtime character and third perso
 * Light build type with dedicated Light cell defaults and editor ghost preview.
 * Improved editor center/anchor visibility.
 * Top-Block mode work-area grid visibility control.
+* Project-owned texture importing through the Build and Properties Texture controls.
+* PNG texture file filtering in the project asset importer.
+* Automatic creation of the project's `.assets/textures` directory when required.
+* Project-owned texture copying into `.assets/textures`.
+* Automatic texture identifier assignment after importing a texture.
+* Dynamic renderer texture loading for imported project textures.
+* Renderer texture caching with a fallback texture for missing assets.
 
 ### Changed
 
@@ -218,6 +225,7 @@ Version `0.5.0` establishes the first complete runtime character and third perso
 * Cursor capture follows the presence of an active gameplay character rather than Play mode alone.
 * The work-area grid is hidden when Plane picking is disabled.
 * The WORLD panel now functions as an authored-world hierarchy rather than only a lighting/physics settings panel.
+* Texture fields can now reference project-owned imported textures by their asset identifier.
 
 ### Fixed
 
@@ -229,10 +237,11 @@ Version `0.5.0` establishes the first complete runtime character and third perso
 * Prevented Play mode from depending on an uninitialized gameplay camera when no character exists.
 * Preserved editor camera state when switching between Editor and Play modes.
 * Preserved empty-space Build access through the existing grid fallback when Top-Block picking finds no authored target.
+* Added a fallback texture path so missing or unavailable texture assets do not leave the renderer without a valid texture.
 
 ### Notes
 
-Version `0.6.0` expands AeoEngine from a basic voxel editor into a more capable world-authoring workspace, with hierarchy navigation, multi-selection, depth-aware picking, surface construction, editor history, and stronger separation between editor input and runtime behavior.
+Version `0.6.0` expands AeoEngine from a basic voxel editor into a more capable world-authoring workspace, with hierarchy navigation, multi-selection, depth-aware picking, surface construction, editor history, project-owned texture assets, and stronger separation between editor input and runtime behavior.
 
 ---
 
@@ -246,15 +255,112 @@ Version `0.6.0` expands AeoEngine from a basic voxel editor into a more capable 
 * Determining the proper authored/runtime model for NPCs.
 * Further third person player control refinement.
 * Character interaction with dynamic PhysicsBodies.
+* Texture import conflict handling and additional asset workflow validation.
+* Visual and runtime testing of imported project textures.
 
 ### Planned
 
 * Project-owned asset library using `.assets`.
 * Controlled project asset importing.
-* Project texture support for authored Blocks.
+* Additional supported project asset categories.
 * Expanded rendering and material capabilities.
 * Additional lighting and shadow refinement.
 * Additional character gameplay states and systems.
+
+### Planned Performance & Scalability
+
+The current engine architecture is intentionally prototype-oriented. Several systems have known scalability limits that should be addressed as project size and runtime complexity increase.
+
+#### World Rendering
+
+The current World representation stores authored cells individually, and active block collection requires traversing the stored authored cells.
+
+Future options include:
+
+* Spatially chunked World storage.
+* Visible-chunk selection based on camera position.
+* Per-chunk render meshes.
+* Face culling.
+* Greedy meshing.
+* Render batching.
+
+A possible progression is:
+
+```text
+World
+  ↓
+Spatial chunks
+  ↓
+Visible chunks
+  ↓
+Chunk meshes
+  ↓
+GPU rendering
+```
+
+The exact chunk size and meshing strategy will be determined through profiling and representative world workloads.
+
+#### Dynamic Physics Broad Phase
+
+The current dynamic collision system performs pairwise body checks.
+
+Future options include:
+
+* Uniform spatial grids.
+* Spatial hashing.
+* Sweep-and-prune.
+* BVH or another dedicated broad-phase structure.
+
+The existing narrow-phase collision system should remain separate from the broad phase so that candidate generation can be optimized independently.
+
+#### Continuous Collision Detection
+
+The current physics implementation uses discrete collision testing.
+
+Future options include:
+
+* Swept-volume collision testing.
+* Selective continuous collision detection for high-speed bodies.
+* Projectile-specific continuous collision handling.
+
+Continuous collision detection should be introduced where tunneling becomes a meaningful gameplay or physics requirement rather than enabled indiscriminately.
+
+#### Runtime Mesh Resources
+
+Some runtime rendering paths currently create and destroy GPU vertex objects during mesh drawing.
+
+Future options include:
+
+* Persistent VAO/VBO resources.
+* Reusable mesh resources.
+* Shared geometry between identical renderables.
+* Later batching or instanced rendering where appropriate.
+
+The intended direction is to create stable GPU resources once and reuse them across frames whenever the geometry permits.
+
+#### Performance Engineering
+
+Performance improvements should be driven by profiling and representative workloads.
+
+The engine should avoid replacing simple prototype systems with complex acceleration structures until measurements demonstrate a meaningful need.
+
+The authored/runtime boundary remains unchanged:
+
+```text
+Authored World
+      ↓
+Render representation
+      ↓
+Renderer
+
+Authored World
+      ↓
+Runtime conversion
+      ↓
+PhysicsWorld / Characters
+```
+
+Optimization systems should improve the performance of these paths without making runtime state authoritative over authored World data.
 
 ---
 
@@ -264,26 +370,3 @@ AeoEngine uses Semantic Versioning:
 
 `MAJOR.MINOR.PATCH`
 
-### MAJOR
-
-A breaking architectural or project level change requiring existing projects or systems to migrate.
-
-Example:
-
-`1.0.0`
-
-### MINOR
-
-A new engine capability or major feature milestone.
-
-Example:
-
-`0.6.0` — Expanded editor authoring, hierarchy, selection, picking, surface building, and editor history.
-
-### PATCH
-
-Bug fixes, stability improvements, and small corrections within an existing feature milestone.
-
-Example:
-
-`0.3.1` — Physics stability fixes.
