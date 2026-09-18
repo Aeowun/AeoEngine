@@ -687,7 +687,7 @@ impl App {
 
                     p_world.update_sleeping(gravity);
 
-                    character_system.update(world, dt, world_move_input, self.jump_requested);
+                    character_system.update(world, p_world, dt, world_move_input, self.jump_requested);
 
                     let _ = gameplay_camera;
                 });

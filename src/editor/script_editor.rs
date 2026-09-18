@@ -285,6 +285,62 @@ impl ScriptEditor {
         }
     }
 
+    pub fn apply_dirty_response(
+        &mut self,
+        project_path: &Option<PathBuf>,
+        path: PathBuf,
+        save: bool,
+        cancel: bool,
+    ) {
+        let is_deletion = self.deleting_path.as_ref() == Some(&path);
+        let mut close = false;
+        let mut delete_after = false;
+
+        if cancel {
+            self.closing_path = None;
+            if is_deletion {
+                self.deleting_path = None;
+            }
+            return;
+        }
+
+        if save {
+            if let Some(doc) = self.open_documents.get_mut(&path) {
+                if let Err(e) = doc.save() {
+                    self.output_log.push(format!(
+                        "Save failed: {}. {} aborted.",
+                        e,
+                        if is_deletion { "Deletion" } else { "Closure" }
+                    ));
+                    return;
+                }
+            }
+            close = true;
+            if is_deletion {
+                delete_after = true;
+            }
+        } else {
+            // Don't Save
+            close = true;
+            if is_deletion {
+                delete_after = true;
+            }
+        }
+
+        if close {
+            if delete_after {
+                self.delete_script(project_path, path.clone());
+                self.deleting_path = None;
+            } else {
+                self.open_documents.remove(&path);
+                if self.active_document.as_ref() == Some(&path) {
+                    self.active_document = self.open_documents.keys().next().cloned();
+                }
+            }
+            self.closing_path = None;
+        }
+    }
+
     pub fn perform_search(&mut self) {
         self.search_results.clear();
         if self.search_query.is_empty() { return; }
@@ -391,52 +447,35 @@ impl ScriptEditor {
         }
 
         if let Some(path) = self.closing_path.clone() {
-            let mut close = false;
-            let mut delete_after = false;
-
             // Check if this closure is part of a deletion
             let is_deletion = self.deleting_path.as_ref() == Some(&path);
 
-            egui::Window::new(if is_deletion { "Delete: Unsaved Changes" } else { "Unsaved Changes" })
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .collapsible(false)
-                .show(ctx, |ui| {
-                    ui.label(format!("Save changes to {} before {}?",
-                        path.file_name().unwrap_or_default().to_string_lossy(),
-                        if is_deletion { "deleting" } else { "closing" }
-                    ));
-                    ui.add_space(10.0);
-                    ui.horizontal(|ui| {
-                        if ui.button("Save").clicked() {
-                            if let Some(doc) = self.open_documents.get_mut(&path) {
-                                doc.save().ok();
-                            }
-                            close = true;
-                            if is_deletion { delete_after = true; }
-                        }
-                        if ui.button("Don't Save").clicked() {
-                            close = true;
-                            if is_deletion { delete_after = true; }
-                        }
-                        if ui.button("Cancel").clicked() {
-                            self.closing_path = None;
-                            if is_deletion { self.deleting_path = None; }
-                        }
-                    });
-                });
-
-            if close {
-                if delete_after {
-                    self.delete_script(project_path, path.clone());
-                } else {
-                    self.open_documents.remove(&path);
-                    if self.active_document.as_ref() == Some(&path) {
-                        self.active_document = self.open_documents.keys().next().cloned();
+            egui::Window::new(if is_deletion {
+                "Delete: Unsaved Changes"
+            } else {
+                "Unsaved Changes"
+            })
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .collapsible(false)
+            .show(ctx, |ui| {
+                ui.label(format!(
+                    "Save changes to {} before {}?",
+                    path.file_name().unwrap_or_default().to_string_lossy(),
+                    if is_deletion { "deleting" } else { "closing" }
+                ));
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        self.apply_dirty_response(project_path, path.clone(), true, false);
                     }
-                }
-                self.closing_path = None;
-                if is_deletion { self.deleting_path = None; }
-            }
+                    if ui.button("Don't Save").clicked() {
+                        self.apply_dirty_response(project_path, path.clone(), false, false);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.apply_dirty_response(project_path, path.clone(), false, true);
+                    }
+                });
+            });
         }
     }
 
@@ -823,6 +862,49 @@ mod tests {
 
         assert_eq!(editor.search_results.len(), 1);
         assert_eq!(editor.search_results[0].path.file_name().unwrap(), "one.aeo");
+
+        fs::remove_dir_all(&test_dir).ok();
+    }
+
+    #[test]
+    fn test_delete_dirty_save_failure_aborts_deletion() {
+        let test_dir = PathBuf::from("TestProject_DeleteFailure");
+        let scripts_dir = test_dir.join("scripts");
+        if test_dir.exists() {
+            fs::remove_dir_all(&test_dir).ok();
+        }
+        fs::create_dir_all(&scripts_dir).unwrap();
+
+        let path = scripts_dir.join("bug.aeo");
+        fs::write(&path, "initial content").unwrap();
+
+        let mut editor = ScriptEditor::new();
+        let mut doc = ScriptDocument::new(path.clone(), "initial content".to_string());
+        doc.source = "dirty content".to_string();
+        doc.dirty = true;
+        editor.open_documents.insert(path.clone(), doc);
+
+        // Simulate start of deletion
+        editor.deleting_path = Some(path.clone());
+        editor.closing_path = Some(path.clone());
+
+        // Break the filesystem for this path so save fails
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap(); // Writing to a directory will fail on most OS
+
+        // Trigger "Save" response
+        editor.apply_dirty_response(&Some(test_dir.clone()), path.clone(), true, false);
+
+        // Verify:
+        // 1. Path still exists (as a directory, but it hasn't been removed by delete_script)
+        assert!(path.exists());
+        // 2. Document is still open
+        assert!(editor.open_documents.contains_key(&path));
+        // 3. Deletion state is still active
+        assert_eq!(editor.closing_path, Some(path.clone()));
+        assert_eq!(editor.deleting_path, Some(path.clone()));
+        // 4. Error is logged
+        assert!(editor.output_log.iter().any(|l| l.contains("Save failed")));
 
         fs::remove_dir_all(&test_dir).ok();
     }

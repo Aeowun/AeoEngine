@@ -373,8 +373,50 @@ impl Editor {
         }
     }
 
+    }
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum PropertyChange {
+    LightColor(glam::Vec3),
+    LightIntensity(f32),
+    LightRange(f32),
+    LightShadows(bool),
+    Solid(bool),
+    Anchored(bool),
+    Visible(bool),
+    ColorRgb(glam::Vec3),
+    Texture(String),
+}
+
+impl Editor {
+    pub fn apply_property_changes(&self, world: &mut crate::world::World, changes: &[PropertyChange]) {
+        if changes.is_empty() {
+            return;
+        }
+        for &c in &self.selected_coords {
+            if let Some(other_cell) = world.get_mut(c) {
+                for change in changes {
+                    match change {
+                        PropertyChange::LightColor(color) => other_cell.light_color = *color,
+                        PropertyChange::LightIntensity(intensity) => other_cell.light_intensity = *intensity,
+                        PropertyChange::LightRange(range) => other_cell.light_range = *range,
+                        PropertyChange::LightShadows(shadows) => other_cell.light_shadows = *shadows,
+                        PropertyChange::Solid(solid) => other_cell.solid = *solid,
+                        PropertyChange::Anchored(anchored) => other_cell.anchored = *anchored,
+                        PropertyChange::Visible(visible) => other_cell.visible = *visible,
+                        PropertyChange::ColorRgb(color) => other_cell.color_rgb = *color,
+                        PropertyChange::Texture(texture) => other_cell.texture = texture.clone(),
+                    }
+                }
+            }
+        }
+    }
+
     fn render_properties_content(&mut self, ui: &mut egui::Ui, world: &mut crate::world::World) {
         if let Some(coord) = self.selected_coord {
+            let mut cell_opt = world.get(coord).cloned();
+            let mut changes = Vec::new();
+
             egui::ScrollArea::vertical()
                 .id_source("prop_scroll")
                 .show(ui, |ui| {
@@ -382,7 +424,7 @@ impl Editor {
                     egui::CollapsingHeader::new("IDENTITY")
                         .default_open(true)
                         .show(ui, |ui| {
-                            if let Some(cell) = world.get(coord) {
+                            if let Some(ref cell) = cell_opt {
                                 ui.horizontal(|ui| {
                                     ui.label("Type:");
                                     ui.label(format!("{:?}", cell.cell_type));
@@ -404,7 +446,7 @@ impl Editor {
                             });
                         });
 
-                    if let Some(cell) = world.get_mut(coord) {
+                    if let Some(ref mut cell) = cell_opt {
                         // --- LIGHT ---
                         if cell.cell_type == crate::world::CellType::Light {
                             egui::CollapsingHeader::new("LIGHT")
@@ -424,28 +466,43 @@ impl Editor {
                                             ColorTarget::PropertyLight(coord),
                                             &mut color,
                                         );
-                                        cell.light_color = color;
+                                        if color != cell.light_color {
+                                            cell.light_color = color;
+                                            changes.push(PropertyChange::LightColor(color));
+                                        }
                                     });
 
                                     ui.horizontal(|ui| {
                                         ui.label("Intensity:");
-                                        ui.add(
-                                            egui::DragValue::new(&mut cell.light_intensity)
+                                        let mut intensity = cell.light_intensity;
+                                        if ui.add(
+                                            egui::DragValue::new(&mut intensity)
                                                 .speed(0.1)
                                                 .range(0.0..=f32::MAX),
-                                        );
+                                        ).changed() {
+                                            cell.light_intensity = intensity;
+                                            changes.push(PropertyChange::LightIntensity(intensity));
+                                        }
                                     });
 
                                     ui.horizontal(|ui| {
                                         ui.label("Range:");
-                                        ui.add(
-                                            egui::DragValue::new(&mut cell.light_range)
+                                        let mut range = cell.light_range;
+                                        if ui.add(
+                                            egui::DragValue::new(&mut range)
                                                 .speed(0.1)
                                                 .range(0.0..=f32::MAX),
-                                        );
+                                        ).changed() {
+                                            cell.light_range = range;
+                                            changes.push(PropertyChange::LightRange(range));
+                                        }
                                     });
 
-                                    ui.checkbox(&mut cell.light_shadows, "Shadows");
+                                    let mut shadows = cell.light_shadows;
+                                    if ui.checkbox(&mut shadows, "Shadows").changed() {
+                                        cell.light_shadows = shadows;
+                                        changes.push(PropertyChange::LightShadows(shadows));
+                                    }
                                 });
                         }
 
@@ -453,15 +510,27 @@ impl Editor {
                         egui::CollapsingHeader::new("PHYSICS")
                             .default_open(true)
                             .show(ui, |ui| {
-                                ui.checkbox(&mut cell.solid, "Solid");
-                                ui.checkbox(&mut cell.anchored, "Anchored");
+                                let mut solid = cell.solid;
+                                if ui.checkbox(&mut solid, "Solid").changed() {
+                                    cell.solid = solid;
+                                    changes.push(PropertyChange::Solid(solid));
+                                }
+                                let mut anchored = cell.anchored;
+                                if ui.checkbox(&mut anchored, "Anchored").changed() {
+                                    cell.anchored = anchored;
+                                    changes.push(PropertyChange::Anchored(anchored));
+                                }
                             });
 
                         // --- RENDERING ---
                         egui::CollapsingHeader::new("RENDERING")
                             .default_open(true)
                             .show(ui, |ui| {
-                                ui.checkbox(&mut cell.visible, "Visible");
+                                let mut visible = cell.visible;
+                                if ui.checkbox(&mut visible, "Visible").changed() {
+                                    cell.visible = visible;
+                                    changes.push(PropertyChange::Visible(visible));
+                                }
 
                                 ui.horizontal(|ui| {
                                     ui.label("Color:");
@@ -472,13 +541,24 @@ impl Editor {
                                         ColorTarget::PropertyColor(coord),
                                         &mut color,
                                     );
-                                    cell.color_rgb = color;
+                                    if color != cell.color_rgb {
+                                        cell.color_rgb = color;
+                                        changes.push(PropertyChange::ColorRgb(color));
+                                    }
                                 });
 
-                                tools::draw_texture_edit(ui, &mut cell.texture);
+                                let mut texture = cell.texture.clone();
+                                tools::draw_texture_edit(ui, &mut texture);
+                                if texture != cell.texture {
+                                    cell.texture = texture.clone();
+                                    changes.push(PropertyChange::Texture(texture));
+                                }
                             });
                     }
                 });
+
+            // Apply all changes to all selected coordinates
+            self.apply_property_changes(world, &changes);
         } else {
             ui.centered_and_justified(|ui| {
                 ui.label("No cell selected.");
@@ -722,26 +802,50 @@ impl Editor {
                 .resizable(false)
                 .collapsible(false)
                 .show(ctx, |ui| {
-                    let color_ref = match target {
-                        ColorTarget::Build => Some(&mut self.build_template.color_rgb),
+                    match target {
+                        ColorTarget::Build => {
+                            let mut edit_color = [self.build_template.color_rgb.x, self.build_template.color_rgb.y, self.build_template.color_rgb.z];
+                            if egui::color_picker::color_edit_button_rgb(ui, &mut edit_color).changed() {
+                                self.build_template.color_rgb = glam::Vec3::from_array(edit_color);
+                            }
+                        }
                         ColorTarget::PropertyColor(coord) => {
-                            world.get_mut(coord).map(|c| &mut c.color_rgb)
+                            if let Some(cell) = world.get_mut(coord) {
+                                let mut edit_color = [cell.color_rgb.x, cell.color_rgb.y, cell.color_rgb.z];
+                                if egui::color_picker::color_edit_button_rgb(ui, &mut edit_color).changed() {
+                                    let new_color = glam::Vec3::from_array(edit_color);
+                                    cell.color_rgb = new_color;
+                                    for &c in &self.selected_coords {
+                                        if let Some(other_cell) = world.get_mut(c) {
+                                            other_cell.color_rgb = new_color;
+                                        }
+                                    }
+                                }
+                            } else {
+                                ui.label("Target no longer exists.");
+                                if ui.button("Close").clicked() {
+                                    self.active_color_target = None;
+                                }
+                            }
                         }
                         ColorTarget::PropertyLight(coord) => {
-                            world.get_mut(coord).map(|c| &mut c.light_color)
-                        }
-                    };
-
-                    if let Some(color) = color_ref {
-                        let mut edit_color = [color.x, color.y, color.z];
-                        if egui::color_picker::color_edit_button_rgb(ui, &mut edit_color).changed()
-                        {
-                            *color = glam::Vec3::from_array(edit_color);
-                        }
-                    } else {
-                        ui.label("Target no longer exists.");
-                        if ui.button("Close").clicked() {
-                            self.active_color_target = None;
+                            if let Some(cell) = world.get_mut(coord) {
+                                let mut edit_color = [cell.light_color.x, cell.light_color.y, cell.light_color.z];
+                                if egui::color_picker::color_edit_button_rgb(ui, &mut edit_color).changed() {
+                                    let new_color = glam::Vec3::from_array(edit_color);
+                                    cell.light_color = new_color;
+                                    for &c in &self.selected_coords {
+                                        if let Some(other_cell) = world.get_mut(c) {
+                                            other_cell.light_color = new_color;
+                                        }
+                                    }
+                                }
+                            } else {
+                                ui.label("Target no longer exists.");
+                                if ui.button("Close").clicked() {
+                                    self.active_color_target = None;
+                                }
+                            }
                         }
                     }
 
@@ -755,5 +859,130 @@ impl Editor {
                 self.active_color_target = None;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world::{World, WorldCoord, CellType};
+    use glam::Vec3;
+
+    #[test]
+    fn test_multi_select_property_application_regression() {
+        // 1. Setup a World and place cells
+        let mut world = World::new();
+
+        let coord_a = WorldCoord::new(1, 0, 0);
+        let coord_b = WorldCoord::new(2, 0, 0);
+        let coord_c = WorldCoord::new(3, 0, 0);
+        let coord_d = WorldCoord::new(4, 0, 0);
+        let coord_x = WorldCoord::new(9, 9, 9); // control cell
+
+        world.set_cell(coord_a, CellType::Block);
+        world.set_cell(coord_b, CellType::Block);
+        world.set_cell(coord_c, CellType::Block);
+        world.set_cell(coord_d, CellType::Block);
+        world.set_cell(coord_x, CellType::Block);
+
+        // Initialize distinct values across all selected cells
+        if let Some(cell) = world.get_mut(coord_a) {
+            cell.texture = "tex_a".to_string();
+            cell.color_rgb = Vec3::new(0.1, 0.1, 0.1);
+            cell.solid = true;
+            cell.anchored = false;
+        }
+        if let Some(cell) = world.get_mut(coord_b) {
+            cell.texture = "tex_b".to_string();
+            cell.color_rgb = Vec3::new(0.2, 0.2, 0.2);
+            cell.solid = false;
+            cell.anchored = true;
+        }
+        if let Some(cell) = world.get_mut(coord_c) {
+            cell.texture = "tex_c".to_string();
+            cell.color_rgb = Vec3::new(0.3, 0.3, 0.3);
+            cell.solid = true;
+            cell.anchored = true;
+        }
+        if let Some(cell) = world.get_mut(coord_d) {
+            cell.texture = "tex_d".to_string();
+            cell.color_rgb = Vec3::new(0.4, 0.4, 0.4);
+            cell.solid = false;
+            cell.anchored = false;
+        }
+        if let Some(cell) = world.get_mut(coord_x) {
+            cell.texture = "tex_x".to_string();
+            cell.color_rgb = Vec3::new(0.9, 0.9, 0.9);
+            cell.solid = true;
+            cell.anchored = true;
+        }
+
+        // 2. Create Editor and select multiple cells in a non-trivial order
+        let mut editor = Editor::new();
+        editor.selected_coords = vec![coord_d, coord_b, coord_a, coord_c];
+        editor.selected_coord = Some(coord_c); // Primary selection is C (the last one)
+
+        // Verify initial preconditions to ensure everything is distinct
+        assert_ne!(world.get(coord_a).unwrap().texture, "target_tex");
+        assert_ne!(world.get(coord_b).unwrap().texture, "target_tex");
+        assert_ne!(world.get(coord_c).unwrap().texture, "target_tex");
+        assert_ne!(world.get(coord_d).unwrap().texture, "target_tex");
+        assert_ne!(world.get(coord_x).unwrap().texture, "target_tex");
+
+        // 3. Apply target changes through the production mutation logic path
+        let changes = vec![
+            PropertyChange::Texture("target_tex".to_string()),
+            PropertyChange::ColorRgb(Vec3::new(0.7, 0.7, 0.7)),
+            PropertyChange::Solid(true),
+            PropertyChange::Anchored(true),
+        ];
+
+        editor.apply_property_changes(&mut world, &changes);
+
+        // 4. Explicitly verify ALL selected cells changed to target values individually
+        let cell_a = world.get(coord_a).unwrap();
+        assert_eq!(cell_a.texture, "target_tex");
+        assert_eq!(cell_a.color_rgb, Vec3::new(0.7, 0.7, 0.7));
+        assert_eq!(cell_a.solid, true);
+        assert_eq!(cell_a.anchored, true);
+
+        let cell_b = world.get(coord_b).unwrap();
+        assert_eq!(cell_b.texture, "target_tex");
+        assert_eq!(cell_b.color_rgb, Vec3::new(0.7, 0.7, 0.7));
+        assert_eq!(cell_b.solid, true);
+        assert_eq!(cell_b.anchored, true);
+
+        let cell_c = world.get(coord_c).unwrap();
+        assert_eq!(cell_c.texture, "target_tex");
+        assert_eq!(cell_c.color_rgb, Vec3::new(0.7, 0.7, 0.7));
+        assert_eq!(cell_c.solid, true);
+        assert_eq!(cell_c.anchored, true);
+
+        let cell_d = world.get(coord_d).unwrap();
+        assert_eq!(cell_d.texture, "target_tex");
+        assert_eq!(cell_d.color_rgb, Vec3::new(0.7, 0.7, 0.7));
+        assert_eq!(cell_d.solid, true);
+        assert_eq!(cell_d.anchored, true);
+
+        // 5. Verify the control cell was NOT modified
+        let cell_x = world.get(coord_x).unwrap();
+        assert_eq!(cell_x.texture, "tex_x");
+        assert_eq!(cell_x.color_rgb, Vec3::new(0.9, 0.9, 0.9));
+        assert_eq!(cell_x.solid, true);
+        assert_eq!(cell_x.anchored, true);
+
+        // 6. Single Selection Check: verify single selection case works perfectly
+        editor.selected_coords = vec![coord_a];
+        editor.selected_coord = Some(coord_a);
+
+        let single_changes = vec![
+            PropertyChange::Texture("single_tex".to_string()),
+        ];
+        editor.apply_property_changes(&mut world, &single_changes);
+
+        assert_eq!(world.get(coord_a).unwrap().texture, "single_tex");
+        assert_eq!(world.get(coord_b).unwrap().texture, "target_tex"); // remains target_tex
+        assert_eq!(world.get(coord_c).unwrap().texture, "target_tex");
+        assert_eq!(world.get(coord_d).unwrap().texture, "target_tex");
     }
 }

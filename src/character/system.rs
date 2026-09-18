@@ -47,7 +47,7 @@ impl CharacterSystem {
     }
 
     /// Performs a fixed simulation step for all active characters.
-    pub fn update(&mut self, world: &World, dt: f32, input: Vec2, jump_requested: bool) {
+    pub fn update(&mut self, world: &World, physics_world: &mut crate::engine::physics::PhysicsWorld, dt: f32, input: Vec2, jump_requested: bool) {
         for character in self.characters.values_mut() {
             // 1. Horizontal Movement
             // We apply input directly to horizontal velocity.
@@ -86,6 +86,9 @@ impl CharacterSystem {
             // Note: We use a static helper function to avoid borrow checker errors
             // when accessing world while iterating characters.
             Self::resolve_voxel_collisions(character, world);
+
+            // New: Dynamic Body Collision Resolution
+            Self::resolve_dynamic_body_collisions(character, physics_world);
 
             // 7. Animation State Handoff
             let horizontal_speed = horizontal_vel.length();
@@ -187,6 +190,65 @@ impl CharacterSystem {
             }
         }
     }
+
+    fn resolve_dynamic_body_collisions(character: &mut Character, physics_world: &mut crate::engine::physics::PhysicsWorld) {
+        let radius = character.collision.radius;
+        let height = character.collision.height;
+
+        for body in &mut physics_world.bodies {
+            if body.anchored || !body.solid {
+                continue;
+            }
+
+            let v_min = body.min_corner();
+            let v_max = body.max_corner();
+
+            // AABB overlap test
+            let overlap_x = (character.transform.position.x + radius).min(v_max.x)
+                - (character.transform.position.x - radius).max(v_min.x);
+            let overlap_y = (character.transform.position.y + height).min(v_max.y)
+                - character.transform.position.y.max(v_min.y);
+            let overlap_z = (character.transform.position.z + radius).min(v_max.z)
+                - (character.transform.position.z - radius).max(v_min.z);
+
+            if overlap_x > 0.001 && overlap_y > 0.001 && overlap_z > 0.001 {
+                // Resolve collision on the axis of shallowest penetration.
+                if overlap_y < overlap_x && overlap_y < overlap_z {
+                    if character.transform.position.y < v_min.y {
+                        // Pushing down (head hit)
+                        character.transform.position.y -= overlap_y;
+                        if character.movement.velocity.y > 0.0 {
+                            character.movement.velocity.y = 0.0;
+                        }
+                    } else {
+                        // Pushing up (floor hit)
+                        character.transform.position.y += overlap_y;
+                        character.movement.is_grounded = true;
+                        if character.movement.velocity.y < 0.0 {
+                            character.movement.velocity.y = 0.0;
+                        }
+                    }
+                } else if overlap_x < overlap_z {
+                    if character.transform.position.x < v_min.x {
+                        character.transform.position.x -= overlap_x;
+                    } else {
+                        character.transform.position.x += overlap_x;
+                    }
+                    character.movement.velocity.x = 0.0;
+                } else {
+                    if character.transform.position.z < v_min.z {
+                        character.transform.position.z -= overlap_z;
+                    } else {
+                        character.transform.position.z += overlap_z;
+                    }
+                    character.movement.velocity.z = 0.0;
+                }
+
+                // Wake the dynamic body upon contact interaction
+                body.wake();
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -256,7 +318,7 @@ mod tests {
 
         // Update for 1 second
         for _ in 0..60 {
-            system.update(&world, 1.0 / 60.0, Vec2::ZERO, false);
+            system.update(&world, &mut crate::engine::physics::PhysicsWorld::new(), 1.0 / 60.0, Vec2::ZERO, false);
         }
 
         let updated = system.get_active_characters().next().unwrap();
@@ -272,7 +334,7 @@ mod tests {
         system.characters.insert(1, character);
 
         // Move Right (+X)
-        system.update(&world, 0.1, Vec2::new(1.0, 0.0), false);
+        system.update(&world, &mut crate::engine::physics::PhysicsWorld::new(), 0.1, Vec2::new(1.0, 0.0), false);
 
         let updated = system.get_active_characters().next().unwrap();
         assert!(updated.transform.position.x > 0.0);
@@ -293,7 +355,7 @@ mod tests {
 
         // Update until they hit the ground
         for _ in 0..60 {
-            system.update(&world, 1.0 / 60.0, Vec2::ZERO, false);
+            system.update(&world, &mut crate::engine::physics::PhysicsWorld::new(), 1.0 / 60.0, Vec2::ZERO, false);
         }
 
         let updated = system.get_active_characters().next().unwrap();
@@ -310,7 +372,7 @@ mod tests {
         system.characters.insert(1, character);
 
         // 1. Idle (no input)
-        system.update(&world, 0.1, Vec2::ZERO, false);
+        system.update(&world, &mut crate::engine::physics::PhysicsWorld::new(), 0.1, Vec2::ZERO, false);
         assert_eq!(
             system
                 .get_active_characters()
@@ -322,7 +384,7 @@ mod tests {
         );
 
         // 2. Walk (input)
-        system.update(&world, 0.1, Vec2::X, false);
+        system.update(&world, &mut crate::engine::physics::PhysicsWorld::new(), 0.1, Vec2::X, false);
         assert_eq!(
             system
                 .get_active_characters()
@@ -342,7 +404,7 @@ mod tests {
         system.characters.insert(1, character);
 
         // Move Right (+X, input.y is 0)
-        system.update(&world, 0.1, Vec2::new(1.0, 0.0), false);
+        system.update(&world, &mut crate::engine::physics::PhysicsWorld::new(), 0.1, Vec2::new(1.0, 0.0), false);
         let rot1 = system
             .get_active_characters()
             .next()
@@ -351,7 +413,7 @@ mod tests {
             .rotation;
 
         // Move Left (-X)
-        system.update(&world, 0.1, Vec2::new(-1.0, 0.0), false);
+        system.update(&world, &mut crate::engine::physics::PhysicsWorld::new(), 0.1, Vec2::new(-1.0, 0.0), false);
         let rot2 = system
             .get_active_characters()
             .next()
@@ -362,7 +424,7 @@ mod tests {
         assert_ne!(rot1, rot2);
 
         // Stationary character keeps rotation
-        system.update(&world, 0.1, Vec2::ZERO, false);
+        system.update(&world, &mut crate::engine::physics::PhysicsWorld::new(), 0.1, Vec2::ZERO, false);
         let rot3 = system
             .get_active_characters()
             .next()
@@ -382,7 +444,7 @@ mod tests {
         system.characters.insert(1, character);
 
         // Ensure grounded first
-        system.update(&world, 1.0 / 60.0, Vec2::ZERO, false);
+        system.update(&world, &mut crate::engine::physics::PhysicsWorld::new(), 1.0 / 60.0, Vec2::ZERO, false);
         assert!(
             system
                 .get_active_characters()
@@ -393,7 +455,7 @@ mod tests {
         );
 
         // Jump
-        system.update(&world, 1.0 / 60.0, Vec2::ZERO, true);
+        system.update(&world, &mut crate::engine::physics::PhysicsWorld::new(), 1.0 / 60.0, Vec2::ZERO, true);
         let updated = system.get_active_characters().next().unwrap();
         // Note: Gravity is applied in the same frame as the impulse, so we expect
         // JUMP_IMPULSE + gravity * dt.
@@ -402,7 +464,7 @@ mod tests {
         assert!(!updated.movement.is_grounded);
 
         // Airborne character cannot jump again (until grounded)
-        system.update(&world, 1.0 / 60.0, Vec2::ZERO, true);
+        system.update(&world, &mut crate::engine::physics::PhysicsWorld::new(), 1.0 / 60.0, Vec2::ZERO, true);
         // Velocity should have decreased due to gravity, not reset to JUMP_IMPULSE
         assert!(
             system
@@ -414,5 +476,60 @@ mod tests {
                 .y
                 < movement::JUMP_IMPULSE
         );
+    }
+
+    #[test]
+    fn test_character_collision_with_dynamic_bodies() {
+        use crate::engine::physics::{PhysicsBody, PhysicsBodyId, PhysicsWorld};
+
+        let mut system = CharacterSystem::new();
+        let world = World::new();
+        let mut p_world = PhysicsWorld::new();
+
+        // 1. Awake solid dynamic body blocks character.
+        // Place character at (0, 0, 0), moving right (+X).
+        // Place solid body at (1.5, 0, 0). Size is 1x1x1.
+        let mut character = Character::new(1, Vec3::ZERO);
+        character.collision.radius = 0.5; // Width is 1.0 (-0.5 to 0.5)
+        system.characters.insert(1, character);
+
+        let body_id = PhysicsBodyId(1);
+        let mut body = PhysicsBody::new(body_id, Vec3::new(0.6, 0.0, -0.5), Vec3::ONE);
+        body.solid = true;
+        body.anchored = false;
+        p_world.bodies.push(body);
+
+        // Move right. Expected to hit body at X=0.6.
+        // Character radius 0.5, so right edge is X=0.5.
+        // Update moves char by velocity (MOVE_SPEED=4.0) * dt (0.1) = 0.4.
+        // Character pos becomes 0.4. Right edge is 0.9.
+        // Overlap with body (0.6 to 1.6) is 0.9 - 0.6 = 0.3.
+        // Character should be pushed back to X = 0.4 - 0.3 = 0.1.
+        system.update(&world, &mut p_world, 0.1, Vec2::new(1.0, 0.0), false);
+
+        let updated = system.get_active_characters().next().unwrap();
+        assert!(updated.transform.position.x < 0.4, "Character should be blocked by awake body");
+        assert!((updated.transform.position.x - 0.1).abs() < 0.01);
+
+        // 2. Sleeping solid dynamic body blocks character and wakes up.
+        p_world.bodies[0].is_sleeping = true;
+        p_world.bodies[0].position = Vec3::new(0.6, 0.0, -0.5);
+        // Reset character
+        system.characters.get_mut(&1).unwrap().transform.position = Vec3::ZERO;
+
+        system.update(&world, &mut p_world, 0.1, Vec2::new(1.0, 0.0), false);
+
+        let updated = system.get_active_characters().next().unwrap();
+        assert!(updated.transform.position.x < 0.4, "Character should be blocked by sleeping body");
+        assert!(!p_world.bodies[0].is_sleeping, "Body should be woken by character collision");
+
+        // 3. Non-solid dynamic body does not block.
+        p_world.bodies[0].solid = false;
+        system.characters.get_mut(&1).unwrap().transform.position = Vec3::ZERO;
+
+        system.update(&world, &mut p_world, 0.1, Vec2::new(1.0, 0.0), false);
+
+        let updated = system.get_active_characters().next().unwrap();
+        assert!((updated.transform.position.x - 0.4).abs() < 0.01, "Character should pass through non-solid body");
     }
 }

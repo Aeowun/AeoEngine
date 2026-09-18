@@ -207,9 +207,12 @@ impl Renderer {
                 gl::BindTexture(gl::TEXTURE_2D, 0);
             }
 
-            // Load the default brick texture and map it to the "Block_tx" identifier
+            // Map the "Block_tx" identifier to the blank white fallback texture.
+            // This ensures default blocks render as plain grey (multiplied by their base color).
+            textures.insert("Block_tx".to_string(), fallback_tex);
+
+            // Load the actual brick texture and map it to the "brick" identifier.
             if let Some(tex) = load_texture_from_file(".assets/textures/brick.png") {
-                textures.insert("Block_tx".to_string(), tex);
                 textures.insert("brick".to_string(), tex);
             }
 
