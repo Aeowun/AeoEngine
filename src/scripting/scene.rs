@@ -329,6 +329,7 @@ mod tests {
 
     struct TestHost {
         entity_manager: EntityManager,
+        world: crate::world::World,
     }
 
     impl EngineHost for TestHost {
@@ -342,6 +343,28 @@ mod tests {
 
         fn set_position(&mut self, id: u64, position: Vec3) {
             self.entity_manager.set_position(EntityId(id), position);
+        }
+
+        fn lookup_light(&self, x: i32, y: i32, z: i32) -> Option<u64> {
+            let coord = crate::world::WorldCoord::new(x, y, z);
+            if let Some(cell) = self.world.get(coord) {
+                if cell.cell_type == crate::world::CellType::Light {
+                    return Some(crate::scripting::api::pack_coord(coord));
+                }
+            }
+            None
+        }
+
+        fn is_light_enabled(&self, id: u64) -> Option<bool> {
+            let coord = crate::scripting::api::unpack_coord(id);
+            self.world.get(coord).map(|c| c.light_enabled)
+        }
+
+        fn set_light_enabled(&mut self, id: u64, enabled: bool) {
+            let coord = crate::scripting::api::unpack_coord(id);
+            if let Some(cell) = self.world.get_mut(coord) {
+                cell.light_enabled = enabled;
+            }
         }
     }
 
@@ -367,6 +390,7 @@ mod tests {
     fn test_host() -> TestHost {
         TestHost {
             entity_manager: EntityManager::new(),
+            world: crate::world::World::new(),
         }
     }
 
@@ -814,6 +838,187 @@ entity B { fn on_spawn() { debug.log("B") } }
         assert!(result.unwrap_err().contains("Parser error"));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_get_light_api() {
+        let source = r#"
+entity Test {
+    fn on_spawn() {
+        const l1 = get_light(10, 10, 10)
+        if l1 != null { debug.log("found_l1") }
+
+        const l2 = get_light(0, 0, 0)
+        if l2 == null { debug.log("null_l2") }
+
+        const l3 = get_light(100, 100, 100)
+        if l3 == null { debug.log("null_l3") }
+    }
+}
+"#;
+        let mut th = test_host();
+        th.world.set_cell(crate::world::WorldCoord::new(10, 10, 10), crate::world::CellType::Light);
+        th.world.set_cell(crate::world::WorldCoord::new(0, 0, 0), crate::world::CellType::Block);
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap(); // spawns
+        scene.update(0.0, &mut host).unwrap(); // runs
+
+        let output = scene.output();
+        assert!(output.contains(&"found_l1".to_string()));
+        assert!(output.contains(&"null_l2".to_string()));
+        assert!(output.contains(&"null_l3".to_string()));
+    }
+
+    #[test]
+    fn test_light_enable_api() {
+        let source = r#"
+entity Test {
+    fn on_spawn() {
+        const l = get_light(10, 10, 10)
+        if l.is_enabled() { debug.log("enabled_init") }
+
+        l.set_enabled(false)
+        if l.is_enabled() == false { debug.log("disabled_after_set") }
+
+        l.set_enabled(true)
+        if l.is_enabled() { debug.log("enabled_after_set") }
+    }
+}
+"#;
+        let mut th = test_host();
+        let coord = crate::world::WorldCoord::new(10, 10, 10);
+        th.world.set_cell(coord, crate::world::CellType::Light);
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.contains(&"enabled_init".to_string()));
+        assert!(output.contains(&"disabled_after_set".to_string()));
+        assert!(output.contains(&"enabled_after_set".to_string()));
+
+        assert_eq!(th.world.get(coord).unwrap().light_enabled, true);
+    }
+
+    #[test]
+    fn test_light_independent() {
+        let source = r#"
+entity Test {
+    fn on_spawn() {
+        const l1 = get_light(10, 10, 10)
+        const l2 = get_light(20, 20, 20)
+
+        l1.set_enabled(false)
+        if l1.is_enabled() == false { debug.log("l1_off") }
+        if l2.is_enabled() == true { debug.log("l2_on") }
+    }
+}
+"#;
+        let mut th = test_host();
+        th.world.set_cell(crate::world::WorldCoord::new(10, 10, 10), crate::world::CellType::Light);
+        th.world.set_cell(crate::world::WorldCoord::new(20, 20, 20), crate::world::CellType::Light);
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.contains(&"l1_off".to_string()));
+        assert!(output.contains(&"l2_on".to_string()));
+    }
+
+    #[test]
+    fn test_light_wait_loop() {
+        let source = r#"
+entity Test {
+    fn on_spawn() {
+        const l = get_light(10, 10, 10)
+        for i in [1, 2] {
+            l.set_enabled(false)
+            wait(1)
+            l.set_enabled(true)
+            wait(1)
+        }
+        debug.log("done")
+    }
+}
+"#;
+        let mut th = test_host();
+        let coord = crate::world::WorldCoord::new(10, 10, 10);
+        th.world.set_cell(coord, crate::world::CellType::Light);
+
+        let mut scene = {
+            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+            let mut scene = create_scene(source, &mut host);
+            scene.start(&mut host).unwrap();
+            scene.update(0.0, &mut host).unwrap(); // spawns
+            scene
+        };
+
+        // i = 1
+        {
+            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+            scene.update(0.0, &mut host).unwrap(); // set off, wait(1)
+        }
+        assert_eq!(th.world.get(coord).unwrap().light_enabled, false);
+
+        {
+            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+            scene.update(1.0, &mut host).unwrap(); // set on, wait(1)
+        }
+        assert_eq!(th.world.get(coord).unwrap().light_enabled, true);
+
+        // i = 2
+        {
+            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+            scene.update(1.0, &mut host).unwrap(); // set off, wait(1)
+        }
+        assert_eq!(th.world.get(coord).unwrap().light_enabled, false);
+
+        {
+            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+            scene.update(1.0, &mut host).unwrap(); // set on, wait(1)
+        }
+        assert_eq!(th.world.get(coord).unwrap().light_enabled, true);
+
+        {
+            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+            scene.update(1.0, &mut host).unwrap(); // loop ends
+        }
+        assert!(scene.output().contains(&"done".to_string()));
+    }
+
+    #[test]
+    fn test_light_refetch_state() {
+        let source = r#"
+entity Test {
+    fn update(dt: number) {
+        const l1 = get_light(10, 10, 10)
+        l1.set_enabled(false)
+
+        const l2 = get_light(10, 10, 10)
+        if l2.is_enabled() == false { debug.log("refetch_observed_off") }
+    }
+}
+"#;
+        let mut th = test_host();
+        th.world.set_cell(crate::world::WorldCoord::new(10, 10, 10), crate::world::CellType::Light);
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap(); // spawns
+        scene.update(0.0, &mut host).unwrap(); // runs
+
+        assert!(scene.output().contains(&"refetch_observed_off".to_string()));
     }
 
     #[test]

@@ -12,6 +12,12 @@ pub enum CellType {
     SpawnPoint,
 }
 
+impl CellType {
+    pub fn is_entity(self) -> bool {
+        matches!(self, Self::Player | Self::NPC)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Cell {
     pub cell_type: CellType,
@@ -26,6 +32,10 @@ pub struct Cell {
     pub light_intensity: f32,
     pub light_range: f32,
     pub light_shadows: bool,
+    pub light_enabled: bool,
+
+    /// Persistent identity for cells that represent scripted entities (e.g. Player, NPC).
+    pub entity_identity: Option<String>,
 }
 
 impl Default for Cell {
@@ -41,6 +51,8 @@ impl Default for Cell {
             light_intensity: 5.0,
             light_range: 10.0,
             light_shadows: true,
+            light_enabled: true,
+            entity_identity: None,
         }
     }
 }
@@ -71,6 +83,8 @@ impl Cell {
             light_intensity: 5.0,
             light_range: 10.0,
             light_shadows: true,
+            light_enabled: true,
+            entity_identity: None,
         }
     }
 

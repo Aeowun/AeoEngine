@@ -626,11 +626,16 @@ impl App {
             if self.editor.mode == EditorMode::Play {
                 let scene_opt = &mut self.script_scene;
                 let em = &mut self.entity_manager;
+                let world = &mut self.world;
 
                 if let Some(scene) = scene_opt {
+                    let mut bridge = ScriptHostBridge {
+                        entity_manager: em,
+                        world,
+                    };
                     let mut context = HostContext {
                         delta_time: frame_time as f64,
-                        engine: em,
+                        engine: &mut bridge,
                     };
                     if let Err(e) = scene.update(frame_time, &mut context) {
                         eprintln!("Scripting error: {}", e);
@@ -1052,6 +1057,47 @@ impl App {
             } else {
                 println!("Camera saved to {:?}", camera_path);
             }
+        }
+    }
+}
+
+struct ScriptHostBridge<'a> {
+    entity_manager: &'a mut EntityManager,
+    world: &'a mut World,
+}
+
+impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
+    fn entity_manager(&self) -> &EntityManager {
+        self.entity_manager
+    }
+
+    fn get_position(&self, id: u64) -> Option<glam::Vec3> {
+        self.entity_manager.get_position(crate::engine::entity::EntityId(id))
+    }
+
+    fn set_position(&mut self, id: u64, position: glam::Vec3) {
+        self.entity_manager.set_position(crate::engine::entity::EntityId(id), position);
+    }
+
+    fn lookup_light(&self, x: i32, y: i32, z: i32) -> Option<u64> {
+        let coord = crate::world::WorldCoord::new(x, y, z);
+        if let Some(cell) = self.world.get(coord) {
+            if cell.cell_type == crate::world::CellType::Light {
+                return Some(crate::scripting::api::pack_coord(coord));
+            }
+        }
+        None
+    }
+
+    fn is_light_enabled(&self, id: u64) -> Option<bool> {
+        let coord = crate::scripting::api::unpack_coord(id);
+        self.world.get(coord).map(|c| c.light_enabled)
+    }
+
+    fn set_light_enabled(&mut self, id: u64, enabled: bool) {
+        let coord = crate::scripting::api::unpack_coord(id);
+        if let Some(cell) = self.world.get_mut(coord) {
+            cell.light_enabled = enabled;
         }
     }
 }

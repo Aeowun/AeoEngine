@@ -643,7 +643,7 @@ impl Renderer {
 
             for coord in world.active_blocks() {
                 if let Some(cell) = world.get(coord) {
-                    if cell.cell_type == CellType::Light {
+                    if cell.cell_type == CellType::Light && cell.light_enabled {
                         point_lights.push((coord, cell));
 
                         if point_lights.len() >= 16 {

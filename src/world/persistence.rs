@@ -4,7 +4,7 @@ use std::path::Path;
 
 use glam::Vec3;
 
-use super::cell::CellType;
+use super::cell::{Cell, CellType};
 use super::coordinate::WorldCoord;
 use super::world::World;
 use crate::scripting::binding::ScriptBinding;
@@ -86,7 +86,7 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                 CellType::Light => {
                     writeln!(
                         file,
-                        "LIGHT {} {} {} {} {} {} {} {} {}",
+                        "LIGHT {} {} {} {} {} {} {} {} {} {}",
                         coord.x,
                         coord.y,
                         coord.z,
@@ -95,7 +95,44 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                         cell.light_color.z,
                         cell.light_intensity,
                         cell.light_range,
-                        cell.light_shadows
+                        cell.light_shadows,
+                        cell.light_enabled
+                    )?;
+                }
+
+                CellType::Player => {
+                    writeln!(
+                        file,
+                        "PLAYER {} {} {} {} {} {} {} {} {} {} {}",
+                        coord.x,
+                        coord.y,
+                        coord.z,
+                        cell.visible,
+                        cell.solid,
+                        cell.anchored,
+                        cell.texture,
+                        cell.color_rgb.x,
+                        cell.color_rgb.y,
+                        cell.color_rgb.z,
+                        cell.entity_identity.as_deref().unwrap_or("None")
+                    )?;
+                }
+
+                CellType::NPC => {
+                    writeln!(
+                        file,
+                        "NPC {} {} {} {} {} {} {} {} {} {} {}",
+                        coord.x,
+                        coord.y,
+                        coord.z,
+                        cell.visible,
+                        cell.solid,
+                        cell.anchored,
+                        cell.texture,
+                        cell.color_rgb.x,
+                        cell.color_rgb.y,
+                        cell.color_rgb.z,
+                        cell.entity_identity.as_deref().unwrap_or("None")
                     )?;
                 }
 
@@ -105,6 +142,17 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+fn parse_block_properties(cell: &mut Cell, parts: &[&str]) {
+    cell.visible = parts[4].parse::<bool>().unwrap_or(true);
+    cell.solid = parts[5].parse::<bool>().unwrap_or(true);
+    cell.anchored = parts[6].parse::<bool>().unwrap_or(true);
+    cell.texture = parts[7].to_string();
+    let r = parts[8].parse::<f32>().unwrap_or(0.5);
+    let g = parts[9].parse::<f32>().unwrap_or(0.5);
+    let b = parts[10].parse::<f32>().unwrap_or(0.5);
+    cell.color_rgb = Vec3::new(r, g, b);
 }
 
 /// We clear and reload the world from disk. This supports the standard project
@@ -193,19 +241,7 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
                     if let Some(cell) = world.get_mut(coord) {
                         if parts.len() >= 11 {
-                            cell.visible = parts[4].parse::<bool>().unwrap_or(true);
-
-                            cell.solid = parts[5].parse::<bool>().unwrap_or(true);
-
-                            cell.anchored = parts[6].parse::<bool>().unwrap_or(true);
-
-                            cell.texture = parts[7].to_string();
-
-                            let r = parts[8].parse::<f32>().unwrap_or(0.5);
-                            let g = parts[9].parse::<f32>().unwrap_or(0.5);
-                            let b = parts[10].parse::<f32>().unwrap_or(0.5);
-
-                            cell.color_rgb = Vec3::new(r, g, b);
+                            parse_block_properties(cell, &parts);
                         }
                     }
                 } else if block_type == "SPAWN_POINT" {
@@ -213,19 +249,7 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
                     if let Some(cell) = world.get_mut(coord) {
                         if parts.len() >= 11 {
-                            cell.visible = parts[4].parse::<bool>().unwrap_or(true);
-
-                            cell.solid = parts[5].parse::<bool>().unwrap_or(true);
-
-                            cell.anchored = parts[6].parse::<bool>().unwrap_or(true);
-
-                            cell.texture = parts[7].to_string();
-
-                            let r = parts[8].parse::<f32>().unwrap_or(0.5);
-                            let g = parts[9].parse::<f32>().unwrap_or(0.5);
-                            let b = parts[10].parse::<f32>().unwrap_or(0.5);
-
-                            cell.color_rgb = Vec3::new(r, g, b);
+                            parse_block_properties(cell, &parts);
                         }
                     }
                 } else if block_type == "GRASS" {
@@ -259,6 +283,34 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                         // Default color for legacy grass.
                         cell.color_rgb = Vec3::new(0.5, 0.5, 0.5);
                     }
+                } else if block_type == "PLAYER" {
+                    world.set_cell(coord, CellType::Player);
+
+                    if let Some(cell) = world.get_mut(coord) {
+                        if parts.len() >= 11 {
+                            parse_block_properties(cell, &parts);
+                        }
+                        if parts.len() >= 12 {
+                            let identity = parts[11];
+                            if identity != "None" {
+                                cell.entity_identity = Some(identity.to_string());
+                            }
+                        }
+                    }
+                } else if block_type == "NPC" {
+                    world.set_cell(coord, CellType::NPC);
+
+                    if let Some(cell) = world.get_mut(coord) {
+                        if parts.len() >= 11 {
+                            parse_block_properties(cell, &parts);
+                        }
+                        if parts.len() >= 12 {
+                            let identity = parts[11];
+                            if identity != "None" {
+                                cell.entity_identity = Some(identity.to_string());
+                            }
+                        }
+                    }
                 } else if block_type == "LIGHT" {
                     world.set_cell(coord, CellType::Light);
 
@@ -275,6 +327,10 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                             cell.light_range = parts[8].parse::<f32>().unwrap_or(10.0);
 
                             cell.light_shadows = parts[9].parse::<bool>().unwrap_or(true);
+
+                            if parts.len() >= 11 {
+                                cell.light_enabled = parts[10].parse::<bool>().unwrap_or(true);
+                            }
                         }
                     }
                 }
@@ -396,6 +452,7 @@ mod tests {
             cell.light_intensity = 99.0;
             cell.light_range = 50.0;
             cell.light_shadows = false;
+            cell.light_enabled = false;
         }
 
         let path = Path::new("test_light_cell.dat");
@@ -412,6 +469,27 @@ mod tests {
         assert_eq!(loaded_cell.light_intensity, 99.0);
         assert_eq!(loaded_cell.light_range, 50.0);
         assert_eq!(loaded_cell.light_shadows, false);
+        assert_eq!(loaded_cell.light_enabled, false);
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_light_default_enabled_legacy_load() {
+        let path = Path::new("test_light_legacy.dat");
+        {
+            let mut file = File::create(path).unwrap();
+            // Old format: 10 parts (LIGHT x y z r g b intensity range shadows)
+            // Missing 11th part (enabled)
+            writeln!(file, "LIGHT 5 5 5 1 1 1 5 10 true").unwrap();
+        }
+
+        let mut world = World::new();
+        load_world(&mut world, path).unwrap();
+
+        let cell = world.get(WorldCoord::new(5, 5, 5)).unwrap();
+        assert_eq!(cell.cell_type, CellType::Light);
+        assert_eq!(cell.light_enabled, true); // Should default to true
 
         fs::remove_file(path).ok();
     }
@@ -521,6 +599,99 @@ mod tests {
         assert!(loaded_world.get(coord).is_some());
         assert_eq!(loaded_world.script_bindings.len(), 1);
         assert_eq!(loaded_world.script_bindings[0].target_identity, "Box");
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_entity_identity_persistence() {
+        let mut world = World::new();
+        let p_coord = WorldCoord::new(1, 1, 1);
+        let n_coord = WorldCoord::new(2, 2, 2);
+        let b_coord = WorldCoord::new(3, 3, 3);
+
+        world.set_cell(p_coord, CellType::Player);
+        if let Some(cell) = world.get_mut(p_coord) {
+            cell.entity_identity = Some("Hero".to_string());
+        }
+
+        world.set_cell(n_coord, CellType::NPC);
+        if let Some(cell) = world.get_mut(n_coord) {
+            cell.entity_identity = Some("Merchant".to_string());
+        }
+
+        world.set_cell(b_coord, CellType::Block);
+        // Blocks should have None (non-entity)
+
+        let path = Path::new("test_identity.dat");
+        save_world(&world, path).unwrap();
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        let p_cell = loaded_world.get(p_coord).unwrap();
+        assert_eq!(p_cell.cell_type, CellType::Player);
+        assert_eq!(p_cell.entity_identity, Some("Hero".to_string()));
+
+        let n_cell = loaded_world.get(n_coord).unwrap();
+        assert_eq!(n_cell.cell_type, CellType::NPC);
+        assert_eq!(n_cell.entity_identity, Some("Merchant".to_string()));
+
+        let b_cell = loaded_world.get(b_coord).unwrap();
+        assert_eq!(b_cell.cell_type, CellType::Block);
+        assert_eq!(b_cell.entity_identity, None);
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_identity_not_derived_dynamically() {
+        let mut world = World::new();
+        let coord = WorldCoord::new(10, 20, 30);
+        world.set_cell(coord, CellType::NPC);
+
+        if let Some(cell) = world.get_mut(coord) {
+            cell.entity_identity = Some("SpecificGuard".to_string());
+        }
+
+        // 1. Stability across coordinate change (not derived from coords)
+        let new_coord = WorldCoord::new(40, 50, 60);
+        let mut cell = world.cells.remove(&coord).unwrap();
+        world.cells.insert(new_coord, cell.clone());
+
+        assert_eq!(world.get(new_coord).unwrap().entity_identity, Some("SpecificGuard".to_string()));
+
+        // 2. Stability across entity-type transition (Player <-> NPC)
+        if let Some(cell) = world.get_mut(new_coord) {
+            cell.cell_type = CellType::Player;
+        }
+        assert_eq!(world.get(new_coord).unwrap().entity_identity, Some("SpecificGuard".to_string()));
+
+        // 3. Invariant: non-entity cells MUST have None identity.
+        // If we manually change type to a non-entity, we must also clear identity.
+        // This exercises the expected model invariant that only Player/NPC hold identities.
+        if let Some(cell) = world.get_mut(new_coord) {
+            cell.cell_type = CellType::Block;
+            cell.entity_identity = None;
+        }
+        assert_eq!(world.get(new_coord).unwrap().entity_identity, None);
+    }
+
+    #[test]
+    fn test_legacy_identity_load() {
+        let path = Path::new("test_legacy_identity.dat");
+        {
+            let mut file = File::create(path).unwrap();
+            // Old format: 11 parts for PLAYER/NPC (if they existed, but here we simulate a missing 12th part)
+            writeln!(file, "PLAYER 0 0 0 true true true Default 0.5 0.5 0.5").unwrap();
+        }
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        let cell = loaded_world.get(WorldCoord::new(0, 0, 0)).unwrap();
+        assert_eq!(cell.cell_type, CellType::Player);
+        assert_eq!(cell.entity_identity, None);
+
         fs::remove_file(path).ok();
     }
 

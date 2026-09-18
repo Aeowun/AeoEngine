@@ -3,6 +3,7 @@ use super::tools;
 use crate::engine::EditorMode;
 use crate::renderer::camera::CameraController;
 use crate::world::{Cell, WorldCoord};
+use egui::RichText;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -143,7 +144,7 @@ impl Editor {
         self.draw_status_bar(ctx);
 
         self.draw_left_panel(ctx, world);
-        self.draw_right_panel(ctx, world);
+        self.draw_right_panel(ctx, world, project_path);
 
         self.draw_dialogs(ctx, world);
 
@@ -268,7 +269,7 @@ impl Editor {
         });
     }
 
-    fn draw_right_panel(&mut self, ctx: &egui::Context, world: &mut crate::world::World) {
+    fn draw_right_panel(&mut self, ctx: &egui::Context, world: &mut crate::world::World, project_path: &Option<std::path::PathBuf>) {
         let show_prop = self.show_properties_window;
         let show_nav = self.navigation_window.is_open;
 
@@ -305,7 +306,7 @@ impl Editor {
                                     );
                                 });
                                 ui.separator();
-                                self.render_properties_content(ui, world);
+                                self.render_properties_content(ui, world, project_path);
                             });
 
                         // High-vis draggable separator
@@ -359,7 +360,7 @@ impl Editor {
                             );
                         });
                         ui.separator();
-                        self.render_properties_content(ui, world);
+                        self.render_properties_content(ui, world, project_path);
                     } else if show_nav {
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
@@ -419,7 +420,7 @@ impl Editor {
         }
     }
 
-    fn render_properties_content(&mut self, ui: &mut egui::Ui, world: &mut crate::world::World) {
+    fn render_properties_content(&mut self, ui: &mut egui::Ui, world: &mut crate::world::World, project_path: &Option<std::path::PathBuf>) {
         if let Some(coord) = self.selected_coord {
             let mut cell_opt = world.get(coord).cloned();
             let mut changes = Vec::new();
@@ -451,6 +452,52 @@ impl Editor {
                                 ui.label(format!("Y: {}", coord.y));
                                 ui.label(format!("Z: {}", coord.z));
                             });
+                        });
+
+                    // --- SCRIPT ---
+                    egui::CollapsingHeader::new("SCRIPT")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            if let Some(ref cell) = cell_opt {
+                                let identity = format!("{:?}", cell.cell_type);
+                                let binding_index = world.script_bindings.iter().position(|b| b.target_identity == identity);
+
+                                if let Some(idx) = binding_index {
+                                    ui.label(RichText::new(&world.script_bindings[idx].script_path).strong());
+                                } else {
+                                    ui.label("None");
+                                }
+
+                                ui.add_space(4.0);
+
+                                egui::ComboBox::from_id_source("attach_script_combo")
+                                    .selected_text("Attach Script")
+                                    .show_ui(ui, |ui| {
+                                        let scripts = &self.script_editor.scripts_list;
+                                        if scripts.is_empty() {
+                                            ui.label("No .aeo scripts found.");
+                                        }
+                                        for script_path in scripts {
+                                            let filename = script_path.file_name().unwrap_or_default().to_string_lossy();
+                                            if ui.selectable_label(false, filename.clone()).clicked() {
+                                                let relative_path = if let Some(root) = project_path {
+                                                    script_path.strip_prefix(root).unwrap_or(script_path).to_string_lossy().to_string()
+                                                } else {
+                                                    script_path.to_string_lossy().to_string()
+                                                };
+
+                                                let new_binding = crate::scripting::binding::ScriptBinding::new(&identity, relative_path);
+
+                                                if let Some(idx) = binding_index {
+                                                    world.script_bindings[idx] = new_binding;
+                                                } else {
+                                                    world.script_bindings.push(new_binding);
+                                                }
+                                                self.needs_save = true;
+                                            }
+                                        }
+                                    });
+                            }
                         });
 
                     if let Some(ref mut cell) = cell_opt {
@@ -885,6 +932,28 @@ mod tests {
 
         editor.show_script_workspace = false;
         assert!(!editor.show_script_workspace);
+    }
+
+    #[test]
+    fn test_inspector_script_binding_lookup() {
+        let mut world = crate::world::World::new();
+        let mut editor = Editor::new();
+
+        let coord = crate::world::WorldCoord::new(1, 1, 1);
+        world.set_cell(coord, crate::world::CellType::Player);
+
+        // Initially no binding
+        let identity = "Player".to_string();
+        let binding = world.script_bindings.iter().find(|b| b.target_identity == identity);
+        assert!(binding.is_none());
+
+        // Add a binding
+        world.script_bindings.push(crate::scripting::binding::ScriptBinding::new("Player", "scripts/test.aeo"));
+
+        // Lookup again
+        let binding = world.script_bindings.iter().find(|b| b.target_identity == identity);
+        assert!(binding.is_some());
+        assert_eq!(binding.unwrap().script_path, "scripts/test.aeo");
     }
 
     #[test]
