@@ -1,3 +1,4 @@
+use egui::{RichText, Color32};
 use std::path::PathBuf;
 use std::collections::HashMap;
 use crate::scripting::ast::Program;
@@ -486,40 +487,63 @@ impl ScriptEditor {
         ui.vertical(|ui| {
             // Header
             ui.horizontal(|ui| {
-                ui.heading("SCRIPT EDITOR");
-                if ui.button("New Script").clicked() {
+                ui.heading(RichText::new("SCRIPT EDITOR").strong());
+                ui.separator();
+
+                if ui.button("New Script").on_hover_text("Create a new .aeo script").clicked() {
                     self.show_new_script_dialog = true;
                 }
-                if ui.button("Save").clicked() {
+                if ui.button("Save").on_hover_text("Save the active document (Ctrl+S)").clicked() {
                     self.save_active();
                 }
-                if ui.button("Save All").clicked() {
+                if ui.button("Save All").on_hover_text("Save all open documents (Ctrl+Shift+S)").clicked() {
                     self.save_all();
                 }
-                if ui.button("Refresh").clicked() {
+                if ui.button("Refresh").on_hover_text("Refresh the script list from disk").clicked() {
                     self.refresh_scripts(project_path);
                 }
+
                 ui.separator();
-                ui.checkbox(&mut self.show_search, "Search");
+
+                ui.toggle_value(&mut self.show_search, "Search");
                 if self.show_search {
-                    if ui.text_edit_singleline(&mut self.search_query).changed() {
+                    ui.label("Find:");
+                    let search_resp = ui.add(egui::TextEdit::singleline(&mut self.search_query)
+                        .hint_text("Search in all scripts...")
+                        .desired_width(180.0));
+                    if search_resp.changed() {
                         self.perform_search();
                     }
                 }
             });
             ui.separator();
 
-            let total_height = ui.available_height();
-            let bottom_panel_height = 150.0;
-            let main_height = total_height - bottom_panel_height - 10.0;
+            // Calculate heights. If no problems/output, bottom panel is tiny.
+            let has_problems = if let Some(path) = &self.active_document {
+                self.open_documents.get(path).map_or(false, |d| !d.diagnostics.is_empty())
+            } else {
+                false
+            };
+
+            let bottom_panel_min_height = 28.0;
+            let bottom_panel_expanded_height = 150.0;
+
+            let bottom_panel_height = if (self.show_problems && has_problems) || (self.show_output && !self.output_log.is_empty()) {
+                bottom_panel_expanded_height
+            } else {
+                bottom_panel_min_height
+            };
+
+            let main_height = ui.available_height() - bottom_panel_height - 10.0;
 
             ui.horizontal(|ui| {
                 // LEFT: Explorer
-                ui.allocate_ui(egui::vec2(200.0, main_height), |ui| {
+                let explorer_width = 250.0;
+                ui.allocate_ui(egui::vec2(explorer_width, main_height), |ui| {
                     ui.vertical(|ui| {
                         if self.show_search && !self.search_results.is_empty() {
-                            ui.label("SEARCH RESULTS");
-                            egui::ScrollArea::vertical().id_source("search_results").show(ui, |ui| {
+                            ui.label(RichText::new("SEARCH RESULTS").strong());
+                            egui::ScrollArea::vertical().id_salt("search_results").show(ui, |ui| {
                                 for result in &self.search_results {
                                     let filename = result.path.file_name().unwrap_or_default().to_string_lossy();
                                     if ui.selectable_label(false, format!("{}:{} {}", filename, result.line, result.text.trim())).clicked() {
@@ -530,11 +554,13 @@ impl ScriptEditor {
                             ui.separator();
                         }
 
-                        ui.label("SCRIPTS");
+                        ui.label(RichText::new("SCRIPTS").strong());
                         ui.separator();
-                        egui::ScrollArea::vertical().id_source("scripts_list").show(ui, |ui| {
-                            ui.collapsing("scripts/", |ui| {
-                                for path in &self.scripts_list {
+                        egui::ScrollArea::vertical().id_salt("scripts_list").show(ui, |ui| {
+                            egui::CollapsingHeader::new("scripts/")
+                                .default_open(true)
+                                .show(ui, |ui| {
+                                    for path in &self.scripts_list {
                                     let filename = path.file_name().unwrap_or_default().to_string_lossy();
                                     let is_active = self.active_document.as_ref() == Some(path);
                                     let is_dirty = self.open_documents.get(path).map_or(false, |d| d.dirty);
@@ -545,21 +571,22 @@ impl ScriptEditor {
                                     };
 
                                     ui.horizontal(|ui| {
-                                        if ui.selectable_label(is_active, label).clicked() {
+                                        let resp = ui.selectable_label(is_active, label);
+                                        if resp.clicked() {
                                             action_open = Some(path.clone());
                                         }
 
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                            if ui.small_button("x").on_hover_text("Delete").clicked() {
+                                            if ui.small_button("").on_hover_text("Delete script from disk").clicked() {
                                                 self.deleting_path = Some(path.clone());
                                             }
-                                            if ui.small_button("R").on_hover_text("Rename").clicked() {
+                                            if ui.small_button("📝").on_hover_text("Rename script").clicked() {
                                                 self.show_rename_dialog = true;
                                                 self.rename_target = Some(path.clone());
                                                 self.rename_new_name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
                                             }
                                             if self.open_documents.contains_key(path) {
-                                                if ui.small_button("c").on_hover_text("Close").clicked() {
+                                                if ui.small_button("❌").on_hover_text("Close document").clicked() {
                                                     action_close = Some(path.clone());
                                                 }
                                             }
@@ -574,15 +601,18 @@ impl ScriptEditor {
                 ui.separator();
 
                 // MIDDLE: Editor
-                let editor_width = ui.available_width() - 250.0;
+                let inspector_width = 250.0;
+                let editor_width = ui.available_width() - inspector_width - 10.0;
+
                 ui.allocate_ui(egui::vec2(editor_width, main_height), |ui| {
                     if let Some(path) = self.active_document.clone() {
                         if let Some(doc) = self.open_documents.get_mut(&path) {
                             ui.vertical(|ui| {
                                 ui.horizontal(|ui| {
-                                    ui.label(path.file_name().unwrap_or_default().to_string_lossy());
+                                    let filename = path.file_name().unwrap_or_default().to_string_lossy();
+                                    ui.label(RichText::new(filename).strong());
                                     if doc.dirty {
-                                        ui.label("(unsaved)");
+                                        ui.label(RichText::new("(modified)").italics().color(egui::Color32::YELLOW));
                                     }
                                 });
 
@@ -629,7 +659,7 @@ impl ScriptEditor {
                 ui.separator();
 
                 // RIGHT: Inspector
-                ui.allocate_ui(egui::vec2(250.0, main_height), |ui| {
+                ui.allocate_ui(egui::vec2(inspector_width, main_height), |ui| {
                     self.draw_inspector(ui);
                 });
             });
@@ -638,22 +668,41 @@ impl ScriptEditor {
 
             // BOTTOM: Problems / Output
             ui.allocate_ui(egui::vec2(ui.available_width(), bottom_panel_height), |ui| {
-                ui.horizontal(|ui| {
-                    if ui.selectable_label(self.show_problems, "PROBLEMS").clicked() {
-                        self.show_problems = true;
-                        self.show_output = false;
-                    }
-                    if ui.selectable_label(self.show_output, "OUTPUT").clicked() {
-                        self.show_output = true;
-                        self.show_problems = false;
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        let problems_label = if has_problems {
+                            format!("PROBLEMS ({})", if let Some(path) = &self.active_document {
+                                self.open_documents.get(path).map_or(0, |d| d.diagnostics.len())
+                            } else { 0 })
+                        } else {
+                            "PROBLEMS".to_string()
+                        };
+
+                        if ui.selectable_label(self.show_problems, problems_label).clicked() {
+                            self.show_problems = true;
+                            self.show_output = false;
+                        }
+                        if ui.selectable_label(self.show_output, "OUTPUT").clicked() {
+                            self.show_output = true;
+                            self.show_problems = false;
+                        }
+
+                        if !has_problems && self.output_log.is_empty() {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.label(RichText::new("No issues found").color(egui::Color32::from_gray(140)).small());
+                            });
+                        }
+                    });
+
+                    if bottom_panel_height > bottom_panel_min_height {
+                        ui.separator();
+                        if self.show_problems {
+                            self.draw_problems(ui);
+                        } else if self.show_output {
+                            self.draw_output(ui);
+                        }
                     }
                 });
-                ui.separator();
-                if self.show_problems {
-                    self.draw_problems(ui);
-                } else if self.show_output {
-                    self.draw_output(ui);
-                }
             });
         });
 
@@ -669,57 +718,48 @@ impl ScriptEditor {
 
     fn draw_inspector(&mut self, ui: &mut egui::Ui) {
         ui.vertical(|ui| {
-            ui.label("INSPECTOR");
+            ui.label(RichText::new("INSPECTOR").strong());
             ui.separator();
             if let Some(path) = &self.active_document {
                 if let Some(doc) = self.open_documents.get(path) {
-                    ui.label("SCRIPT");
+                    ui.label(RichText::new("SCRIPT").strong());
                     ui.indent("script_info", |ui| {
                         ui.label(format!("File: {}", path.file_name().unwrap_or_default().to_string_lossy()));
                     });
 
                     ui.add_space(8.0);
-                    ui.label("ENTITIES");
+                    ui.label(RichText::new("ENTITIES").strong());
                     ui.indent("entities_info", |ui| {
                         if let Some(program) = &doc.program {
                             for decl in &program.declarations {
                                 if let crate::scripting::ast::Declaration::Entity(entity) = decl {
-                                    ui.label(&entity.name);
+                                    ui.horizontal(|ui| {
+                                        ui.label(RichText::new(&entity.name).strong());
+                                    });
 
                                     ui.indent("lifecycle", |ui| {
-                                        let mut has_spawn = false;
-                                        let mut has_ready = false;
-                                        let mut has_update = false;
-                                        let mut has_destroy = false;
-
                                         for member in &entity.members {
                                             if let crate::scripting::ast::EntityMember::Function(f) = member {
-                                                match f.name.as_str() {
-                                                    "on_spawn" => has_spawn = true,
-                                                    "on_ready" => has_ready = true,
-                                                    "update" => has_update = true,
-                                                    "on_destroy" => has_destroy = true,
-                                                    _ => {}
-                                                }
+                                                let is_lifecycle = matches!(f.name.as_str(), "on_spawn" | "on_ready" | "update" | "on_destroy");
+
+                                                ui.horizontal(|ui| {
+                                                    ui.label(if is_lifecycle { "⚡" } else { "ƒ" });
+                                                    ui.label(&f.name);
+                                                });
                                             }
                                         }
-
-                                        let check = |ui: &mut egui::Ui, label: &str, present: bool| {
-                                            ui.label(format!("{} {}", if present { "✓" } else { "○" }, label));
-                                        };
-
-                                        check(ui, "on_spawn", has_spawn);
-                                        check(ui, "on_ready", has_ready);
-                                        check(ui, "update", has_update);
-                                        check(ui, "on_destroy", has_destroy);
                                     });
                                 }
                             }
                         } else {
-                            ui.label("(parse failed)");
+                            ui.label(RichText::new("(parse failed)").color(egui::Color32::RED));
                         }
                     });
                 }
+            } else {
+                ui.centered_and_justified(|ui| {
+                    ui.label("Select a script to view details.");
+                });
             }
         });
     }
@@ -781,6 +821,34 @@ mod tests {
         assert_eq!(editor.scripts_list[0].file_name().unwrap(), "a.aeo");
         assert_eq!(editor.scripts_list[1].file_name().unwrap(), "m.aeo");
         assert_eq!(editor.scripts_list[2].file_name().unwrap(), "z.aeo");
+
+        fs::remove_dir_all(&test_dir).ok();
+    }
+
+    #[test]
+    fn test_script_selection_opens_document() {
+        let test_dir = std::path::PathBuf::from("TestProject_Open");
+        let scripts_dir = test_dir.join("scripts");
+        if test_dir.exists() {
+            fs::remove_dir_all(&test_dir).ok();
+        }
+        fs::create_dir_all(&scripts_dir).unwrap();
+
+        let path = scripts_dir.join("open_test.aeo");
+        fs::write(&path, "script content").unwrap();
+
+        let mut editor = ScriptEditor::new();
+        editor.refresh_scripts(&Some(test_dir.clone()));
+
+        // Simulate selection (the same logic used by the UI's action_open -> open_file)
+        editor.open_file(path.clone());
+
+        assert_eq!(editor.active_document, Some(path.clone()));
+        assert!(editor.open_documents.contains_key(&path));
+        assert_eq!(
+            editor.open_documents.get(&path).unwrap().source,
+            "script content"
+        );
 
         fs::remove_dir_all(&test_dir).ok();
     }
@@ -864,6 +932,48 @@ mod tests {
         assert_eq!(editor.search_results[0].path.file_name().unwrap(), "one.aeo");
 
         fs::remove_dir_all(&test_dir).ok();
+    }
+
+    #[test]
+    fn test_inspector_metadata_updates_after_edit() {
+        let source = "entity test { fn on_spawn() {} fn on_destroy() {} }";
+        let mut doc = ScriptDocument::new(PathBuf::from("test.aeo"), source.to_string());
+
+        // Initially both functions should be present
+        let mut has_spawn = false;
+        let mut has_destroy = false;
+        if let Some(program) = &doc.program {
+            if let crate::scripting::ast::Declaration::Entity(entity) = &program.declarations[0] {
+                for member in &entity.members {
+                    if let crate::scripting::ast::EntityMember::Function(f) = member {
+                        if f.name == "on_spawn" { has_spawn = true; }
+                        if f.name == "on_destroy" { has_destroy = true; }
+                    }
+                }
+            }
+        }
+        assert!(has_spawn);
+        assert!(has_destroy);
+
+        // Delete on_destroy
+        doc.source = "entity test { fn on_spawn() {} }".to_string();
+        doc.reparse();
+
+        // Check again
+        let mut has_spawn = false;
+        let mut has_destroy = false;
+        if let Some(program) = &doc.program {
+            if let crate::scripting::ast::Declaration::Entity(entity) = &program.declarations[0] {
+                for member in &entity.members {
+                    if let crate::scripting::ast::EntityMember::Function(f) = member {
+                        if f.name == "on_spawn" { has_spawn = true; }
+                        if f.name == "on_destroy" { has_destroy = true; }
+                    }
+                }
+            }
+        }
+        assert!(has_spawn);
+        assert!(!has_destroy, "on_destroy should be gone from parsed metadata");
     }
 
     #[test]

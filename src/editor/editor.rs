@@ -65,6 +65,7 @@ pub struct Editor {
     pub right_panel_split: f32,
 
     pub show_script_workspace: bool,
+    pub last_show_script_workspace: bool,
     pub script_editor: super::script_editor::ScriptEditor,
 
     // signals
@@ -104,6 +105,7 @@ impl Editor {
             right_panel_split: 0.5,
 
             show_script_workspace: false,
+            last_show_script_workspace: false,
             script_editor: super::script_editor::ScriptEditor::new(),
 
             show_clear_confirmation: false,
@@ -125,14 +127,19 @@ impl Editor {
     }
 
     pub fn show_ui(&mut self, ctx: &egui::Context, world: &mut crate::world::World, project_path: &Option<std::path::PathBuf>) {
+        self.draw_menu_bar(ctx);
+        self.draw_tool_bar(ctx);
+
+        if !self.last_show_script_workspace && self.show_script_workspace {
+            self.script_editor.refresh_scripts(project_path);
+        }
+        self.last_show_script_workspace = self.show_script_workspace;
+
         if self.show_script_workspace {
-            self.draw_menu_bar(ctx);
             self.script_editor.show_ui(ctx, project_path);
             return;
         }
 
-        self.draw_menu_bar(ctx);
-        self.draw_tool_bar(ctx);
         self.draw_status_bar(ctx);
 
         self.draw_left_panel(ctx, world);
@@ -867,6 +874,50 @@ mod tests {
     use super::*;
     use crate::world::{World, WorldCoord, CellType};
     use glam::Vec3;
+
+    #[test]
+    fn test_editor_script_workspace_toggle() {
+        let mut editor = Editor::new();
+        assert!(!editor.show_script_workspace);
+
+        editor.show_script_workspace = true;
+        assert!(editor.show_script_workspace);
+
+        editor.show_script_workspace = false;
+        assert!(!editor.show_script_workspace);
+    }
+
+    #[test]
+    fn test_editor_script_refresh_on_transition() {
+        let mut editor = Editor::new();
+        let test_dir = std::path::PathBuf::from("TestProject_RefreshTransition");
+        let scripts_dir = test_dir.join("scripts");
+        if test_dir.exists() {
+            let _ = std::fs::remove_dir_all(&test_dir);
+        }
+        std::fs::create_dir_all(&scripts_dir).unwrap();
+        std::fs::write(scripts_dir.join("test.aeo"), "").unwrap();
+
+        let ctx = egui::Context::default();
+        let mut world = crate::world::World::new();
+
+        // 1. Initial state: not showing, list empty
+        assert!(!editor.show_script_workspace);
+        assert!(editor.script_editor.scripts_list.is_empty());
+
+        // 2. Toggle show_script_workspace to true
+        editor.show_script_workspace = true;
+
+        // 3. Call show_ui inside context.run, which should trigger refresh_scripts
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            editor.show_ui(ctx, &mut world, &Some(test_dir.clone()));
+        });
+
+        // 4. Verify list is now populated
+        assert_eq!(editor.script_editor.scripts_list.len(), 1);
+
+        let _ = std::fs::remove_dir_all(&test_dir);
+    }
 
     #[test]
     fn test_multi_select_property_application_regression() {

@@ -2,6 +2,7 @@ use super::cell::{Cell, CellType};
 use super::coordinate::WorldCoord;
 use glam::Vec3;
 use std::collections::HashMap;
+use crate::scripting::binding::ScriptBinding;
 
 #[derive(Clone)]
 pub struct LightingSettings {
@@ -39,6 +40,9 @@ pub struct World {
 
     // Authoritative scene lighting settings.
     pub lighting: LightingSettings,
+
+    /// Authored script bindings for entities in this world.
+    pub script_bindings: Vec<ScriptBinding>,
 }
 
 impl World {
@@ -48,6 +52,7 @@ impl World {
             // We default to Earth standard gravity.
             gravity: Vec3::new(0.0, -9.81, 0.0),
             lighting: LightingSettings::default(),
+            script_bindings: Vec::new(),
         }
     }
 

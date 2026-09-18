@@ -104,7 +104,7 @@ impl ScriptRuntime {
     pub fn tick(
         &mut self,
         new_time: f64,
-        host: &HostContext,
+        host: &mut HostContext,
     ) -> Result<Vec<(ScriptTaskId, FiberResult)>, String> {
         self.scheduler.tick(new_time)?;
 
@@ -201,12 +201,12 @@ entity Test {
 "#;
 
         let mut runtime = runtime(source);
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let instance = runtime
             .interpreter_mut()
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let task_id = runtime
@@ -240,12 +240,12 @@ entity Test {
 "#;
 
         let mut runtime = runtime(source);
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let instance = runtime
             .interpreter_mut()
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let task_id = runtime
@@ -257,7 +257,7 @@ entity Test {
             .expect("fiber should spawn");
 
         let results = runtime
-            .tick(0.0, &host)
+            .tick(0.0, &mut host)
             .expect("first tick should succeed");
 
         assert_eq!(
@@ -287,7 +287,7 @@ entity Test {
         );
 
         let results = runtime
-            .tick(0.5, &host)
+            .tick(0.5, &mut host)
             .expect("second tick should succeed");
 
         assert!(results.is_empty());
@@ -302,7 +302,7 @@ entity Test {
         );
 
         let results = runtime
-            .tick(1.0, &host)
+            .tick(1.0, &mut host)
             .expect("wake tick should succeed");
 
         assert_eq!(
@@ -338,12 +338,12 @@ entity Test {
 "#;
 
         let mut runtime = runtime(source);
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let instance = runtime
             .interpreter_mut()
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let task_id = runtime
@@ -355,7 +355,7 @@ entity Test {
             .expect("fiber should spawn");
 
         let results = runtime
-            .tick(0.0, &host)
+            .tick(0.0, &mut host)
             .expect("tick should succeed");
 
         assert_eq!(
@@ -379,17 +379,17 @@ entity Test {
 "#;
 
         let mut runtime = runtime(source);
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let first_instance = runtime
             .interpreter_mut()
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("first entity should instantiate");
 
         let second_instance = runtime
             .interpreter_mut()
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("second entity should instantiate");
 
         let first = runtime
@@ -409,7 +409,7 @@ entity Test {
             .expect("second fiber should spawn");
 
         let results = runtime
-            .tick(0.0, &host)
+            .tick(0.0, &mut host)
             .expect("tick should succeed");
 
         assert_eq!(results.len(), 2);
@@ -429,7 +429,7 @@ entity Test {
         );
 
         let results = runtime
-            .tick(1.0, &host)
+            .tick(1.0, &mut host)
             .expect("wake tick should succeed");
 
         assert_eq!(results.len(), 2);
@@ -453,12 +453,12 @@ entity Test {
 "#;
 
         let mut runtime = runtime(source);
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let instance = runtime
             .interpreter_mut()
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let task_id = runtime
@@ -470,7 +470,7 @@ entity Test {
             .expect("fiber should spawn");
 
         let results = runtime
-            .tick(0.0, &host)
+            .tick(0.0, &mut host)
             .expect("runtime tick should itself succeed");
 
         assert_eq!(results.len(), 1);
@@ -507,12 +507,12 @@ entity Test {
 "#;
 
         let mut runtime = runtime(source);
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let instance = runtime
             .interpreter_mut()
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let task_id = runtime
@@ -524,7 +524,7 @@ entity Test {
             .expect("fiber should spawn");
 
         let results = runtime
-            .tick(0.0, &host)
+            .tick(0.0, &mut host)
             .expect("runtime tick should succeed");
 
         assert_eq!(
@@ -547,7 +547,7 @@ entity Test {
         );
 
         let results = runtime
-            .tick(0.0001, &host)
+            .tick(0.0001, &mut host)
             .expect("wake tick should succeed");
 
         assert_eq!(
@@ -562,6 +562,105 @@ entity Test {
                 .instance()
                 .get_field("value"),
             Some(&Value::Number(2.0))
+        );
+    }
+
+    #[test]
+    fn runtime_execution_smoke_test() {
+        let source = r#"
+entity Test {
+    value: number = 0
+    fn main() {
+        value = 100
+    }
+}
+"#;
+        let mut runtime = runtime(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+
+        let instance = runtime
+            .interpreter_mut()
+            .instantiate_entity("Test", 1, &mut host)
+            .unwrap();
+
+        let task_id = runtime.spawn(instance, "main", vec![]).unwrap();
+        let results = runtime.tick(0.0, &mut host).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, task_id);
+        assert_eq!(results[0].1, FiberResult::Complete);
+
+        assert_eq!(
+            runtime.fiber(task_id).unwrap().instance().get_field("value"),
+            Some(&Value::Number(100.0))
+        );
+    }
+
+    #[test]
+    fn runtime_failure_is_observable() {
+        let source = r#"
+entity Test {
+    fn fail() {
+        const x = 1 / 0
+    }
+}
+"#;
+        let mut runtime = runtime(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+
+        let instance = runtime
+            .interpreter_mut()
+            .instantiate_entity("Test", 1, &mut host)
+            .unwrap();
+
+        let task_id = runtime.spawn(instance, "fail", vec![]).unwrap();
+        let results = runtime.tick(0.0, &mut host).unwrap();
+
+        assert_eq!(results.len(), 1);
+        match &results[0].1 {
+            FiberResult::Failed(msg) => {
+                assert!(msg.contains("division by zero"));
+            }
+            _ => panic!("Expected FiberResult::Failed"),
+        }
+
+        assert_eq!(
+            runtime.scheduler().state(task_id),
+            Some(ScriptTaskState::Failed)
+        );
+    }
+
+    #[test]
+    fn runtime_multiple_entities_independent() {
+        let source = r#"
+entity Test {
+    value: number = 0
+    fn set(v: number) {
+        value = v
+    }
+}
+"#;
+        let mut runtime = runtime(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+
+        let inst1 = runtime.interpreter_mut().instantiate_entity("Test", 1, &mut host).unwrap();
+        let inst2 = runtime.interpreter_mut().instantiate_entity("Test", 2, &mut host).unwrap();
+
+        let t1 = runtime.spawn(inst1, "set", vec![Value::Number(10.0)]).unwrap();
+        let t2 = runtime.spawn(inst2, "set", vec![Value::Number(20.0)]).unwrap();
+
+        runtime.tick(0.0, &mut host).unwrap();
+
+        assert_eq!(
+            runtime.fiber(t1).unwrap().instance().get_field("value"),
+            Some(&Value::Number(10.0))
+        );
+        assert_eq!(
+            runtime.fiber(t2).unwrap().instance().get_field("value"),
+            Some(&Value::Number(20.0))
         );
     }
 }

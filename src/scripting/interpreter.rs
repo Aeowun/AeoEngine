@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use super::ast::*;
 use super::execution::{FiberResult, YieldReason};
-use super::value::{Scope, Value};
-use super::api::{HostContext, call_host_function, call_host_member, resolve_host_property};
+use super::value::{Scope, Value, HandleKind};
+use super::api::{HostContext, call_host_function, call_host_member, resolve_host_property, resolve_host_member_property};
 
 const DEFAULT_OPERATION_BUDGET: u64 = 100_000;
 const DEFAULT_MAX_CALL_DEPTH: usize = 64;
@@ -15,11 +15,16 @@ const DEFAULT_MAX_CALL_DEPTH: usize = 64;
 /// execution scopes created while functions run.
 #[derive(Clone, Debug)]
 pub struct ScriptInstance {
+    id: u64,
     entity_name: String,
     fields: BTreeMap<String, Value>,
 }
 
 impl ScriptInstance {
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
     pub fn entity_name(&self) -> &str {
         &self.entity_name
     }
@@ -270,7 +275,8 @@ impl Interpreter {
     pub fn instantiate_entity(
         &mut self,
         entity_name: &str,
-        host: &HostContext,
+        id: u64,
+        host: &mut HostContext,
     ) -> Result<ScriptInstance, String> {
         self.reset_execution_budget();
 
@@ -289,6 +295,7 @@ impl Interpreter {
             .collect::<Vec<_>>();
 
         let mut instance = ScriptInstance {
+            id,
             entity_name: entity_name.to_string(),
             fields: BTreeMap::new(),
         };
@@ -315,7 +322,7 @@ impl Interpreter {
         instance: &mut ScriptInstance,
         function_name: &str,
         arguments: Vec<Value>,
-        host: &HostContext,
+        host: &mut HostContext,
     ) -> Result<Value, String> {
         self.reset_execution_budget();
 
@@ -412,7 +419,7 @@ impl Interpreter {
     /// The operation budget is per resume slice. A cooperative wait therefore
     /// allows a long-running script to continue indefinitely while a script
     /// that spins without yielding still hits the execution budget.
-    pub fn resume_fiber(&mut self, fiber: &mut ScriptFiber, host: &HostContext) -> FiberResult {
+    pub fn resume_fiber(&mut self, fiber: &mut ScriptFiber, host: &mut HostContext) -> FiberResult {
         if fiber.finished {
             return FiberResult::Failed(
                 "cannot resume a completed AeoScript fiber.".to_string(),
@@ -431,7 +438,8 @@ impl Interpreter {
                 return fiber.fail(error);
             }
 
-            match &fiber.function.instructions[fiber.pc] {
+            let instruction = fiber.function.instructions[fiber.pc].clone();
+            match instruction {
                 Instruction::EnterScope => {
                     fiber.scopes.push(Scope::new());
 
@@ -460,7 +468,7 @@ impl Interpreter {
                             match self.eval_expression(
                                 &mut fiber.instance,
                                 &mut fiber.scopes,
-                                initializer,
+                                &initializer,
                                 host,
                             ) {
                                 Ok(value) => value,
@@ -484,7 +492,7 @@ impl Interpreter {
                     };
 
                     if let Err(error) =
-                        scope.declare(name.clone(), value, *is_const)
+                        scope.declare(name.clone(), value, is_const)
                     {
                         return fiber.fail(error);
                     }
@@ -500,7 +508,7 @@ impl Interpreter {
                     let right = match self.eval_expression(
                         &mut fiber.instance,
                         &mut fiber.scopes,
-                        value,
+                        &value,
                         host,
                     ) {
                         Ok(value) => value,
@@ -511,8 +519,8 @@ impl Interpreter {
                     if let Err(error) = self.assign_target(
                         &mut fiber.instance,
                         &mut fiber.scopes,
-                        target,
-                        *operator,
+                        &target,
+                        operator,
                         right,
                         host,
                     ) {
@@ -526,7 +534,7 @@ impl Interpreter {
                     if let Err(error) = self.eval_expression(
                         &mut fiber.instance,
                         &mut fiber.scopes,
-                        expression,
+                        &expression,
                         host,
                     ) {
                         return fiber.fail(error);
@@ -536,7 +544,7 @@ impl Interpreter {
                 }
 
                 Instruction::Jump { target } => {
-                    fiber.pc = *target;
+                    fiber.pc = target;
                 }
 
                 Instruction::JumpIfFalse {
@@ -546,7 +554,7 @@ impl Interpreter {
                     let value = match self.eval_expression(
                         &mut fiber.instance,
                         &mut fiber.scopes,
-                        condition,
+                        &condition,
                         host,
                     ) {
                         Ok(value) => value,
@@ -557,7 +565,7 @@ impl Interpreter {
                     match value.is_truthy() {
                         Ok(true) => fiber.pc += 1,
 
-                        Ok(false) => fiber.pc = *target,
+                        Ok(false) => fiber.pc = target,
 
                         Err(error) => return fiber.fail(error),
                     }
@@ -571,7 +579,7 @@ impl Interpreter {
                     let iterable_value = match self.eval_expression(
                         &mut fiber.instance,
                         &mut fiber.scopes,
-                        iterable,
+                        &iterable,
                         host,
                     ) {
                         Ok(value) => value,
@@ -591,7 +599,7 @@ impl Interpreter {
                     };
 
                     if values.is_empty() {
-                        fiber.pc = *end;
+                        fiber.pc = end;
                         continue;
                     }
 
@@ -656,11 +664,11 @@ impl Interpreter {
                             return fiber.fail(error);
                         }
 
-                        fiber.pc = *body_start;
+                        fiber.pc = body_start;
                     } else {
                         fiber.for_states.pop();
 
-                        fiber.pc = *end;
+                        fiber.pc = end;
                     }
                 }
 
@@ -711,7 +719,7 @@ impl Interpreter {
                         Some(expression) => match self.eval_expression(
                             &mut fiber.instance,
                             &mut fiber.scopes,
-                            expression,
+                            &expression,
                             host,
                         ) {
                             Ok(value) => value,
@@ -748,7 +756,7 @@ impl Interpreter {
         instance: &mut ScriptInstance,
         function: &FunctionDecl,
         arguments: Vec<Value>,
-        host: &HostContext,
+        host: &mut HostContext,
     ) -> Result<Value, String> {
         if self.call_depth >= self.max_call_depth {
             return Err(format!(
@@ -808,7 +816,7 @@ impl Interpreter {
         instance: &mut ScriptInstance,
         scopes: &mut Vec<Scope>,
         block: &Block,
-        host: &HostContext,
+        host: &mut HostContext,
     ) -> Result<ExecutionFlow, String> {
         scopes.push(Scope::new());
 
@@ -841,7 +849,7 @@ impl Interpreter {
         instance: &mut ScriptInstance,
         scopes: &mut Vec<Scope>,
         statement: &Statement,
-        host: &HostContext,
+        host: &mut HostContext,
     ) -> Result<ExecutionFlow, String> {
         self.tick()?;
 
@@ -1055,7 +1063,7 @@ impl Interpreter {
         target: &Expression,
         operator: AssignmentOperator,
         right: Value,
-        host: &HostContext,
+        host: &mut HostContext,
     ) -> Result<(), String> {
         match &target.kind {
             ExpressionKind::Identifier(name) => {
@@ -1128,7 +1136,7 @@ impl Interpreter {
         instance: &mut ScriptInstance,
         scopes: &mut Vec<Scope>,
         expression: &Expression,
-        host: &HostContext,
+        host: &mut HostContext,
     ) -> Result<Value, String> {
         self.tick()?;
 
@@ -1249,10 +1257,14 @@ impl Interpreter {
                         }),
 
                     Value::Handle { kind, id } => {
-                        Err(format!(
-                            "engine member '{}' is not available on handle kind {} yet",
-                            name, kind.name()
-                        ))
+                        if let Some(value) = resolve_host_member_property(host, kind, id, name)? {
+                            Ok(value)
+                        } else {
+                            Err(format!(
+                                "engine member '{}' is not available on handle kind {} yet",
+                                name, kind.name()
+                            ))
+                        }
                     }
 
                     other => Err(format!(
@@ -1317,7 +1329,7 @@ impl Interpreter {
         scopes: &mut Vec<Scope>,
         callee: &Expression,
         arguments: &[Expression],
-        host: &HostContext,
+        host: &mut HostContext,
     ) -> Result<Value, String> {
         match &callee.kind {
             ExpressionKind::Identifier(name) => {
@@ -1444,7 +1456,7 @@ impl Interpreter {
         instance: &mut ScriptInstance,
         scopes: &mut Vec<Scope>,
         arguments: &[Expression],
-        host: &HostContext,
+        host: &mut HostContext,
     ) -> Result<Vec<Value>, String> {
         let mut values = Vec::with_capacity(arguments.len());
 
@@ -2093,11 +2105,11 @@ mod tests {
         source: &str,
     ) -> (Interpreter, ScriptInstance, Value) {
         let mut interpreter = interpreter(source);
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let mut instance = interpreter
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let result = interpreter
@@ -2105,7 +2117,7 @@ mod tests {
                 &mut instance,
                 "update",
                 vec![Value::Number(1.0)],
-                &host
+                &mut host
             )
             .expect("update should execute");
 
@@ -2128,10 +2140,10 @@ mod tests {
             .begin_running(task_id)
             .expect("task should start");
 
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
         let result =
-            interpreter.resume_fiber(fiber, &host);
+            interpreter.resume_fiber(fiber, &mut host);
 
         scheduler
             .apply_result(
@@ -2387,18 +2399,18 @@ entity Test {
                 16,
             );
 
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let mut instance = interpreter
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let result = interpreter.call(
             &mut instance,
             "update",
             vec![Value::Number(1.0)],
-            &host
+            &mut host
         );
 
         assert!(result.is_err());
@@ -2442,18 +2454,18 @@ entity Test {
                 4,
             );
 
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let mut instance = interpreter
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let result = interpreter.call(
             &mut instance,
             "update",
             vec![Value::Number(1.0)],
-            &host,
+            &mut host,
         );
 
         assert!(result.is_err());
@@ -2487,11 +2499,11 @@ entity Test {
         let mut interpreter =
             interpreter(source);
 
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let instance = interpreter
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -2589,11 +2601,11 @@ entity Test {
         let mut interpreter =
             interpreter(source);
 
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let instance = interpreter
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -2710,11 +2722,11 @@ entity Test {
         let mut interpreter =
             interpreter(source);
 
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let instance = interpreter
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -2793,11 +2805,11 @@ entity Test {
         let mut interpreter =
             interpreter(source);
 
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let instance = interpreter
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -2890,11 +2902,11 @@ entity Test {
                 16,
             );
 
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let instance = interpreter
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -2964,11 +2976,11 @@ entity Test {
         let mut interpreter =
             interpreter(source);
 
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let instance = interpreter
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -2981,7 +2993,7 @@ entity Test {
                 .expect("fiber should start");
 
         let result =
-            interpreter.resume_fiber(&mut fiber, &host);
+            interpreter.resume_fiber(&mut fiber, &mut host);
 
         assert!(matches!(
             result,
@@ -3008,11 +3020,11 @@ entity Test {
         let mut interpreter =
             interpreter(source);
 
-        let em = test_host();
-        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let instance = interpreter
-            .instantiate_entity("Test", &host)
+            .instantiate_entity("Test", 1, &mut host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -3027,7 +3039,7 @@ entity Test {
                 .expect("fiber should start");
 
         let result =
-            interpreter.resume_fiber(&mut fiber, &host);
+            interpreter.resume_fiber(&mut fiber, &mut host);
 
         assert!(matches!(
             result,
@@ -3052,11 +3064,11 @@ entity Test {
 
     let mut interpreter = interpreter(source);
 
-    let em = test_host();
-    let host = HostContext { delta_time: 1.0, entity_manager: &em };
+    let mut em = test_host();
+    let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
     let instance = interpreter
-        .instantiate_entity("Test", &host)
+        .instantiate_entity("Test", 1, &mut host)
         .expect("entity should instantiate");
 
     let mut fiber = interpreter
@@ -3067,7 +3079,7 @@ entity Test {
         )
         .expect("fiber should start");
 
-    let result = interpreter.resume_fiber(&mut fiber, &host);
+    let result = interpreter.resume_fiber(&mut fiber, &mut host);
 
     assert!(matches!(
         result,

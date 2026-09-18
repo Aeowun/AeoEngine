@@ -8,10 +8,6 @@ use crate::project::ProjectManager;
 use crate::renderer::Renderer;
 use crate::world::{CellType, World};
 use crate::scripting::scene::ScriptScene;
-use crate::scripting::lexer::Lexer;
-use crate::scripting::parser::Parser;
-use crate::scripting::ast::Program;
-use crate::scripting::source::SourceSpan;
 use crate::scripting::api::HostContext;
 use crate::engine::entity::EntityManager;
 
@@ -117,7 +113,9 @@ impl App {
             entity_manager: EntityManager::new(),
         }
     }
+}
 
+impl App {
     /// Handles window events used by the application and editor.
     ///
     /// Play camera mouse look is intentionally not handled through
@@ -626,12 +624,15 @@ impl App {
             self.last_mode = self.editor.mode;
 
             if self.editor.mode == EditorMode::Play {
-                if let Some(scene) = &mut self.script_scene {
-                    let context = HostContext {
+                let scene_opt = &mut self.script_scene;
+                let em = &mut self.entity_manager;
+
+                if let Some(scene) = scene_opt {
+                    let mut context = HostContext {
                         delta_time: frame_time as f64,
-                        entity_manager: &self.entity_manager,
+                        engine: em,
                     };
-                    if let Err(e) = scene.update(frame_time, &context) {
+                    if let Err(e) = scene.update(frame_time, &mut context) {
                         eprintln!("Scripting error: {}", e);
                     }
                 }
@@ -763,87 +764,41 @@ impl App {
             return;
         };
 
-        let scripts_dir = project_path.join("scripts");
-        if !scripts_dir.exists() {
-            return;
-        }
-
-        let mut aeo_files = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(scripts_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() && path.extension().map_or(false, |ext| ext == "aeo") {
-                    aeo_files.push(path);
+        match ScriptScene::load_from_bindings(
+            project_path,
+            &self.world.script_bindings,
+            &mut self.entity_manager,
+            0.0,
+        ) {
+            Ok(mut scene) => {
+                let em = &mut self.entity_manager;
+                let mut host = HostContext {
+                    delta_time: 0.0,
+                    engine: em,
+                };
+                if let Err(e) = scene.start(&mut host) {
+                    eprintln!("Failed to start script scene: {}", e);
+                } else {
+                    self.script_scene = Some(scene);
                 }
             }
-        }
-
-        aeo_files.sort();
-
-        let mut all_declarations = Vec::new();
-        for path in aeo_files {
-            match std::fs::read_to_string(&path) {
-                Ok(source) => {
-                    let tokens = match Lexer::new(&source).tokenize() {
-                        Ok(t) => t,
-                        Err(e) => {
-                            eprintln!("Lexer error in {:?}: {:?}", path, e);
-                            continue;
-                        }
-                    };
-                    let program = match Parser::new(tokens).parse() {
-                        Ok(p) => p,
-                        Err(e) => {
-                            eprintln!("Parser error in {:?}: {:?}", path, e);
-                            continue;
-                        }
-                    };
-                    all_declarations.extend(program.declarations);
-                }
-                Err(e) => {
-                    eprintln!("Failed to read script {:?}: {}", path, e);
-                }
+            Err(e) => {
+                eprintln!("Scripting failed to load: {}", e);
             }
-        }
-
-        if all_declarations.is_empty() {
-            return;
-        }
-
-        let program = Program {
-            span: SourceSpan::new(0, 0),
-            declarations: all_declarations,
-        };
-
-        // Create runtime entities for script entities
-        for decl in &program.declarations {
-            if let crate::scripting::ast::Declaration::Entity(entity) = decl {
-                self.entity_manager.create_entity(&entity.name);
-            }
-        }
-
-        let host = HostContext {
-            delta_time: 0.0,
-            entity_manager: &self.entity_manager,
-        };
-
-        let mut scene = ScriptScene::new(program, &host);
-        if let Err(e) = scene.start(&host) {
-            eprintln!("Failed to start script scene: {}", e);
-        } else {
-            self.script_scene = Some(scene);
         }
     }
 
     fn stop_scripting(&mut self) {
-        if let Some(mut scene) = self.script_scene.take() {
-            let host = HostContext {
+        let scene_opt = self.script_scene.take();
+        let em = &mut self.entity_manager;
+        if let Some(mut scene) = scene_opt {
+            let mut host = HostContext {
                 delta_time: 0.0,
-                entity_manager: &self.entity_manager,
+                engine: em,
             };
-            scene.stop(&host);
+            scene.stop(&mut host);
         }
-        self.entity_manager.clear();
+        em.clear();
     }
 
     pub fn exit_to_home(&mut self) {

@@ -136,6 +136,24 @@ pub fn draw_texture_edit(ui: &mut Ui, texture: &mut String) {
 
 pub fn draw_tool_bar(ui: &mut Ui, editor: &mut Editor) {
     ui.horizontal(|ui| {
+        let scripts_btn = if editor.show_script_workspace {
+            egui::Button::new(RichText::new("Scripts").color(Color32::WHITE))
+                .fill(Color32::from_rgb(0, 100, 200))
+        } else {
+            egui::Button::new("Scripts")
+        };
+
+        if ui.add(scripts_btn).clicked() {
+            editor.show_script_workspace = !editor.show_script_workspace;
+        }
+
+        ui.separator();
+
+        if editor.show_script_workspace {
+            ui.label(RichText::new("Script Workspace Active").italics());
+            return;
+        }
+
         ui.label(RichText::new("Mode").strong());
         if ui
             .selectable_label(editor.mode == EditorMode::Editor, "Editor")

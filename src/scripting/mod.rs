@@ -11,3 +11,4 @@ pub mod value;
 pub mod runtime;
 pub mod scene;
 pub mod api;
+pub mod binding;

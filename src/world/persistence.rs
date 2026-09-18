@@ -7,6 +7,7 @@ use glam::Vec3;
 use super::cell::CellType;
 use super::coordinate::WorldCoord;
 use super::world::World;
+use crate::scripting::binding::ScriptBinding;
 
 /// We save the world to a simple text format. This is easier to debug and
 /// version than a binary format for now.
@@ -36,6 +37,14 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
         world.lighting.global_light_intensity,
         world.lighting.ambient_intensity
     )?;
+
+    for binding in &world.script_bindings {
+        writeln!(
+            file,
+            "SCRIPT_BINDING {} {}",
+            binding.target_identity, binding.script_path
+        )?;
+    }
 
     for coord in world.active_blocks() {
         if let Some(cell) = world.get(coord) {
@@ -158,6 +167,14 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
             world.lighting.ambient_intensity = parts[10].parse::<f32>().unwrap_or(0.2);
 
+            continue;
+        }
+
+        if parts[0] == "SCRIPT_BINDING" && parts.len() >= 3 {
+            world.script_bindings.push(ScriptBinding::new(
+                parts[1].to_string(),
+                parts[2].to_string(),
+            ));
             continue;
         }
 
@@ -432,6 +449,97 @@ mod tests {
         assert_eq!(loaded_cell.anchored, false);
         assert_eq!(loaded_cell.texture, "Block_tx");
         assert_eq!(loaded_cell.color_rgb, Vec3::new(0.2, 0.4, 0.8));
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_empty_bindings_persistence() {
+        let mut world = World::new();
+        world.script_bindings.clear();
+
+        let path = Path::new("test_empty_bindings.dat");
+        save_world(&world, path).unwrap();
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        assert!(loaded_world.script_bindings.is_empty());
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_one_binding_persistence() {
+        let mut world = World::new();
+        world.script_bindings.push(ScriptBinding::new("Player", "scripts/player.aeo"));
+
+        let path = Path::new("test_one_binding.dat");
+        save_world(&world, path).unwrap();
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        assert_eq!(loaded_world.script_bindings.len(), 1);
+        assert_eq!(loaded_world.script_bindings[0].target_identity, "Player");
+        assert_eq!(loaded_world.script_bindings[0].script_path, "scripts/player.aeo");
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_multiple_bindings_persistence() {
+        let mut world = World::new();
+        world.script_bindings.push(ScriptBinding::new("Player", "scripts/player.aeo"));
+        world.script_bindings.push(ScriptBinding::new("Door", "scripts/door.aeo"));
+        world.script_bindings.push(ScriptBinding::new("Enemy", "scripts/enemy.aeo"));
+
+        let path = Path::new("test_multi_bindings.dat");
+        save_world(&world, path).unwrap();
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        assert_eq!(loaded_world.script_bindings.len(), 3);
+        assert_eq!(loaded_world.script_bindings[0].target_identity, "Player");
+        assert_eq!(loaded_world.script_bindings[1].target_identity, "Door");
+        assert_eq!(loaded_world.script_bindings[2].target_identity, "Enemy");
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_existing_data_and_bindings_persistence() {
+        let mut world = World::new();
+        let coord = WorldCoord::new(1, 2, 3);
+        world.set_cell(coord, CellType::Block);
+        world.script_bindings.push(ScriptBinding::new("Box", "scripts/box.aeo"));
+
+        let path = Path::new("test_mixed_data.dat");
+        save_world(&world, path).unwrap();
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        assert!(loaded_world.get(coord).is_some());
+        assert_eq!(loaded_world.script_bindings.len(), 1);
+        assert_eq!(loaded_world.script_bindings[0].target_identity, "Box");
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_older_data_loadability() {
+        // Create a file manually WITHOUT SCRIPT_BINDING tags
+        let path = Path::new("test_old_format.dat");
+        {
+            let mut file = File::create(path).unwrap();
+            writeln!(file, "GRAVITY 0 -9.81 0").unwrap();
+            writeln!(file, "BLOCK 0 0 0 true true true Default 0.5 0.5 0.5").unwrap();
+        }
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        assert_eq!(loaded_world.gravity.y, -9.81);
+        assert!(loaded_world.get(WorldCoord::new(0, 0, 0)).is_some());
+        assert!(loaded_world.script_bindings.is_empty());
 
         fs::remove_file(path).ok();
     }
