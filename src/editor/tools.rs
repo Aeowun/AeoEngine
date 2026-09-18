@@ -1,7 +1,8 @@
-use egui::{Ui, RichText, Color32};
+use super::editor::{ColorTarget, Editor, EditorTool};
 use crate::engine::EditorMode;
-use super::editor::{Editor, EditorTool, ColorTarget};
+use egui::{Color32, RichText, Ui};
 use glam::Vec3;
+use std::fs;
 
 /// Unified color control with numeric entry and a toggle for a persistent color wheel.
 /// Format: [ R, G, B | --- ]
@@ -29,7 +30,9 @@ pub fn draw_color_edit(ui: &mut Ui, editor: &mut Editor, target: ColorTarget, co
         // Clipboard Copy
         response.context_menu(|ui| {
             if ui.button("Copy RGB Value").clicked() {
-                ui.output_mut(|o| o.copied_text = format!("{:.3}, {:.3}, {:.3}", color.x, color.y, color.z));
+                ui.output_mut(|o| {
+                    o.copied_text = format!("{:.3}, {:.3}, {:.3}", color.x, color.y, color.z)
+                });
                 ui.close_menu();
             }
         });
@@ -60,12 +63,42 @@ pub fn draw_color_edit(ui: &mut Ui, editor: &mut Editor, target: ColorTarget, co
 pub fn draw_texture_edit(ui: &mut Ui, texture: &mut String) {
     ui.horizontal(|ui| {
         ui.label("Texture:");
-        ui.text_edit_singleline(texture);
+
+        let mut available_textures = Vec::new();
+        if let Ok(entries) = fs::read_dir(".assets/textures") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("png") {
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        available_textures.push(stem.to_string());
+                    }
+                }
+            }
+        }
+        available_textures.sort();
+        available_textures.dedup();
+
+        egui::ComboBox::new(ui.next_auto_id(), "")
+            .selected_text(texture.as_str())
+            .width(120.0)
+            .show_ui(ui, |ui| {
+                if !available_textures.contains(texture) && !texture.is_empty() {
+                    ui.selectable_value(
+                        texture,
+                        texture.clone(),
+                        RichText::new(texture.as_str()).italics(),
+                    );
+                }
+                for t in &available_textures {
+                    ui.selectable_value(texture, t.clone(), t.as_str());
+                }
+            });
+
         if ui.button("Import...").clicked() {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter("PNG Image", &["png"])
-                .pick_file() {
-
+                .pick_file()
+            {
                 let textures_dir = std::path::Path::new(".assets/textures");
                 if !textures_dir.exists() {
                     let _ = std::fs::create_dir_all(textures_dir);
@@ -76,13 +109,17 @@ pub fn draw_texture_edit(ui: &mut Ui, texture: &mut String) {
                 let mut dest_path = textures_dir.join(&file_name);
 
                 if dest_path.exists() {
-                    for i in 1..1000 {
+                    let mut i = 1;
+                    loop {
                         let new_name = format!("{}_{}.png", stem, i);
                         let p = textures_dir.join(&new_name);
+
                         if !p.exists() {
                             dest_path = p;
                             break;
                         }
+
+                        i += 1;
                     }
                 }
 
@@ -100,10 +137,16 @@ pub fn draw_texture_edit(ui: &mut Ui, texture: &mut String) {
 pub fn draw_tool_bar(ui: &mut Ui, editor: &mut Editor) {
     ui.horizontal(|ui| {
         ui.label(RichText::new("Mode").strong());
-        if ui.selectable_label(editor.mode == EditorMode::Editor, "Editor").clicked() {
+        if ui
+            .selectable_label(editor.mode == EditorMode::Editor, "Editor")
+            .clicked()
+        {
             editor.mode = EditorMode::Editor;
         }
-        if ui.selectable_label(editor.mode == EditorMode::Play, "Play").clicked() {
+        if ui
+            .selectable_label(editor.mode == EditorMode::Play, "Play")
+            .clicked()
+        {
             editor.mode = EditorMode::Play;
         }
 
@@ -111,7 +154,12 @@ pub fn draw_tool_bar(ui: &mut Ui, editor: &mut Editor) {
 
         ui.label(RichText::new("Tool").strong());
 
-        draw_tool_button(ui, &mut editor.current_tool, EditorTool::Navigate, "Navigate");
+        draw_tool_button(
+            ui,
+            &mut editor.current_tool,
+            EditorTool::Navigate,
+            "Navigate",
+        );
         draw_tool_button(ui, &mut editor.current_tool, EditorTool::Select, "Select");
         draw_tool_button(ui, &mut editor.current_tool, EditorTool::Build, "Build");
         draw_tool_button(ui, &mut editor.current_tool, EditorTool::Erase, "Erase");
@@ -120,7 +168,11 @@ pub fn draw_tool_bar(ui: &mut Ui, editor: &mut Editor) {
 
         ui.horizontal(|ui| {
             ui.label(RichText::new("Picking:").strong());
-            let pick_text = if editor.plane_picking { "Plane [ ON ]" } else { "Plane [ OFF ]" };
+            let pick_text = if editor.plane_picking {
+                "Plane [ ON ]"
+            } else {
+                "Plane [ OFF ]"
+            };
             if ui.button(pick_text).clicked() {
                 editor.plane_picking = !editor.plane_picking;
             }

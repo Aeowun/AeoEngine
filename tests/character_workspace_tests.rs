@@ -2,8 +2,8 @@
 pub mod character_custom;
 
 use character_custom::{
-    CharacterAnimationController, TargetAnimation, AppearanceCustomization,
-    MaterialSlot, CharacterCollision, generate_character_mesh
+    AppearanceCustomization, CharacterAnimationController, CharacterCollision, MaterialSlot,
+    TargetAnimation, generate_character_mesh,
 };
 
 #[test]
@@ -16,7 +16,10 @@ fn test_animation_controller_initial_state() {
 
     // Evaluate initial pose
     let pose = controller.evaluate_pose();
-    assert!(!pose.matrices.is_empty(), "Pose matrices should be evaluated");
+    assert!(
+        !pose.matrices.is_empty(),
+        "Pose matrices should be evaluated"
+    );
 }
 
 #[test]
@@ -36,7 +39,11 @@ fn test_animation_state_blending() {
         controller.update(0.1);
     }
 
-    assert_eq!(controller.blend_weight(), 1.0, "Should fully blend to Walk state");
+    assert_eq!(
+        controller.blend_weight(),
+        1.0,
+        "Should fully blend to Walk state"
+    );
 }
 
 #[test]
@@ -84,7 +91,10 @@ fn test_geometry_vertex_buffer_format() {
 
     let vertex_buffer = generate_character_mesh(&pose, &appearance);
 
-    assert!(!vertex_buffer.is_empty(), "Vertex buffer should not be empty");
+    assert!(
+        !vertex_buffer.is_empty(),
+        "Vertex buffer should not be empty"
+    );
     assert_eq!(
         vertex_buffer.len() % 10,
         0,

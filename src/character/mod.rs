@@ -154,10 +154,18 @@ mod tests {
         camera.update(&character, &world);
 
         // Camera target should be character position + look height
-        assert_eq!(camera.current_target, Vec3::new(10.0, camera.look_height, 20.0));
+        assert_eq!(
+            camera.current_target,
+            Vec3::new(10.0, camera.look_height, 20.0)
+        );
 
         // Camera position should be offset from character
-        assert!(camera.current_position.distance(character.transform.position) > camera.distance - 0.1);
+        assert!(
+            camera
+                .current_position
+                .distance(character.transform.position)
+                > camera.distance - 0.1
+        );
     }
 
     #[test]

@@ -1,11 +1,11 @@
-use std::collections::HashMap;
-use glam::{Vec2, Vec3, Quat};
-use crate::world::{World, WorldCoord};
-use crate::character_custom::TargetAnimation;
-use super::character::Character;
-use super::spawning::spawn_at_random_point;
-use super::movement::{MovementState, MOVE_SPEED, JUMP_IMPULSE};
 use super::animation::AnimationState;
+use super::character::Character;
+use super::movement::{JUMP_IMPULSE, MOVE_SPEED, MovementState};
+use super::spawning::spawn_at_random_point;
+use crate::character_custom::TargetAnimation;
+use crate::world::{World, WorldCoord};
+use glam::{Quat, Vec2, Vec3};
+use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct CharacterSystem {
@@ -92,11 +92,15 @@ impl CharacterSystem {
             if horizontal_speed > 0.1 {
                 character.animation.current_state = AnimationState::Walk;
                 character.movement.state = MovementState::Walk;
-                character.animation_controller.select_animation(TargetAnimation::Walk);
+                character
+                    .animation_controller
+                    .select_animation(TargetAnimation::Walk);
             } else {
                 character.animation.current_state = AnimationState::Idle;
                 character.movement.state = MovementState::Idle;
-                character.animation_controller.select_animation(TargetAnimation::Idle);
+                character
+                    .animation_controller
+                    .select_animation(TargetAnimation::Idle);
             }
 
             // 8. Advance Custom Animation Controller
@@ -138,9 +142,12 @@ impl CharacterSystem {
                         let v_max = v_min + Vec3::ONE;
 
                         // AABB overlap test
-                        let overlap_x = (character.transform.position.x + radius).min(v_max.x) - (character.transform.position.x - radius).max(v_min.x);
-                        let overlap_y = (character.transform.position.y + height).min(v_max.y) - character.transform.position.y.max(v_min.y);
-                        let overlap_z = (character.transform.position.z + radius).min(v_max.z) - (character.transform.position.z - radius).max(v_min.z);
+                        let overlap_x = (character.transform.position.x + radius).min(v_max.x)
+                            - (character.transform.position.x - radius).max(v_min.x);
+                        let overlap_y = (character.transform.position.y + height).min(v_max.y)
+                            - character.transform.position.y.max(v_min.y);
+                        let overlap_z = (character.transform.position.z + radius).min(v_max.z)
+                            - (character.transform.position.z - radius).max(v_min.z);
 
                         if overlap_x > 0.001 && overlap_y > 0.001 && overlap_z > 0.001 {
                             // Resolve collision on the axis of shallowest penetration.
@@ -185,8 +192,8 @@ impl CharacterSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::{World, CellType, WorldCoord};
     use crate::character::movement;
+    use crate::world::{CellType, World, WorldCoord};
 
     #[test]
     fn test_character_runtime_starts_empty() {
@@ -217,7 +224,11 @@ mod tests {
         let id1 = system.get_active_characters().next().unwrap().id;
 
         system.spawn_player(&world);
-        let id2 = system.get_active_characters().find(|c| c.id != id1).unwrap().id;
+        let id2 = system
+            .get_active_characters()
+            .find(|c| c.id != id1)
+            .unwrap()
+            .id;
 
         assert_ne!(id1, id2);
     }
@@ -300,11 +311,27 @@ mod tests {
 
         // 1. Idle (no input)
         system.update(&world, 0.1, Vec2::ZERO, false);
-        assert_eq!(system.get_active_characters().next().unwrap().animation.current_state, AnimationState::Idle);
+        assert_eq!(
+            system
+                .get_active_characters()
+                .next()
+                .unwrap()
+                .animation
+                .current_state,
+            AnimationState::Idle
+        );
 
         // 2. Walk (input)
         system.update(&world, 0.1, Vec2::X, false);
-        assert_eq!(system.get_active_characters().next().unwrap().animation.current_state, AnimationState::Walk);
+        assert_eq!(
+            system
+                .get_active_characters()
+                .next()
+                .unwrap()
+                .animation
+                .current_state,
+            AnimationState::Walk
+        );
     }
 
     #[test]
@@ -316,17 +343,32 @@ mod tests {
 
         // Move Right (+X, input.y is 0)
         system.update(&world, 0.1, Vec2::new(1.0, 0.0), false);
-        let rot1 = system.get_active_characters().next().unwrap().transform.rotation;
+        let rot1 = system
+            .get_active_characters()
+            .next()
+            .unwrap()
+            .transform
+            .rotation;
 
         // Move Left (-X)
         system.update(&world, 0.1, Vec2::new(-1.0, 0.0), false);
-        let rot2 = system.get_active_characters().next().unwrap().transform.rotation;
+        let rot2 = system
+            .get_active_characters()
+            .next()
+            .unwrap()
+            .transform
+            .rotation;
 
         assert_ne!(rot1, rot2);
 
         // Stationary character keeps rotation
         system.update(&world, 0.1, Vec2::ZERO, false);
-        let rot3 = system.get_active_characters().next().unwrap().transform.rotation;
+        let rot3 = system
+            .get_active_characters()
+            .next()
+            .unwrap()
+            .transform
+            .rotation;
         assert_eq!(rot2, rot3);
     }
 
@@ -340,21 +382,37 @@ mod tests {
         system.characters.insert(1, character);
 
         // Ensure grounded first
-        system.update(&world, 1.0/60.0, Vec2::ZERO, false);
-        assert!(system.get_active_characters().next().unwrap().movement.is_grounded);
+        system.update(&world, 1.0 / 60.0, Vec2::ZERO, false);
+        assert!(
+            system
+                .get_active_characters()
+                .next()
+                .unwrap()
+                .movement
+                .is_grounded
+        );
 
         // Jump
-        system.update(&world, 1.0/60.0, Vec2::ZERO, true);
+        system.update(&world, 1.0 / 60.0, Vec2::ZERO, true);
         let updated = system.get_active_characters().next().unwrap();
         // Note: Gravity is applied in the same frame as the impulse, so we expect
         // JUMP_IMPULSE + gravity * dt.
-        let expected_v = JUMP_IMPULSE + world.gravity.y * (1.0/60.0);
+        let expected_v = JUMP_IMPULSE + world.gravity.y * (1.0 / 60.0);
         assert!((updated.movement.velocity.y - expected_v).abs() < 0.001);
         assert!(!updated.movement.is_grounded);
 
         // Airborne character cannot jump again (until grounded)
-        system.update(&world, 1.0/60.0, Vec2::ZERO, true);
+        system.update(&world, 1.0 / 60.0, Vec2::ZERO, true);
         // Velocity should have decreased due to gravity, not reset to JUMP_IMPULSE
-        assert!(system.get_active_characters().next().unwrap().movement.velocity.y < movement::JUMP_IMPULSE);
+        assert!(
+            system
+                .get_active_characters()
+                .next()
+                .unwrap()
+                .movement
+                .velocity
+                .y
+                < movement::JUMP_IMPULSE
+        );
     }
 }

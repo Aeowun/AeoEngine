@@ -70,7 +70,9 @@ impl Skeleton {
             global_matrices.push(global_matrix);
         }
 
-        EvaluatedPose { matrices: global_matrices }
+        EvaluatedPose {
+            matrices: global_matrices,
+        }
     }
 }
 

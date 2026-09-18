@@ -1,9 +1,7 @@
 use std::mem;
 use std::ptr;
 
-pub fn upload_vertices_2d(
-    vertices: &[f32]
-) -> (u32, u32) {
+pub fn upload_vertices_2d(vertices: &[f32]) -> (u32, u32) {
     let mut vao = 0;
     let mut vbo = 0;
 
@@ -22,16 +20,21 @@ pub fn upload_vertices_2d(
         let stride = (5 * mem::size_of::<f32>()) as i32;
         gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
         gl::EnableVertexAttribArray(0);
-        gl::VertexAttribPointer(1, 3, gl::FLOAT, gl::FALSE, stride, (2 * mem::size_of::<f32>()) as *const _);
+        gl::VertexAttribPointer(
+            1,
+            3,
+            gl::FLOAT,
+            gl::FALSE,
+            stride,
+            (2 * mem::size_of::<f32>()) as *const _,
+        );
         gl::EnableVertexAttribArray(1);
         gl::BindVertexArray(0);
     }
     (vao, vbo)
 }
 
-pub fn upload_vertices_3d(
-    vertices: &[f32]
-) -> (u32, u32, i32) {
+pub fn upload_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
     let mut vao = 0;
     let mut vbo = 0;
 
@@ -53,10 +56,24 @@ pub fn upload_vertices_3d(
         gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, stride, ptr::null());
         gl::EnableVertexAttribArray(0);
         // Normal
-        gl::VertexAttribPointer(1, 3, gl::FLOAT, gl::FALSE, stride, (3 * mem::size_of::<f32>()) as *const _);
+        gl::VertexAttribPointer(
+            1,
+            3,
+            gl::FLOAT,
+            gl::FALSE,
+            stride,
+            (3 * mem::size_of::<f32>()) as *const _,
+        );
         gl::EnableVertexAttribArray(1);
         // Color
-        gl::VertexAttribPointer(2, 4, gl::FLOAT, gl::FALSE, stride, (6 * mem::size_of::<f32>()) as *const _);
+        gl::VertexAttribPointer(
+            2,
+            4,
+            gl::FLOAT,
+            gl::FALSE,
+            stride,
+            (6 * mem::size_of::<f32>()) as *const _,
+        );
         gl::EnableVertexAttribArray(2);
 
         gl::BindVertexArray(0);
@@ -64,21 +81,11 @@ pub fn upload_vertices_3d(
     (vao, vbo, (vertices.len() / 10) as i32)
 }
 
-pub fn add_line(
-    vertices: &mut Vec<f32>,
-    a: [f32; 3],
-    b: [f32; 3],
-    color: [f32; 4],
-) {
+pub fn add_line(vertices: &mut Vec<f32>, a: [f32; 3], b: [f32; 3], color: [f32; 4]) {
     let normal = [0.0, 1.0, 0.0]; // Dummy normal for lines
     vertices.extend_from_slice(&[
-        a[0], a[1], a[2],
-        normal[0], normal[1], normal[2],
-        color[0], color[1], color[2], color[3],
-
-        b[0], b[1], b[2],
-        normal[0], normal[1], normal[2],
-        color[0], color[1], color[2], color[3],
+        a[0], a[1], a[2], normal[0], normal[1], normal[2], color[0], color[1], color[2], color[3],
+        b[0], b[1], b[2], normal[0], normal[1], normal[2], color[0], color[1], color[2], color[3],
     ]);
 }
 
@@ -100,16 +107,10 @@ pub fn add_quad(
     add_vertex(vertices, v4, normal, color);
 }
 
-fn add_vertex(
-    vertices: &mut Vec<f32>,
-    pos: [f32; 3],
-    normal: [f32; 3],
-    color: [f32; 4],
-) {
+fn add_vertex(vertices: &mut Vec<f32>, pos: [f32; 3], normal: [f32; 3], color: [f32; 4]) {
     vertices.extend_from_slice(&[
-        pos[0], pos[1], pos[2],
-        normal[0], normal[1], normal[2],
-        color[0], color[1], color[2], color[3],
+        pos[0], pos[1], pos[2], normal[0], normal[1], normal[2], color[0], color[1], color[2],
+        color[3],
     ]);
 }
 
@@ -139,16 +140,12 @@ fn add_block_vertex(
     uv: [f32; 2],
 ) {
     vertices.extend_from_slice(&[
-        pos[0], pos[1], pos[2],
-        normal[0], normal[1], normal[2],
-        color[0], color[1], color[2], color[3],
-        uv[0], uv[1],
+        pos[0], pos[1], pos[2], normal[0], normal[1], normal[2], color[0], color[1], color[2],
+        color[3], uv[0], uv[1],
     ]);
 }
 
-pub fn upload_block_vertices_3d(
-    vertices: &[f32]
-) -> (u32, u32, i32) {
+pub fn upload_block_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
     let mut vao = 0;
     let mut vbo = 0;
 
@@ -170,13 +167,34 @@ pub fn upload_block_vertices_3d(
         gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, stride, ptr::null());
         gl::EnableVertexAttribArray(0);
         // Normal
-        gl::VertexAttribPointer(1, 3, gl::FLOAT, gl::FALSE, stride, (3 * mem::size_of::<f32>()) as *const _);
+        gl::VertexAttribPointer(
+            1,
+            3,
+            gl::FLOAT,
+            gl::FALSE,
+            stride,
+            (3 * mem::size_of::<f32>()) as *const _,
+        );
         gl::EnableVertexAttribArray(1);
         // Color
-        gl::VertexAttribPointer(2, 4, gl::FLOAT, gl::FALSE, stride, (6 * mem::size_of::<f32>()) as *const _);
+        gl::VertexAttribPointer(
+            2,
+            4,
+            gl::FLOAT,
+            gl::FALSE,
+            stride,
+            (6 * mem::size_of::<f32>()) as *const _,
+        );
         gl::EnableVertexAttribArray(2);
         // UV
-        gl::VertexAttribPointer(3, 2, gl::FLOAT, gl::FALSE, stride, (10 * mem::size_of::<f32>()) as *const _);
+        gl::VertexAttribPointer(
+            3,
+            2,
+            gl::FLOAT,
+            gl::FALSE,
+            stride,
+            (10 * mem::size_of::<f32>()) as *const _,
+        );
         gl::EnableVertexAttribArray(3);
 
         gl::BindVertexArray(0);
@@ -203,9 +221,23 @@ pub fn upload_and_draw_mesh_3d(vertices: &[f32]) {
         let stride = (10 * mem::size_of::<f32>()) as i32;
         gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, stride, ptr::null());
         gl::EnableVertexAttribArray(0);
-        gl::VertexAttribPointer(1, 3, gl::FLOAT, gl::FALSE, stride, (3 * mem::size_of::<f32>()) as *const _);
+        gl::VertexAttribPointer(
+            1,
+            3,
+            gl::FLOAT,
+            gl::FALSE,
+            stride,
+            (3 * mem::size_of::<f32>()) as *const _,
+        );
         gl::EnableVertexAttribArray(1);
-        gl::VertexAttribPointer(2, 4, gl::FLOAT, gl::FALSE, stride, (6 * mem::size_of::<f32>()) as *const _);
+        gl::VertexAttribPointer(
+            2,
+            4,
+            gl::FLOAT,
+            gl::FALSE,
+            stride,
+            (6 * mem::size_of::<f32>()) as *const _,
+        );
         gl::EnableVertexAttribArray(2);
 
         gl::DrawArrays(gl::TRIANGLES, 0, (vertices.len() / 10) as i32);

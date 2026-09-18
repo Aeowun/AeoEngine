@@ -1,4 +1,4 @@
-pub mod recent;
 pub mod project;
+pub mod recent;
 
 pub use project::ProjectManager;

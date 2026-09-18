@@ -1,5 +1,7 @@
-use super::rig::{Skeleton, Transform, EvaluatedPose};
-use super::animation::{AnimationClip, create_default_skeleton, create_idle_clip, create_walk_clip};
+use super::animation::{
+    AnimationClip, create_default_skeleton, create_idle_clip, create_walk_clip,
+};
+use super::rig::{EvaluatedPose, Skeleton, Transform};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TargetAnimation {
@@ -17,8 +19,8 @@ pub struct CharacterAnimationController {
     playback_rate: f32,
 
     target_state: TargetAnimation,
-    blend_weight: f32,       // 0.0 = Idle, 1.0 = Walk
-    blend_speed: f32,        // how fast weight changes per second
+    blend_weight: f32, // 0.0 = Idle, 1.0 = Walk
+    blend_speed: f32,  // how fast weight changes per second
 
     // Cached collections to prevent heap reallocations per frame
     local_transforms_idle: Vec<Transform>,
@@ -90,12 +92,15 @@ impl CharacterAnimationController {
             self.local_transforms_walk[i] = joint.local_transform;
         }
 
-        self.idle_clip.evaluate(self.current_time_idle, &mut self.local_transforms_idle);
-        self.walk_clip.evaluate(self.current_time_walk, &mut self.local_transforms_walk);
+        self.idle_clip
+            .evaluate(self.current_time_idle, &mut self.local_transforms_idle);
+        self.walk_clip
+            .evaluate(self.current_time_walk, &mut self.local_transforms_walk);
 
         // 2. Linear blend between the local joint poses
         for i in 0..self.skeleton.joints.len() {
-            self.blended_transforms[i] = self.local_transforms_idle[i].lerp(&self.local_transforms_walk[i], self.blend_weight);
+            self.blended_transforms[i] = self.local_transforms_idle[i]
+                .lerp(&self.local_transforms_walk[i], self.blend_weight);
         }
 
         // 3. Resolve parent-child transformations to global space matrices

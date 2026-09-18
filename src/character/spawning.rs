@@ -1,6 +1,6 @@
-use crate::world::{CellType, World, WorldCoord};
 use super::character::Character;
 use super::collision::CharacterCollision;
+use crate::world::{CellType, World, WorldCoord};
 use glam::Vec3;
 
 pub fn spawn_at_random_point(world: &World, next_id: u64) -> Option<Character> {
@@ -36,11 +36,7 @@ pub fn spawn_at_random_point(world: &World, next_id: u64) -> Option<Character> {
 
     let collision = CharacterCollision::new();
 
-    let base_position = Vec3::new(
-        coord.x as f32,
-        spawn_y,
-        coord.z as f32,
-    );
+    let base_position = Vec3::new(coord.x as f32, spawn_y, coord.z as f32);
 
     if has_character_clearance(world, base_position, &collision) {
         return Some(Character::new(next_id, base_position));
@@ -74,11 +70,7 @@ pub fn spawn_at_random_point(world: &World, next_id: u64) -> Option<Character> {
     None
 }
 
-fn has_character_clearance(
-    world: &World,
-    position: Vec3,
-    collision: &CharacterCollision,
-) -> bool {
+fn has_character_clearance(world: &World, position: Vec3, collision: &CharacterCollision) -> bool {
     let radius = collision.radius;
     let height = collision.height;
 

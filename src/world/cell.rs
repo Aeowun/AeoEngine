@@ -67,7 +67,7 @@ impl Cell {
             anchored: true,
             texture: "Light_tx".to_string(),
             color_rgb: Vec3::new(1.0, 1.0, 0.0), // Visual indicator color
-            light_color: Vec3::ONE, // White emitted light
+            light_color: Vec3::ONE,              // White emitted light
             light_intensity: 5.0,
             light_range: 10.0,
             light_shadows: true,

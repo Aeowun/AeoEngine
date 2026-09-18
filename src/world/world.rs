@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use glam::Vec3;
 use super::cell::{Cell, CellType};
 use super::coordinate::WorldCoord;
+use glam::Vec3;
+use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct LightingSettings {

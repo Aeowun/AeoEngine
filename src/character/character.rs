@@ -2,7 +2,7 @@ use super::animation::CharacterAnimation;
 use super::collision::CharacterCollision;
 use super::movement::CharacterMovement;
 use super::transform::CharacterTransform;
-use crate::character_custom::{CharacterAnimationController, AppearanceCustomization};
+use crate::character_custom::{AppearanceCustomization, CharacterAnimationController};
 use glam::Vec3;
 
 pub struct Character {

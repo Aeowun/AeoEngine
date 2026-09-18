@@ -1,10 +1,7 @@
 use std::ffi::CString;
 use std::ptr;
 
-pub fn create_program(
-    vertex_source: &str,
-    fragment_source: &str,
-) -> u32 {
+pub fn create_program(vertex_source: &str, fragment_source: &str) -> u32 {
     let vertex_shader = compile_shader(gl::VERTEX_SHADER, vertex_source);
     let fragment_shader = compile_shader(gl::FRAGMENT_SHADER, fragment_source);
     unsafe {
@@ -23,10 +20,7 @@ pub fn create_program(
     }
 }
 
-fn compile_shader(
-    kind: u32,
-    source: &str,
-) -> u32 {
+fn compile_shader(kind: u32, source: &str) -> u32 {
     let source = CString::new(source).unwrap();
     unsafe {
         let shader = gl::CreateShader(kind);

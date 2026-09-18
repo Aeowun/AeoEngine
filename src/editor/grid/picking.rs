@@ -1,7 +1,7 @@
-use glam::{Vec3};
-use crate::renderer::camera::CameraController;
 use crate::editor::GridPlane;
+use crate::renderer::camera::CameraController;
 use crate::world::WorldCoord;
+use glam::Vec3;
 
 pub fn update_hover(
     mx: f32,
@@ -9,7 +9,7 @@ pub fn update_hover(
     width: f32,
     height: f32,
     camera: &CameraController,
-    anchor: WorldCoord
+    anchor: WorldCoord,
 ) -> Option<WorldCoord> {
     let camera_pos = camera.get_position();
     let view = camera.get_view_matrix();
@@ -55,7 +55,7 @@ pub fn update_hover(
             return Some(WorldCoord::new(
                 snapped_hit.x.floor() as i32,
                 snapped_hit.y.floor() as i32,
-                snapped_hit.z.floor() as i32
+                snapped_hit.z.floor() as i32,
             ));
         }
     }
@@ -70,6 +70,7 @@ pub fn raycast_world(
     height: f32,
     camera: &CameraController,
     world: &crate::world::World,
+    include_lights: bool,
 ) -> Option<(WorldCoord, Vec3)> {
     let view = camera.get_view_matrix();
 
@@ -108,9 +109,21 @@ pub fn raycast_world(
     );
 
     let mut side_dist = Vec3::new(
-        if dir.x < 0.0 { (near.x - map_pos.x as f32) * delta_dist.x } else { (map_pos.x as f32 + 1.0 - near.x) * delta_dist.x },
-        if dir.y < 0.0 { (near.y - map_pos.y as f32) * delta_dist.y } else { (map_pos.y as f32 + 1.0 - near.y) * delta_dist.y },
-        if dir.z < 0.0 { (near.z - map_pos.z as f32) * delta_dist.z } else { (map_pos.z as f32 + 1.0 - near.z) * delta_dist.z },
+        if dir.x < 0.0 {
+            (near.x - map_pos.x as f32) * delta_dist.x
+        } else {
+            (map_pos.x as f32 + 1.0 - near.x) * delta_dist.x
+        },
+        if dir.y < 0.0 {
+            (near.y - map_pos.y as f32) * delta_dist.y
+        } else {
+            (map_pos.y as f32 + 1.0 - near.y) * delta_dist.y
+        },
+        if dir.z < 0.0 {
+            (near.z - map_pos.z as f32) * delta_dist.z
+        } else {
+            (map_pos.z as f32 + 1.0 - near.z) * delta_dist.z
+        },
     );
 
     let max_dist = 200.0;
@@ -119,14 +132,17 @@ pub fn raycast_world(
 
     while dist < max_dist {
         if let Some(cell) = world.get(map_pos) {
-            // Eligible: Block, SpawnPoint (and other authored types if they become visible)
-            // Invisible lights are specifically excluded.
+            // Eligible: Block, SpawnPoint
+            // Light is only eligible if include_lights is true.
             let eligible = match cell.cell_type {
                 crate::world::CellType::Block | crate::world::CellType::SpawnPoint => true,
+                crate::world::CellType::Light => include_lights,
                 _ => false,
             };
 
-            if eligible && cell.visible {
+            // Lights are often set to visible=false, so we check eligibility first.
+            // If it's a light and we are including lights, we hit it regardless of visibility flag.
+            if eligible && (cell.visible || cell.cell_type == crate::world::CellType::Light) {
                 return Some((map_pos, hit_normal));
             }
         }

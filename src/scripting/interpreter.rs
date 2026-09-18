@@ -2387,14 +2387,18 @@ entity Test {
                 16,
             );
 
+        let em = test_host();
+        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+
         let mut instance = interpreter
-            .instantiate_entity("Test")
+            .instantiate_entity("Test", &host)
             .expect("entity should instantiate");
 
         let result = interpreter.call(
             &mut instance,
             "update",
             vec![Value::Number(1.0)],
+            &host
         );
 
         assert!(result.is_err());
@@ -2438,14 +2442,18 @@ entity Test {
                 4,
             );
 
+        let em = test_host();
+        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+
         let mut instance = interpreter
-            .instantiate_entity("Test")
+            .instantiate_entity("Test", &host)
             .expect("entity should instantiate");
 
         let result = interpreter.call(
             &mut instance,
             "update",
             vec![Value::Number(1.0)],
+            &host,
         );
 
         assert!(result.is_err());
@@ -2479,8 +2487,11 @@ entity Test {
         let mut interpreter =
             interpreter(source);
 
+        let em = test_host();
+        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+
         let instance = interpreter
-            .instantiate_entity("Test")
+            .instantiate_entity("Test", &host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -2578,8 +2589,11 @@ entity Test {
         let mut interpreter =
             interpreter(source);
 
+        let em = test_host();
+        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+
         let instance = interpreter
-            .instantiate_entity("Test")
+            .instantiate_entity("Test", &host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -2696,8 +2710,11 @@ entity Test {
         let mut interpreter =
             interpreter(source);
 
+        let em = test_host();
+        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+
         let instance = interpreter
-            .instantiate_entity("Test")
+            .instantiate_entity("Test", &host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -2776,8 +2793,11 @@ entity Test {
         let mut interpreter =
             interpreter(source);
 
+        let em = test_host();
+        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+
         let instance = interpreter
-            .instantiate_entity("Test")
+            .instantiate_entity("Test", &host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -2870,8 +2890,11 @@ entity Test {
                 16,
             );
 
+        let em = test_host();
+        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+
         let instance = interpreter
-            .instantiate_entity("Test")
+            .instantiate_entity("Test", &host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -2941,8 +2964,11 @@ entity Test {
         let mut interpreter =
             interpreter(source);
 
+        let em = test_host();
+        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+
         let instance = interpreter
-            .instantiate_entity("Test")
+            .instantiate_entity("Test", &host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -2955,7 +2981,7 @@ entity Test {
                 .expect("fiber should start");
 
         let result =
-            interpreter.resume_fiber(&mut fiber);
+            interpreter.resume_fiber(&mut fiber, &host);
 
         assert!(matches!(
             result,
@@ -2982,8 +3008,11 @@ entity Test {
         let mut interpreter =
             interpreter(source);
 
+        let em = test_host();
+        let host = HostContext { delta_time: 1.0, entity_manager: &em };
+
         let instance = interpreter
-            .instantiate_entity("Test")
+            .instantiate_entity("Test", &host)
             .expect("entity should instantiate");
 
         let mut fiber =
@@ -2998,7 +3027,7 @@ entity Test {
                 .expect("fiber should start");
 
         let result =
-            interpreter.resume_fiber(&mut fiber);
+            interpreter.resume_fiber(&mut fiber, &host);
 
         assert!(matches!(
             result,
@@ -3023,8 +3052,11 @@ entity Test {
 
     let mut interpreter = interpreter(source);
 
+    let em = test_host();
+    let host = HostContext { delta_time: 1.0, entity_manager: &em };
+
     let instance = interpreter
-        .instantiate_entity("Test")
+        .instantiate_entity("Test", &host)
         .expect("entity should instantiate");
 
     let mut fiber = interpreter
@@ -3035,7 +3067,7 @@ entity Test {
         )
         .expect("fiber should start");
 
-    let result = interpreter.resume_fiber(&mut fiber);
+    let result = interpreter.resume_fiber(&mut fiber, &host);
 
     assert!(matches!(
         result,

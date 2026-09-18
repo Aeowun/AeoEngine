@@ -20,11 +20,11 @@ pub struct AppearanceCustomization {
 impl Default for AppearanceCustomization {
     fn default() -> Self {
         Self {
-            skin_color: [0.9, 0.7, 0.6, 1.0],      // Light peach
-            armor_color: [0.4, 0.4, 0.45, 1.0],    // Steel blue-gray
-            cloth_color: [0.7, 0.2, 0.2, 1.0],     // Crimson red
-            detail_color: [0.9, 0.8, 0.2, 1.0],    // Gold details
-            accessory_color: [0.2, 0.6, 0.3, 1.0], // Emerald cape/shield
+            skin_color: [0.70, 0.71, 0.70, 1.0],   // Light industrial metal
+            armor_color: [0.46, 0.47, 0.45, 1.0],  // Neutral gray metal
+            cloth_color: [0.10, 0.10, 0.10, 1.0],  // Black
+            detail_color: [0.12, 0.13, 0.15, 1.0], // Brass/gold
+            accessory_color: [0.08, 0.30, 0.34, 1.0], // Deep teal
             show_accessory: true,
         }
     }

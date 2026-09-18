@@ -18,9 +18,7 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
     writeln!(
         file,
         "GRAVITY {} {} {}",
-        world.gravity.x,
-        world.gravity.y,
-        world.gravity.z
+        world.gravity.x, world.gravity.y, world.gravity.z
     )?;
 
     // Save global lighting settings.
@@ -136,11 +134,9 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
         }
 
         if parts[0] == "LIGHTING" && parts.len() >= 11 {
-            world.lighting.shadows_enabled =
-                parts[1].parse::<bool>().unwrap_or(true);
+            world.lighting.shadows_enabled = parts[1].parse::<bool>().unwrap_or(true);
 
-            world.lighting.global_light_enabled =
-                parts[2].parse::<bool>().unwrap_or(true);
+            world.lighting.global_light_enabled = parts[2].parse::<bool>().unwrap_or(true);
 
             let dx = parts[3].parse::<f32>().ok();
             let dy = parts[4].parse::<f32>().ok();
@@ -158,11 +154,9 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                 world.lighting.global_light_color = Vec3::new(r, g, b);
             }
 
-            world.lighting.global_light_intensity =
-                parts[9].parse::<f32>().unwrap_or(1.0);
+            world.lighting.global_light_intensity = parts[9].parse::<f32>().unwrap_or(1.0);
 
-            world.lighting.ambient_intensity =
-                parts[10].parse::<f32>().unwrap_or(0.2);
+            world.lighting.ambient_intensity = parts[10].parse::<f32>().unwrap_or(0.2);
 
             continue;
         }
@@ -182,14 +176,11 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
                     if let Some(cell) = world.get_mut(coord) {
                         if parts.len() >= 11 {
-                            cell.visible =
-                                parts[4].parse::<bool>().unwrap_or(true);
+                            cell.visible = parts[4].parse::<bool>().unwrap_or(true);
 
-                            cell.solid =
-                                parts[5].parse::<bool>().unwrap_or(true);
+                            cell.solid = parts[5].parse::<bool>().unwrap_or(true);
 
-                            cell.anchored =
-                                parts[6].parse::<bool>().unwrap_or(true);
+                            cell.anchored = parts[6].parse::<bool>().unwrap_or(true);
 
                             cell.texture = parts[7].to_string();
 
@@ -205,14 +196,11 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
                     if let Some(cell) = world.get_mut(coord) {
                         if parts.len() >= 11 {
-                            cell.visible =
-                                parts[4].parse::<bool>().unwrap_or(true);
+                            cell.visible = parts[4].parse::<bool>().unwrap_or(true);
 
-                            cell.solid =
-                                parts[5].parse::<bool>().unwrap_or(true);
+                            cell.solid = parts[5].parse::<bool>().unwrap_or(true);
 
-                            cell.anchored =
-                                parts[6].parse::<bool>().unwrap_or(true);
+                            cell.anchored = parts[6].parse::<bool>().unwrap_or(true);
 
                             cell.texture = parts[7].to_string();
 
@@ -228,23 +216,18 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
                     if let Some(cell) = world.get_mut(coord) {
                         if parts.len() >= 8 {
-                            cell.visible =
-                                parts[4].parse::<bool>().unwrap_or(true);
+                            cell.visible = parts[4].parse::<bool>().unwrap_or(true);
 
-                            cell.solid =
-                                parts[5].parse::<bool>().unwrap_or(true);
+                            cell.solid = parts[5].parse::<bool>().unwrap_or(true);
 
-                            cell.anchored =
-                                parts[6].parse::<bool>().unwrap_or(true);
+                            cell.anchored = parts[6].parse::<bool>().unwrap_or(true);
 
                             cell.texture = parts[7].to_string();
                         } else if parts.len() >= 7 {
                             // Format without anchored.
-                            cell.visible =
-                                parts[4].parse::<bool>().unwrap_or(true);
+                            cell.visible = parts[4].parse::<bool>().unwrap_or(true);
 
-                            cell.solid =
-                                parts[5].parse::<bool>().unwrap_or(true);
+                            cell.solid = parts[5].parse::<bool>().unwrap_or(true);
 
                             cell.anchored = true;
                             cell.texture = parts[6].to_string();
@@ -270,14 +253,11 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
                             cell.light_color = Vec3::new(r, g, b);
 
-                            cell.light_intensity =
-                                parts[7].parse::<f32>().unwrap_or(5.0);
+                            cell.light_intensity = parts[7].parse::<f32>().unwrap_or(5.0);
 
-                            cell.light_range =
-                                parts[8].parse::<f32>().unwrap_or(10.0);
+                            cell.light_range = parts[8].parse::<f32>().unwrap_or(10.0);
 
-                            cell.light_shadows =
-                                parts[9].parse::<bool>().unwrap_or(true);
+                            cell.light_shadows = parts[9].parse::<bool>().unwrap_or(true);
                         }
                     }
                 }
@@ -300,10 +280,7 @@ mod tests {
         // A new world must start with standard gravity.
         let world = World::new();
 
-        assert_eq!(
-            world.gravity,
-            Vec3::new(0.0, -9.81, 0.0)
-        );
+        assert_eq!(world.gravity, Vec3::new(0.0, -9.81, 0.0));
     }
 
     #[test]
@@ -381,13 +358,9 @@ mod tests {
             Vec3::new(1.0, 0.5, 0.2)
         );
 
-        assert!(
-            (loaded_world.lighting.global_light_intensity - 4.2).abs() < 1e-5
-        );
+        assert!((loaded_world.lighting.global_light_intensity - 4.2).abs() < 1e-5);
 
-        assert!(
-            (loaded_world.lighting.ambient_intensity - 0.88).abs() < 1e-5
-        );
+        assert!((loaded_world.lighting.ambient_intensity - 0.88).abs() < 1e-5);
 
         fs::remove_file(path).ok();
     }
@@ -418,10 +391,7 @@ mod tests {
         let loaded_cell = loaded_world.get(coord).unwrap();
 
         assert_eq!(loaded_cell.cell_type, CellType::Light);
-        assert_eq!(
-            loaded_cell.light_color,
-            Vec3::new(0.1, 0.2, 0.3)
-        );
+        assert_eq!(loaded_cell.light_color, Vec3::new(0.1, 0.2, 0.3));
         assert_eq!(loaded_cell.light_intensity, 99.0);
         assert_eq!(loaded_cell.light_range, 50.0);
         assert_eq!(loaded_cell.light_shadows, false);
@@ -456,18 +426,12 @@ mod tests {
 
         let loaded_cell = loaded_world.get(coord).unwrap();
 
-        assert_eq!(
-            loaded_cell.cell_type,
-            CellType::SpawnPoint
-        );
+        assert_eq!(loaded_cell.cell_type, CellType::SpawnPoint);
         assert_eq!(loaded_cell.visible, false);
         assert_eq!(loaded_cell.solid, true);
         assert_eq!(loaded_cell.anchored, false);
         assert_eq!(loaded_cell.texture, "Block_tx");
-        assert_eq!(
-            loaded_cell.color_rgb,
-            Vec3::new(0.2, 0.4, 0.8)
-        );
+        assert_eq!(loaded_cell.color_rgb, Vec3::new(0.2, 0.4, 0.8));
 
         fs::remove_file(path).ok();
     }

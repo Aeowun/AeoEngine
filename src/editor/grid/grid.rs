@@ -1,5 +1,5 @@
-use crate::renderer::mesh::add_line;
 use crate::editor::GridPlane;
+use crate::renderer::mesh::add_line;
 
 pub const GRID_RADIUS: i32 = 2;
 
@@ -41,10 +41,7 @@ fn add_plane_lines(
     }
 }
 
-pub fn select_grid_plane(
-    camera_pos: glam::Vec3,
-    target: glam::Vec3,
-) -> GridPlane {
+pub fn select_grid_plane(camera_pos: glam::Vec3, target: glam::Vec3) -> GridPlane {
     let dir = (camera_pos - target).normalize();
     let x = dir.x.abs();
     let y = dir.y.abs();
