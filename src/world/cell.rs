@@ -1,6 +1,6 @@
 use glam::Vec3;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 pub enum CellType {
     #[default]
     Empty,
@@ -20,6 +20,7 @@ impl CellType {
 
 #[derive(Clone, Debug)]
 pub struct Cell {
+    pub id: u64,
     pub cell_type: CellType,
     pub visible: bool,
     pub solid: bool,
@@ -38,9 +39,25 @@ pub struct Cell {
     pub entity_identity: Option<String>,
 }
 
+/// Temporary runtime-only modifications to a cell's state.
+///
+/// This allows runtime systems like AeoScript to override authored properties
+/// without corrupting the project data. When the game stops, this state is
+/// simply discarded.
+#[derive(Clone, Debug, Default)]
+pub struct RuntimeCellState {
+    pub light_enabled: Option<bool>,
+    pub visible: Option<bool>,
+    pub color_rgb: Option<Vec3>,
+    pub solid: Option<bool>,
+    pub anchored: Option<bool>,
+    pub visual_offset: Option<Vec3>,
+}
+
 impl Default for Cell {
     fn default() -> Self {
         Self {
+            id: 0,
             cell_type: CellType::Empty,
             visible: true,
             solid: true,
@@ -60,6 +77,7 @@ impl Default for Cell {
 impl Cell {
     pub fn new_block() -> Self {
         Self {
+            id: 0,
             cell_type: CellType::Block,
             visible: true,
             solid: true,
@@ -72,6 +90,7 @@ impl Cell {
     /// Creates a new point light cell with standard defaults.
     pub fn new_light() -> Self {
         Self {
+            id: 0,
             cell_type: CellType::Light,
             // Lights are authored markers and don't render as blocks themselves.
             visible: false,
@@ -90,6 +109,7 @@ impl Cell {
 
     pub fn new_spawn_point() -> Self {
         Self {
+            id: 0,
             cell_type: CellType::SpawnPoint,
             visible: true,
             solid: true,

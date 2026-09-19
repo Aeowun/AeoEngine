@@ -1,0 +1,20 @@
+on PlayerSpawned(player) {
+    // Discover all blocks labeled "Ghost" (using entity_identity)
+    const wall_parts = find("Ghost")
+
+    while true {
+        debug.log("WALL: PHASING OUT")
+        for part in wall_parts {
+            part.visible = false
+            part.solid = false   // Physics system now respects this delta
+        }
+        wait(2.0)
+
+        debug.log("WALL: PHASING IN")
+        for part in wall_parts {
+            part.visible = true
+            part.solid = true
+        }
+        wait(2.0)
+    }
+}

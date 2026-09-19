@@ -444,6 +444,10 @@ impl Editor {
                         .show(ui, |ui| {
                             if let Some(ref cell) = cell_opt {
                                 ui.horizontal(|ui| {
+                                    ui.label("ID:");
+                                    ui.label(RichText::new(format!("{:08}", cell.id)).monospace());
+                                });
+                                ui.horizontal(|ui| {
                                     ui.label("Type:");
                                     ui.label(format!("{:?}", cell.cell_type));
                                 });

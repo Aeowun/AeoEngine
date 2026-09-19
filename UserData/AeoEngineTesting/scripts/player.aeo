@@ -1,4 +1,0 @@
-on PlayerSpawned(player) {
-    debug:log("SCRIPT START")
-    debug:log(player.position)
-}

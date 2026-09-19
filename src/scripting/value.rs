@@ -93,6 +93,13 @@ impl Value {
         }
     }
 
+    pub fn as_basket(&self) -> Result<&Vec<Value>, String> {
+        match self {
+            Self::Array(value) => Ok(value),
+            other => Err(format!("expected basket, got {}", other.type_name())),
+        }
+    }
+
     pub fn as_handle(&self) -> Result<(HandleKind, u64), String> {
         match self {
             Self::Handle { kind, id } => Ok((*kind, *id)),

@@ -875,6 +875,7 @@ impl App {
             scene.stop(&mut host);
         }
         em.clear();
+        self.world.clear_runtime_state();
     }
 
     fn fire_player_spawned_event(&mut self, player_em_id: u64) {
@@ -1188,27 +1189,29 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
         let coord = crate::world::WorldCoord::new(x, y, z);
         if let Some(cell) = self.world.get(coord) {
             if cell.cell_type == crate::world::CellType::Light {
-                return Some(crate::scripting::api::pack_coord(coord));
+                return Some(cell.id);
             }
         }
         None
     }
 
     fn is_light_enabled(&self, id: u64) -> Option<bool> {
-        let coord = crate::scripting::api::unpack_coord(id);
-        self.world.get(coord).map(|c| c.light_enabled)
+        if let Some(coord) = self.world.resolve_cell_id(id) {
+            Some(self.world.is_light_enabled(coord))
+        } else {
+            None
+        }
     }
 
     fn set_light_enabled(&mut self, id: u64, enabled: bool) {
-        let coord = crate::scripting::api::unpack_coord(id);
-        if let Some(cell) = self.world.get_mut(coord) {
-            cell.light_enabled = enabled;
+        if let Some(coord) = self.world.resolve_cell_id(id) {
+            self.world.set_light_enabled_runtime(coord, enabled);
         }
     }
 
     fn get_all_cells_of_class(&self, class_name: &str) -> Vec<u64> {
         let mut results = Vec::new();
-        for (coord, cell) in &self.world.cells {
+        for (_coord, cell) in &self.world.cells {
             let matches = match class_name {
                 "Light" => cell.cell_type == crate::world::CellType::Light,
                 "Block" => cell.cell_type == crate::world::CellType::Block,
@@ -1219,7 +1222,7 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
             };
 
             if matches {
-                results.push(crate::scripting::api::pack_coord(*coord));
+                results.push(cell.id);
             }
         }
         results
@@ -1242,11 +1245,12 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
     }
 
     fn get_cell_object(&self, cell_id: u64) -> Option<(crate::scripting::value::HandleKind, u64)> {
-        let coord = crate::scripting::api::unpack_coord(cell_id);
-        if let Some(cell) = self.world.get(coord) {
-            if let Some(identity) = &cell.entity_identity {
-                if let Some(id) = self.entity_manager.lookup_entity(identity) {
-                    return Some((crate::scripting::value::HandleKind::Entity, id.0));
+        if let Some(coord) = self.world.resolve_cell_id(cell_id) {
+            if let Some(cell) = self.world.get(coord) {
+                if let Some(identity) = &cell.entity_identity {
+                    if let Some(id) = self.entity_manager.lookup_entity(identity) {
+                        return Some((crate::scripting::value::HandleKind::Entity, id.0));
+                    }
                 }
             }
         }
@@ -1256,10 +1260,11 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
     fn get_property(&self, kind: crate::scripting::value::HandleKind, id: u64, name: &str) -> Result<Option<crate::scripting::value::Value>, String> {
         use crate::scripting::value::{Value, HandleKind};
         match kind {
-            HandleKind::Cell => {
-                let coord = crate::scripting::api::unpack_coord(id);
-                if let Some(cell) = self.world.get(coord) {
-                    match name {
+            HandleKind::Cell | HandleKind::Light => {
+                if let Some(coord) = self.world.resolve_cell_id(id) {
+                    if let Some(cell) = self.world.get(coord) {
+                        match name {
+                        "id" => return Ok(Some(Value::Number(cell.id as f64))),
                         "name" => return Ok(Some(Value::String(cell.entity_identity.clone().unwrap_or_else(|| "Cell".to_string())))),
                         "cellType" => return Ok(Some(Value::String(format!("{:?}", cell.cell_type)))),
                         "position" => return Ok(Some(Value::Array(vec![
@@ -1267,7 +1272,28 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
                             Value::Number(coord.y as f64),
                             Value::Number(coord.z as f64),
                         ]))),
+                        "visible" => return Ok(Some(Value::Bool(self.world.is_cell_visible(coord)))),
+                        "enabled" => return Ok(Some(Value::Bool(self.world.is_light_enabled(coord)))),
+                        "solid" => return Ok(Some(Value::Bool(self.world.is_cell_solid(coord)))),
+                        "anchored" => return Ok(Some(Value::Bool(self.world.is_cell_anchored(coord)))),
+                        "color" => {
+                            let color = self.world.get_effective_color(coord);
+                            return Ok(Some(Value::Array(vec![
+                                Value::Number(color.x as f64),
+                                Value::Number(color.y as f64),
+                                Value::Number(color.z as f64),
+                            ])));
+                        }
+                        "offset" => {
+                            let offset = self.world.get_visual_offset(coord);
+                            return Ok(Some(Value::Array(vec![
+                                Value::Number(offset.x as f64),
+                                Value::Number(offset.y as f64),
+                                Value::Number(offset.z as f64),
+                            ])));
+                        }
                         _ => {}
+                    }
                     }
                 }
             }
@@ -1287,7 +1313,62 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
         Ok(None)
     }
 
-    fn set_property(&mut self, _kind: crate::scripting::value::HandleKind, _id: u64, _name: &str, _value: crate::scripting::value::Value) -> Result<(), String> {
+    fn set_property(&mut self, kind: crate::scripting::value::HandleKind, id: u64, name: &str, value: crate::scripting::value::Value) -> Result<(), String> {
+        use crate::scripting::value::HandleKind;
+        match kind {
+            HandleKind::Cell | HandleKind::Light => {
+                if let Some(coord) = self.world.resolve_cell_id(id) {
+                    if self.world.get(coord).is_some() {
+                        match name {
+                        "visible" => {
+                            let visible = value.as_bool()?;
+                            self.world.set_cell_visible_runtime(coord, visible);
+                            return Ok(());
+                        }
+                        "enabled" => {
+                            let enabled = value.as_bool()?;
+                            self.world.set_light_enabled_runtime(coord, enabled);
+                            return Ok(());
+                        }
+                        "solid" => {
+                            let solid = value.as_bool()?;
+                            self.world.set_cell_solid_runtime(coord, solid);
+                            return Ok(());
+                        }
+                        "anchored" => {
+                            let anchored = value.as_bool()?;
+                            self.world.set_cell_anchored_runtime(coord, anchored);
+                            return Ok(());
+                        }
+                        "color" => {
+                            let basket = value.as_basket()?;
+                            if basket.len() != 3 {
+                                return Err("color must be a basket of 3 numbers [r, g, b]".to_string());
+                            }
+                            let r = basket[0].as_number()? as f32;
+                            let g = basket[1].as_number()? as f32;
+                            let b = basket[2].as_number()? as f32;
+                            self.world.set_cell_color_runtime(coord, glam::Vec3::new(r, g, b));
+                            return Ok(());
+                        }
+                        "offset" => {
+                            let basket = value.as_basket()?;
+                            if basket.len() != 3 {
+                                return Err("offset must be a basket of 3 numbers [x, y, z]".to_string());
+                            }
+                            let x = basket[0].as_number()? as f32;
+                            let y = basket[1].as_number()? as f32;
+                            let z = basket[2].as_number()? as f32;
+                            self.world.set_visual_offset_runtime(coord, glam::Vec3::new(x, y, z));
+                            return Ok(());
+                        }
+                        _ => {}
+                    }
+                    }
+                }
+            }
+            _ => {}
+        }
         Ok(())
     }
 

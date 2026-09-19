@@ -38,6 +38,11 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
         world.lighting.ambient_intensity
     )?;
 
+    // Save all issued IDs ever.
+    for id in &world.issued_ids {
+        writeln!(file, "ISSUED_ID {}", id)?;
+    }
+
     for binding in &world.script_bindings {
         writeln!(
             file,
@@ -52,7 +57,8 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                 CellType::Block => {
                     writeln!(
                         file,
-                        "BLOCK {} {} {} {} {} {} {} {} {} {}",
+                        "BLOCK {} {} {} {} {} {} {} {} {} {} {}",
+                        cell.id,
                         coord.x,
                         coord.y,
                         coord.z,
@@ -69,7 +75,8 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                 CellType::SpawnPoint => {
                     writeln!(
                         file,
-                        "SPAWN_POINT {} {} {} {} {} {} {} {} {} {}",
+                        "SPAWN_POINT {} {} {} {} {} {} {} {} {} {} {}",
+                        cell.id,
                         coord.x,
                         coord.y,
                         coord.z,
@@ -86,7 +93,8 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                 CellType::Light => {
                     writeln!(
                         file,
-                        "LIGHT {} {} {} {} {} {} {} {} {} {}",
+                        "LIGHT {} {} {} {} {} {} {} {} {} {} {}",
+                        cell.id,
                         coord.x,
                         coord.y,
                         coord.z,
@@ -103,7 +111,8 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                 CellType::Player => {
                     writeln!(
                         file,
-                        "PLAYER {} {} {} {} {} {} {} {} {} {} {}",
+                        "PLAYER {} {} {} {} {} {} {} {} {} {} {} {}",
+                        cell.id,
                         coord.x,
                         coord.y,
                         coord.z,
@@ -121,7 +130,8 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                 CellType::NPC => {
                     writeln!(
                         file,
-                        "NPC {} {} {} {} {} {} {} {} {} {} {}",
+                        "NPC {} {} {} {} {} {} {} {} {} {} {} {}",
+                        cell.id,
                         coord.x,
                         coord.y,
                         coord.z,
@@ -144,14 +154,14 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn parse_block_properties(cell: &mut Cell, parts: &[&str]) {
-    cell.visible = parts[4].parse::<bool>().unwrap_or(true);
-    cell.solid = parts[5].parse::<bool>().unwrap_or(true);
-    cell.anchored = parts[6].parse::<bool>().unwrap_or(true);
-    cell.texture = parts[7].to_string();
-    let r = parts[8].parse::<f32>().unwrap_or(0.5);
-    let g = parts[9].parse::<f32>().unwrap_or(0.5);
-    let b = parts[10].parse::<f32>().unwrap_or(0.5);
+fn parse_block_properties(cell: &mut Cell, parts: &[&str], offset: usize) {
+    cell.visible = parts[offset + 4].parse::<bool>().unwrap_or(true);
+    cell.solid = parts[offset + 5].parse::<bool>().unwrap_or(true);
+    cell.anchored = parts[offset + 6].parse::<bool>().unwrap_or(true);
+    cell.texture = parts[offset + 7].to_string();
+    let r = parts[offset + 8].parse::<f32>().unwrap_or(0.5);
+    let g = parts[offset + 9].parse::<f32>().unwrap_or(0.5);
+    let b = parts[offset + 10].parse::<f32>().unwrap_or(0.5);
     cell.color_rgb = Vec3::new(r, g, b);
 }
 
@@ -167,6 +177,8 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
 
+    let mut legacy_cells = Vec::new();
+
     for line in reader.lines() {
         let line = line?;
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -177,44 +189,42 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
         // We check for global settings first.
         if parts[0] == "GRAVITY" && parts.len() >= 4 {
+            // ... (keep gravity parsing)
             let x = parts[1].parse::<f32>().ok();
             let y = parts[2].parse::<f32>().ok();
             let z = parts[3].parse::<f32>().ok();
 
-            // If the tag exists but the numbers are invalid, we keep the default
-            // gravity from World::new().
             if let (Some(x), Some(y), Some(z)) = (x, y, z) {
                 world.gravity = Vec3::new(x, y, z);
             }
-
             continue;
         }
 
         if parts[0] == "LIGHTING" && parts.len() >= 11 {
+            // ... (keep lighting parsing)
             world.lighting.shadows_enabled = parts[1].parse::<bool>().unwrap_or(true);
-
             world.lighting.global_light_enabled = parts[2].parse::<bool>().unwrap_or(true);
-
             let dx = parts[3].parse::<f32>().ok();
             let dy = parts[4].parse::<f32>().ok();
             let dz = parts[5].parse::<f32>().ok();
-
             if let (Some(x), Some(y), Some(z)) = (dx, dy, dz) {
                 world.lighting.global_light_direction = Vec3::new(x, y, z);
             }
-
             let cr = parts[6].parse::<f32>().ok();
             let cg = parts[7].parse::<f32>().ok();
             let cb = parts[8].parse::<f32>().ok();
-
             if let (Some(r), Some(g), Some(b)) = (cr, cg, cb) {
                 world.lighting.global_light_color = Vec3::new(r, g, b);
             }
-
             world.lighting.global_light_intensity = parts[9].parse::<f32>().unwrap_or(1.0);
-
             world.lighting.ambient_intensity = parts[10].parse::<f32>().unwrap_or(0.2);
+            continue;
+        }
 
+        if parts[0] == "ISSUED_ID" && parts.len() >= 2 {
+            if let Ok(id) = parts[1].parse::<u64>() {
+                world.issued_ids.insert(id);
+            }
             continue;
         }
 
@@ -229,112 +239,125 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
         if parts.len() >= 4 {
             let block_type = parts[0];
 
-            let x = parts[1].parse::<i32>().ok();
-            let y = parts[2].parse::<i32>().ok();
-            let z = parts[3].parse::<i32>().ok();
+            let has_id = match block_type {
+                "BLOCK" | "SPAWN_POINT" | "LIGHT" => parts.len() >= 12 || (block_type == "LIGHT" && parts.len() == 11 && parts[1].parse::<u64>().is_ok()),
+                "PLAYER" | "NPC" => parts.len() >= 13,
+                _ => false,
+            };
+
+            // Heuristic for LIGHT: if part[1] is a large number (ID) vs small (X coord)
+            let has_id = if block_type == "BLOCK" || block_type == "SPAWN_POINT" || block_type == "LIGHT" || block_type == "PLAYER" || block_type == "NPC" {
+                 // New format always has more parts than legacy counterparts.
+                 let legacy_len = match block_type {
+                     "BLOCK" | "SPAWN_POINT" | "LIGHT" => 11,
+                     "PLAYER" | "NPC" => 12,
+                     _ => 0,
+                 };
+                 parts.len() > legacy_len
+            } else {
+                false
+            };
+
+            let offset = if has_id { 1 } else { 0 };
+
+            let x = parts[offset + 1].parse::<i32>().ok();
+            let y = parts[offset + 2].parse::<i32>().ok();
+            let z = parts[offset + 3].parse::<i32>().ok();
 
             if let (Some(x), Some(y), Some(z)) = (x, y, z) {
                 let coord = WorldCoord::new(x, y, z);
+                let id = if has_id {
+                    parts[1].parse::<u64>().ok()
+                } else {
+                    None
+                };
 
                 if block_type == "BLOCK" {
                     world.set_cell(coord, CellType::Block);
-
-                    if let Some(cell) = world.get_mut(coord) {
-                        if parts.len() >= 11 {
-                            parse_block_properties(cell, &parts);
+                    if id.is_none() { legacy_cells.push(coord); }
+                    else {
+                        let id_val = id.unwrap();
+                        world.issued_ids.insert(id_val);
+                        if let Some(cell) = world.get_mut(coord) {
+                            cell.id = id_val;
+                            parse_block_properties(cell, &parts, offset);
                         }
                     }
                 } else if block_type == "SPAWN_POINT" {
                     world.set_cell(coord, CellType::SpawnPoint);
-
-                    if let Some(cell) = world.get_mut(coord) {
-                        if parts.len() >= 11 {
-                            parse_block_properties(cell, &parts);
+                    if id.is_none() { legacy_cells.push(coord); }
+                    else {
+                        let id_val = id.unwrap();
+                        world.issued_ids.insert(id_val);
+                        if let Some(cell) = world.get_mut(coord) {
+                            cell.id = id_val;
+                            parse_block_properties(cell, &parts, offset);
                         }
-                    }
-                } else if block_type == "GRASS" {
-                    world.set_cell(coord, CellType::Block);
-
-                    if let Some(cell) = world.get_mut(coord) {
-                        if parts.len() >= 8 {
-                            cell.visible = parts[4].parse::<bool>().unwrap_or(true);
-
-                            cell.solid = parts[5].parse::<bool>().unwrap_or(true);
-
-                            cell.anchored = parts[6].parse::<bool>().unwrap_or(true);
-
-                            cell.texture = parts[7].to_string();
-                        } else if parts.len() >= 7 {
-                            // Format without anchored.
-                            cell.visible = parts[4].parse::<bool>().unwrap_or(true);
-
-                            cell.solid = parts[5].parse::<bool>().unwrap_or(true);
-
-                            cell.anchored = true;
-                            cell.texture = parts[6].to_string();
-                        } else {
-                            // Upgrade old format.
-                            cell.visible = true;
-                            cell.solid = true;
-                            cell.anchored = true;
-                            cell.texture = "Block_tx".to_string();
-                        }
-
-                        // Default color for legacy grass.
-                        cell.color_rgb = Vec3::new(0.5, 0.5, 0.5);
                     }
                 } else if block_type == "PLAYER" {
                     world.set_cell(coord, CellType::Player);
-
-                    if let Some(cell) = world.get_mut(coord) {
-                        if parts.len() >= 11 {
-                            parse_block_properties(cell, &parts);
-                        }
-                        if parts.len() >= 12 {
-                            let identity = parts[11];
-                            if identity != "None" {
-                                cell.entity_identity = Some(identity.to_string());
+                    if id.is_none() { legacy_cells.push(coord); }
+                    else {
+                        let id_val = id.unwrap();
+                        world.issued_ids.insert(id_val);
+                        if let Some(cell) = world.get_mut(coord) {
+                            cell.id = id_val;
+                            parse_block_properties(cell, &parts, offset);
+                            if parts.len() >= offset + 12 {
+                                let identity = parts[offset + 11];
+                                if identity != "None" {
+                                    cell.entity_identity = Some(identity.to_string());
+                                }
                             }
                         }
                     }
                 } else if block_type == "NPC" {
                     world.set_cell(coord, CellType::NPC);
-
-                    if let Some(cell) = world.get_mut(coord) {
-                        if parts.len() >= 11 {
-                            parse_block_properties(cell, &parts);
-                        }
-                        if parts.len() >= 12 {
-                            let identity = parts[11];
-                            if identity != "None" {
-                                cell.entity_identity = Some(identity.to_string());
+                    if id.is_none() { legacy_cells.push(coord); }
+                    else {
+                        let id_val = id.unwrap();
+                        world.issued_ids.insert(id_val);
+                        if let Some(cell) = world.get_mut(coord) {
+                            cell.id = id_val;
+                            parse_block_properties(cell, &parts, offset);
+                            if parts.len() >= offset + 12 {
+                                let identity = parts[offset + 11];
+                                if identity != "None" {
+                                    cell.entity_identity = Some(identity.to_string());
+                                }
                             }
                         }
                     }
                 } else if block_type == "LIGHT" {
                     world.set_cell(coord, CellType::Light);
-
-                    if let Some(cell) = world.get_mut(coord) {
-                        if parts.len() >= 10 {
-                            let r = parts[4].parse::<f32>().unwrap_or(1.0);
-                            let g = parts[5].parse::<f32>().unwrap_or(1.0);
-                            let b = parts[6].parse::<f32>().unwrap_or(1.0);
-
+                    if id.is_none() { legacy_cells.push(coord); }
+                    else {
+                        let id_val = id.unwrap();
+                        world.issued_ids.insert(id_val);
+                        if let Some(cell) = world.get_mut(coord) {
+                            cell.id = id_val;
+                            let r = parts[offset + 4].parse::<f32>().unwrap_or(1.0);
+                            let g = parts[offset + 5].parse::<f32>().unwrap_or(1.0);
+                            let b = parts[offset + 6].parse::<f32>().unwrap_or(1.0);
                             cell.light_color = Vec3::new(r, g, b);
-
-                            cell.light_intensity = parts[7].parse::<f32>().unwrap_or(5.0);
-
-                            cell.light_range = parts[8].parse::<f32>().unwrap_or(10.0);
-
-                            cell.light_shadows = parts[9].parse::<bool>().unwrap_or(true);
-
-                            if parts.len() >= 11 {
-                                cell.light_enabled = parts[10].parse::<bool>().unwrap_or(true);
+                            cell.light_intensity = parts[offset + 7].parse::<f32>().unwrap_or(5.0);
+                            cell.light_range = parts[offset + 8].parse::<f32>().unwrap_or(10.0);
+                            cell.light_shadows = parts[offset + 9].parse::<bool>().unwrap_or(true);
+                            if parts.len() >= offset + 11 {
+                                cell.light_enabled = parts[offset + 10].parse::<bool>().unwrap_or(true);
                             }
                         }
                     }
                 }
             }
+        }
+    }
+
+    // Migration: Assign IDs to legacy cells.
+    for coord in legacy_cells {
+        let new_id = world.generate_unique_id(coord, world.get(coord).unwrap().cell_type);
+        if let Some(cell) = world.get_mut(coord) {
+            cell.id = new_id;
         }
     }
 

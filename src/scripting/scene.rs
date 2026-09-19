@@ -495,27 +495,28 @@ mod tests {
             let coord = WorldCoord::new(x, y, z);
             if let Some(cell) = self.world.get(coord) {
                 if cell.cell_type == CellType::Light {
-                    return Some(crate::scripting::api::pack_coord(coord));
+                    return Some(cell.id);
                 }
             }
             None
         }
 
         fn is_light_enabled(&self, id: u64) -> Option<bool> {
-            let coord = crate::scripting::api::unpack_coord(id);
-            self.world.get(coord).map(|c| c.light_enabled)
+            if let Some(coord) = self.world.resolve_cell_id(id) {
+                return Some(self.world.is_light_enabled(coord));
+            }
+            None
         }
 
         fn set_light_enabled(&mut self, id: u64, enabled: bool) {
-            let coord = crate::scripting::api::unpack_coord(id);
-            if let Some(cell) = self.world.get_mut(coord) {
-                cell.light_enabled = enabled;
+            if let Some(coord) = self.world.resolve_cell_id(id) {
+                self.world.set_light_enabled_runtime(coord, enabled);
             }
         }
 
         fn get_all_cells_of_class(&self, class_name: &str) -> Vec<u64> {
             let mut results = Vec::new();
-            for (coord, cell) in &self.world.cells {
+            for cell in self.world.cells.values() {
                 let matches = match class_name {
                     "Light" => cell.cell_type == CellType::Light,
                     "Block" => cell.cell_type == CellType::Block,
@@ -525,7 +526,7 @@ mod tests {
                     _ => false,
                 };
                 if matches {
-                    results.push(crate::scripting::api::pack_coord(*coord));
+                    results.push(cell.id);
                 }
             }
             results
@@ -548,11 +549,12 @@ mod tests {
         }
 
         fn get_cell_object(&self, cell_id: u64) -> Option<(crate::scripting::value::HandleKind, u64)> {
-            let coord = crate::scripting::api::unpack_coord(cell_id);
-            if let Some(cell) = self.world.get(coord) {
-                if let Some(identity) = &cell.entity_identity {
-                    if let Some(id) = self.entity_manager.lookup_entity(identity) {
-                        return Some((crate::scripting::value::HandleKind::Entity, id.0));
+            if let Some(coord) = self.world.resolve_cell_id(cell_id) {
+                if let Some(cell) = self.world.get(coord) {
+                    if let Some(identity) = &cell.entity_identity {
+                        if let Some(id) = self.entity_manager.lookup_entity(identity) {
+                            return Some((crate::scripting::value::HandleKind::Entity, id.0));
+                        }
                     }
                 }
             }
@@ -562,13 +564,20 @@ mod tests {
         fn get_property(&self, kind: crate::scripting::value::HandleKind, id: u64, name: &str) -> Result<Option<crate::scripting::value::Value>, String> {
             use crate::scripting::value::{Value, HandleKind};
             match kind {
-                HandleKind::Cell => {
-                    let coord = crate::scripting::api::unpack_coord(id);
-                    if let Some(cell) = self.world.get(coord) {
-                        match name {
-                            "name" => return Ok(Some(Value::String(cell.entity_identity.clone().unwrap_or_else(|| "Cell".to_string())))),
-                            "cellType" => return Ok(Some(Value::String(format!("{:?}", cell.cell_type)))),
-                            _ => {}
+                HandleKind::Cell | HandleKind::Light => {
+                    if let Some(coord) = self.world.resolve_cell_id(id) {
+                        if let Some(cell) = self.world.get(coord) {
+                            match name {
+                                "id" => return Ok(Some(Value::Number(cell.id as f64))),
+                                "name" => return Ok(Some(Value::String(cell.entity_identity.clone().unwrap_or_else(|| "Cell".to_string())))),
+                                "cellType" => return Ok(Some(Value::String(format!("{:?}", cell.cell_type)))),
+                                "position" => return Ok(Some(Value::Array(vec![
+                                    Value::Number(coord.x as f64),
+                                    Value::Number(coord.y as f64),
+                                    Value::Number(coord.z as f64),
+                                ]))),
+                                _ => {}
+                            }
                         }
                     }
                 }
@@ -588,7 +597,22 @@ mod tests {
             Ok(None)
         }
 
-        fn set_property(&mut self, _kind: crate::scripting::value::HandleKind, _id: u64, _name: &str, _value: crate::scripting::value::Value) -> Result<(), String> {
+        fn set_property(&mut self, kind: crate::scripting::value::HandleKind, id: u64, name: &str, value: crate::scripting::value::Value) -> Result<(), String> {
+            use crate::scripting::value::HandleKind;
+            match kind {
+                HandleKind::Cell | HandleKind::Light => {
+                    if let Some(coord) = self.world.resolve_cell_id(id) {
+                        match name {
+                            "enabled" => {
+                                let enabled = value.as_bool()?;
+                                self.world.set_light_enabled_runtime(coord, enabled);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
             Ok(())
         }
 
@@ -1265,7 +1289,7 @@ entity Test {
             };
             scene.update(0.0, &mut host).unwrap();
         }
-        assert_eq!(th.world.get(coord).unwrap().light_enabled, false);
+        assert_eq!(th.world.is_light_enabled(coord), false);
 
         {
             let mut host = HostContext {
@@ -1274,7 +1298,7 @@ entity Test {
             };
             scene.update(1.0, &mut host).unwrap();
         }
-        assert_eq!(th.world.get(coord).unwrap().light_enabled, true);
+        assert_eq!(th.world.is_light_enabled(coord), true);
 
         {
             let mut host = HostContext {
@@ -1283,7 +1307,7 @@ entity Test {
             };
             scene.update(1.0, &mut host).unwrap();
         }
-        assert_eq!(th.world.get(coord).unwrap().light_enabled, false);
+        assert_eq!(th.world.is_light_enabled(coord), false);
 
         {
             let mut host = HostContext {
@@ -1292,7 +1316,7 @@ entity Test {
             };
             scene.update(1.0, &mut host).unwrap();
         }
-        assert_eq!(th.world.get(coord).unwrap().light_enabled, true);
+        assert_eq!(th.world.is_light_enabled(coord), true);
 
         {
             let mut host = HostContext {
@@ -1815,7 +1839,7 @@ entity Test {
 
         let output = scene.output();
         assert!(output.iter().any(|r| r.message == "Discovered light disabled"));
-        assert_eq!(th.world.get(coord).unwrap().light_enabled, false);
+        assert_eq!(th.world.is_light_enabled(coord), false);
     }
 
     #[test]

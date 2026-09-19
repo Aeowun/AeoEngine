@@ -366,33 +366,11 @@ The editor should not become a second implementation of the language.
 
 # 15. API Metadata
 
-Engine APIs should eventually have enough metadata for editor features.
+Engine APIs have metadata for editor features.
 
 For example:
-
-```text
-character.jump
-
-Parameters:
-    none
-
-Returns:
-    bool
-
-Description:
-    Requests a jump.
-```
-
-That information can drive:
-
-```text
-completion
-hover
-signature help
-documentation
-```
-
-The metadata should come from the actual registered AeoEngine API.
+* `character.jump` — Requests a jump.
+* `cell.color` — Sets the temporary runtime color.
 
 ---
 
@@ -437,19 +415,18 @@ Warnings and errors should be clearly distinguished in the editor.
 
 ---
 
-# 18. Development Console
+# 18. Print Output
 
-AeoEngine may eventually show script output in the editor.
+AeoEngine provides a **PRINT OUTPUT** terminal for runtime diagnostics.
 
-For example:
-
-```aeoscript
-debug.log("Hello")
-```
-
-could appear in a script/runtime panel.
-
-Compiler diagnostics should remain separate from normal script output.
+Features:
+* **Selectable**: Standard mouse text selection.
+* **Clipboard**: Support for `Ctrl+A` (Select All) and `Ctrl+C` (Copy to clipboard).
+* **Severity Colors**: 
+    * Normal output: Standard text color.
+    * Warnings: Yellow.
+    * Errors: Red.
+* **Context**: Errors include the originating script path and event/function name.
 
 ---
 

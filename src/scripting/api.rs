@@ -1,26 +1,6 @@
 use glam::Vec3;
 use super::value::{Value, HandleKind};
 use crate::engine::entity::{EntityManager, EntityId};
-use crate::world::WorldCoord;
-
-/// Packs a 3D coordinate into a u64 for use as a handle ID.
-pub fn pack_coord(coord: WorldCoord) -> u64 {
-    let x = (coord.x as u64) & 0xFFFFF;
-    let y = (coord.y as u64) & 0xFFFFF;
-    let z = (coord.z as u64) & 0xFFFFF;
-    x | (y << 20) | (z << 40)
-}
-
-/// Unpacks a u64 handle ID back into a 3D coordinate.
-pub fn unpack_coord(id: u64) -> WorldCoord {
-    let mut x = (id & 0xFFFFF) as i32;
-    if x >= 0x80000 { x -= 0x100000; }
-    let mut y = ((id >> 20) & 0xFFFFF) as i32;
-    if y >= 0x80000 { y -= 0x100000; }
-    let mut z = ((id >> 40) & 0xFFFFF) as i32;
-    if z >= 0x80000 { z -= 0x100000; }
-    WorldCoord::new(x, y, z)
-}
 
 /// Abstraction for engine services exposed to AeoScript.
 ///

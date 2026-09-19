@@ -441,7 +441,7 @@ impl Renderer {
                     let renderable_cell =
                         cell.cell_type == CellType::Block || cell.cell_type == CellType::SpawnPoint;
 
-                    if !renderable_cell || !cell.visible || !cell.solid {
+                    if !renderable_cell || !world.is_cell_visible(coord) || !cell.solid {
                         continue;
                     }
 
@@ -458,7 +458,7 @@ impl Renderer {
                         coord.x as f32,
                         coord.y as f32,
                         coord.z as f32,
-                    ));
+                    ) + world.get_visual_offset(coord));
 
                     gl::UniformMatrix4fv(
                         s_model_location,
@@ -643,7 +643,7 @@ impl Renderer {
 
             for coord in world.active_blocks() {
                 if let Some(cell) = world.get(coord) {
-                    if cell.cell_type == CellType::Light && cell.light_enabled {
+                    if cell.cell_type == CellType::Light && world.is_light_enabled(coord) {
                         point_lights.push((coord, cell));
 
                         if point_lights.len() >= 16 {
@@ -741,7 +741,7 @@ impl Renderer {
                         || cell.cell_type == CellType::SpawnPoint
                         || cell.cell_type == CellType::Light;
 
-                    if !renderable_cell || !cell.visible {
+                    if !renderable_cell || !world.is_cell_visible(coord) {
                         continue;
                     }
 
@@ -761,18 +761,19 @@ impl Renderer {
                     gl::ActiveTexture(gl::TEXTURE1);
                     gl::BindTexture(gl::TEXTURE_2D, tex);
 
+                    let color = world.get_effective_color(coord);
                     gl::Uniform3f(
                         base_color_location,
-                        cell.color_rgb.x,
-                        cell.color_rgb.y,
-                        cell.color_rgb.z,
+                        color.x,
+                        color.y,
+                        color.z,
                     );
 
                     let model = Mat4::from_translation(Vec3::new(
                         coord.x as f32,
                         coord.y as f32,
                         coord.z as f32,
-                    ));
+                    ) + world.get_visual_offset(coord));
 
                     gl::UniformMatrix4fv(
                         model_location,
