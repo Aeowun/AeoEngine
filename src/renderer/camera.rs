@@ -191,8 +191,8 @@ impl GameplayCamera {
                 point.z.floor() as i32,
             );
 
-            if let Some(cell) = world.get(coord) {
-                if cell.solid {
+            if let Some(_cell) = world.get(coord) {
+                if world.is_cell_solid(coord) {
                     // Pull the camera in front of the obstruction.
                     return target + dir_norm * (current_dist - 0.1).max(0.0);
                 }

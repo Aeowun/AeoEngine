@@ -66,6 +66,7 @@ impl PhysicsClock {
 #[derive(Debug, Clone)]
 pub struct PhysicsBody {
     pub id: PhysicsBodyId,
+    pub cell_id: u64,
     pub cell_type: CellType,
     pub position: Vec3,
     pub velocity: Vec3,
@@ -92,9 +93,10 @@ pub struct PhysicsBody {
 }
 
 impl PhysicsBody {
-    pub fn new(id: PhysicsBodyId, position: Vec3, size: Vec3) -> Self {
+    pub fn new(id: PhysicsBodyId, cell_id: u64, position: Vec3, size: Vec3) -> Self {
         Self {
             id,
+            cell_id,
             cell_type: CellType::Empty,
             position,
             velocity: Vec3::ZERO,
@@ -669,22 +671,25 @@ impl PhysicsWorld {
                     continue;
                 }
 
-                if cell.anchored {
-                    if cell.solid {
+                let anchored = world.is_cell_anchored(coord);
+                let solid = world.is_cell_solid(coord);
+
+                if anchored {
+                    if solid {
                         self.static_colliders.insert(coord);
                     }
                 } else {
                     let id = self.id_gen.next();
                     let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32);
-                    let mut body = PhysicsBody::new(id, pos, Vec3::ONE);
+                    let mut body = PhysicsBody::new(id, cell.id, pos, Vec3::ONE);
 
                     // Authoritative Property Transfer
                     body.cell_type = cell.cell_type;
-                    body.visible = cell.visible;
-                    body.solid = cell.solid;
-                    body.anchored = cell.anchored;
+                    body.visible = world.is_cell_visible(coord);
+                    body.solid = solid;
+                    body.anchored = anchored;
                     body.texture = cell.texture.clone();
-                    body.color_rgb = cell.color_rgb;
+                    body.color_rgb = world.get_effective_color(coord);
 
                     self.bodies.push(body);
                 }
@@ -695,6 +700,90 @@ impl PhysicsWorld {
             self.bodies.len(),
             self.static_colliders.len()
         );
+    }
+
+    /// Reconciles the physics simulation state with the World's effective state
+    /// (authored data + runtime overrides).
+    pub fn sync_with_world(&mut self, world: &World) {
+        // 1. Update existing dynamic bodies and handle transitions to anchored.
+        let mut i = 0;
+        let mut existing_body_cell_ids = HashSet::new();
+        while i < self.bodies.len() {
+            let cell_id = self.bodies[i].cell_id;
+            if let Some(coord) = world.resolve_cell_id(cell_id) {
+                let anchored = world.is_cell_anchored(coord);
+                let solid = world.is_cell_solid(coord);
+                let visible = world.is_cell_visible(coord);
+                let color = world.get_effective_color(coord);
+
+                if anchored {
+                    // Transition: Dynamic -> Anchored (Static)
+                    let _body = self.bodies.remove(i);
+                    if solid {
+                        self.static_colliders.insert(coord);
+                    }
+                    // Since we removed, don't increment i.
+                    continue;
+                } else {
+                    // Update dynamic body properties
+                    let body = &mut self.bodies[i];
+                    body.solid = solid;
+                    body.visible = visible;
+                    body.color_rgb = color;
+                    existing_body_cell_ids.insert(cell_id);
+                }
+            } else {
+                // Cell was deleted
+                self.bodies.remove(i);
+                continue;
+            }
+            i += 1;
+        }
+
+        // 2. Sync with runtime deltas to handle new dynamic bodies or static changes.
+        for (&cell_id, _delta) in &world.runtime_state {
+            if let Some(coord) = world.resolve_cell_id(cell_id) {
+                let anchored = world.is_cell_anchored(coord);
+                let solid = world.is_cell_solid(coord);
+
+                if anchored {
+                    if solid {
+                        self.static_colliders.insert(coord);
+                    } else {
+                        self.static_colliders.remove(&coord);
+                    }
+                } else {
+                    // Effective dynamic
+                    self.static_colliders.remove(&coord);
+
+                    if !existing_body_cell_ids.contains(&cell_id) {
+                        // Create body for cell that was previously anchored
+                        if let Some(cell) = world.get(coord) {
+                            let id = self.id_gen.next();
+                            let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32);
+                            let mut body = PhysicsBody::new(id, cell_id, pos, Vec3::ONE);
+                            body.cell_type = cell.cell_type;
+                            body.visible = world.is_cell_visible(coord);
+                            body.solid = solid;
+                            body.anchored = false;
+                            body.texture = cell.texture.clone();
+                            body.color_rgb = world.get_effective_color(coord);
+                            self.bodies.push(body);
+                            existing_body_cell_ids.insert(cell_id);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Clean up static colliders for coordinates that no longer exist or changed.
+        self.static_colliders.retain(|coord| {
+            if let Some(_cell) = world.get(*coord) {
+                world.is_cell_anchored(*coord) && world.is_cell_solid(*coord)
+            } else {
+                false
+            }
+        });
     }
 }
 
@@ -778,7 +867,7 @@ mod tests {
         let mut p_world = PhysicsWorld::new();
         p_world
             .bodies
-            .push(PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE));
+            .push(PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::ZERO, Vec3::ONE));
         let gravity = Vec3::new(0.0, -9.81, 0.0);
         p_world.apply_gravity(gravity, SIMULATION_DT);
         let expected = Vec3::new(0.0, -9.81 * SIMULATION_DT, 0.0);
@@ -788,7 +877,7 @@ mod tests {
     #[test]
     fn test_physics_gravity_anchored_ignored() {
         let mut p_world = PhysicsWorld::new();
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::ZERO, Vec3::ONE);
         body.anchored = true;
         p_world.bodies.push(body);
         p_world.apply_gravity(Vec3::new(0.0, -10.0, 0.0), 0.1);
@@ -798,7 +887,7 @@ mod tests {
     #[test]
     fn test_physics_gravity_participation_gating() {
         let mut p_world = PhysicsWorld::new();
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::ZERO, Vec3::ONE);
         body.gravity_participation = false;
         p_world.bodies.push(body);
         p_world.apply_gravity(Vec3::new(0.0, -10.0, 0.0), 0.1);
@@ -810,7 +899,7 @@ mod tests {
         let mut p_world = PhysicsWorld::new();
         p_world
             .bodies
-            .push(PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE));
+            .push(PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::ZERO, Vec3::ONE));
         let gravity = Vec3::new(1.0, 2.0, -3.0);
         p_world.apply_gravity(gravity, 0.5);
         assert!((p_world.bodies[0].velocity - Vec3::new(0.5, 1.0, -1.5)).length() < 1e-5);
@@ -819,7 +908,7 @@ mod tests {
     #[test]
     fn test_physics_position_integration() {
         let mut p_world = PhysicsWorld::new();
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(10.0, 10.0, 10.0), Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(10.0, 10.0, 10.0), Vec3::ONE);
         body.velocity = Vec3::new(1.0, 2.0, 3.0);
         p_world.bodies.push(body);
         p_world.integrate_positions(0.1);
@@ -829,7 +918,7 @@ mod tests {
     #[test]
     fn test_physics_integration_anchored_ignored() {
         let mut p_world = PhysicsWorld::new();
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::ZERO, Vec3::ONE);
         body.anchored = true;
         body.velocity = Vec3::ONE;
         p_world.bodies.push(body);
@@ -842,7 +931,7 @@ mod tests {
         let mut p_world = PhysicsWorld::new();
         p_world
             .bodies
-            .push(PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE));
+            .push(PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::ZERO, Vec3::ONE));
         let gravity = Vec3::new(0.0, -10.0, 0.0);
         let dt = 0.1;
         p_world.apply_gravity(gravity, dt);
@@ -871,6 +960,7 @@ mod tests {
         p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
         p_world.bodies.push(PhysicsBody::new(
             PhysicsBodyId(1),
+            0,
             Vec3::new(0.5, 0.5, 0.5),
             Vec3::ONE,
         ));
@@ -881,7 +971,7 @@ mod tests {
     fn test_physics_floor_collision_resolution() {
         let mut p_world = PhysicsWorld::new();
         p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(0.0, 0.9, 0.0), Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 0.9, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(0.0, -10.0, 0.0);
         p_world.bodies.push(body);
         p_world.resolve_static_collisions();
@@ -893,7 +983,7 @@ mod tests {
     fn test_physics_tangential_velocity_preserved() {
         let mut p_world = PhysicsWorld::new();
         p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(0.0, 0.9, 0.0), Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 0.9, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(5.0, -10.0, 0.0);
         p_world.bodies.push(body);
         p_world.resolve_static_collisions();
@@ -905,7 +995,7 @@ mod tests {
     fn test_physics_wall_collision_resolution() {
         let mut p_world = PhysicsWorld::new();
         p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(-0.1, 0.0, 0.0), Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(-0.1, 0.0, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(10.0, 0.0, 0.0);
         p_world.bodies.push(body);
         p_world.resolve_static_collisions();
@@ -926,6 +1016,7 @@ mod tests {
         p_world.register_from_world(&world);
         p_world.bodies.push(PhysicsBody::new(
             PhysicsBodyId(1),
+            0,
             Vec3::new(0.0, 0.9, 0.0),
             Vec3::ONE,
         ));
@@ -939,6 +1030,7 @@ mod tests {
         p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
         p_world.bodies.push(PhysicsBody::new(
             PhysicsBodyId(1),
+            0,
             Vec3::new(0.0, 1.0, 0.0),
             Vec3::ONE,
         ));
@@ -951,7 +1043,7 @@ mod tests {
         let mut p_world = PhysicsWorld::new();
         p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
         p_world.static_colliders.insert(WorldCoord::new(1, 0, 0));
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(0.5, 0.9, 0.0), Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.5, 0.9, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(0.0, -10.0, 0.0);
         p_world.bodies.push(body);
         p_world.resolve_static_collisions();
@@ -966,7 +1058,7 @@ mod tests {
         let pos = Vec3::new(0.0, 0.0, -1.0);
         p_world
             .bodies
-            .push(PhysicsBody::new(PhysicsBodyId(1), pos, Vec3::ONE));
+            .push(PhysicsBody::new(PhysicsBodyId(1), 0, pos, Vec3::ONE));
         p_world.resolve_static_collisions();
         assert_eq!(p_world.bodies[0].position, pos);
     }
@@ -977,7 +1069,7 @@ mod tests {
         let gravity = Vec3::new(0.0, -10.0, 0.0);
         let dt = SIMULATION_DT;
         p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(0.0, 0.9, 0.0), Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 0.9, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(0.0, -10.0, 0.0);
         p_world.bodies.push(body);
         p_world.apply_gravity(gravity, dt);
@@ -998,7 +1090,7 @@ mod tests {
     fn test_physics_tangential_sliding_while_resting() {
         let mut p_world = PhysicsWorld::new();
         p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(0.0, 1.0, 0.0), Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 1.0, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(5.0, 0.0, 0.0);
         body.static_contact_normal = Some(Vec3::Y);
         p_world.bodies.push(body);
@@ -1012,7 +1104,7 @@ mod tests {
     fn test_physics_contact_clearing_when_moving_away() {
         let mut p_world = PhysicsWorld::new();
         p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(0.0, 1.0, 0.0), Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 1.0, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(0.0, 10.0, 0.0);
         body.static_contact_normal = Some(Vec3::Y);
         p_world.bodies.push(body);
@@ -1025,7 +1117,7 @@ mod tests {
     fn test_physics_arbitrary_gravity_contact() {
         let mut p_world = PhysicsWorld::new();
         p_world.static_colliders.insert(WorldCoord::new(1, 0, 0));
-        let body = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(0.1, 0.0, 0.0), Vec3::ONE);
+        let body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.1, 0.0, 0.0), Vec3::ONE);
         let gravity = Vec3::new(10.0, 0.0, 0.0);
         p_world.bodies.push(body);
         p_world.apply_gravity(gravity, 0.1);
@@ -1042,7 +1134,7 @@ mod tests {
         let gravity = Vec3::new(0.0, -10.0, 0.0);
         p_world
             .bodies
-            .push(PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE));
+            .push(PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::ZERO, Vec3::ONE));
         for _ in 0..100 {
             p_world.apply_gravity(gravity, SIMULATION_DT);
             p_world.integrate_positions(SIMULATION_DT);
@@ -1057,7 +1149,7 @@ mod tests {
         let mut p_world = PhysicsWorld::new();
         let gravity = Vec3::new(0.0, -10.0, 0.0);
         p_world.static_colliders.insert(WorldCoord::new(0, -1, 0));
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(0.0, 0.0, 0.0), Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 0.0, 0.0), Vec3::ONE);
         body.static_contact_normal = Some(Vec3::Y);
         p_world.bodies.push(body);
         for _ in 0..60 {
@@ -1070,9 +1162,9 @@ mod tests {
     fn test_physics_dynamic_stack_sleep() {
         let mut p_world = PhysicsWorld::new();
         let gravity = Vec3::new(0.0, -10.0, 0.0);
-        let mut b1 = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
+        let mut b1 = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::ZERO, Vec3::ONE);
         b1.is_sleeping = true;
-        let mut b2 = PhysicsBody::new(PhysicsBodyId(2), Vec3::Y, Vec3::ONE);
+        let mut b2 = PhysicsBody::new(PhysicsBodyId(2), 0, Vec3::Y, Vec3::ONE);
         b2.dynamic_contact = Some((b1.id, Vec3::Y));
         p_world.bodies.push(b1);
         p_world.bodies.push(b2);
@@ -1086,8 +1178,8 @@ mod tests {
     fn test_physics_wake_on_support_wake() {
         let mut p_world = PhysicsWorld::new();
         let gravity = Vec3::new(0.0, -10.0, 0.0);
-        let mut b1 = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
-        let mut b2 = PhysicsBody::new(PhysicsBodyId(2), Vec3::Y, Vec3::ONE);
+        let mut b1 = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::ZERO, Vec3::ONE);
+        let mut b2 = PhysicsBody::new(PhysicsBodyId(2), 0, Vec3::Y, Vec3::ONE);
         b2.is_sleeping = true;
         b2.dynamic_contact = Some((b1.id, Vec3::Y));
         p_world.bodies.push(b1);
@@ -1099,9 +1191,9 @@ mod tests {
     #[test]
     fn test_physics_wake_on_support_loss() {
         let mut p_world = PhysicsWorld::new();
-        let mut b1 = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
+        let mut b1 = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::ZERO, Vec3::ONE);
         b1.is_sleeping = true;
-        let mut b2 = PhysicsBody::new(PhysicsBodyId(2), Vec3::Y, Vec3::ONE);
+        let mut b2 = PhysicsBody::new(PhysicsBodyId(2), 0, Vec3::Y, Vec3::ONE);
         b2.is_sleeping = true;
         b2.dynamic_contact = Some((b1.id, Vec3::Y));
         p_world.bodies.push(b1);
@@ -1116,7 +1208,7 @@ mod tests {
     fn test_physics_side_contact_no_support() {
         let mut p_world = PhysicsWorld::new();
         let gravity = Vec3::new(0.0, -10.0, 0.0);
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::ZERO, Vec3::ONE);
         body.static_contact_normal = Some(Vec3::X);
         p_world.bodies.push(body);
         for _ in 0..100 {
@@ -1129,7 +1221,7 @@ mod tests {
     fn test_physics_arbitrary_gravity_sleep() {
         let mut p_world = PhysicsWorld::new();
         let gravity = Vec3::new(10.0, 0.0, 0.0);
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE);
+        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::ZERO, Vec3::ONE);
         body.static_contact_normal = Some(Vec3::NEG_X);
         p_world.bodies.push(body);
         for _ in 0..60 {
@@ -1148,11 +1240,13 @@ mod tests {
         p_world.static_colliders.insert(WorldCoord::new(0, -1, 0));
         p_world.bodies.push(PhysicsBody::new(
             PhysicsBodyId(1),
+            0,
             Vec3::new(0.0, 5.0, 0.0),
             Vec3::ONE,
         ));
         p_world.bodies.push(PhysicsBody::new(
             PhysicsBodyId(2),
+            0,
             Vec3::new(0.0, 10.0, 0.0),
             Vec3::ONE,
         ));
@@ -1184,8 +1278,8 @@ mod tests {
     #[test]
     fn test_physics_exact_touching_support() {
         let mut p_world = PhysicsWorld::new();
-        let b1 = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(0.0, 0.0, 0.0), Vec3::ONE);
-        let b2 = PhysicsBody::new(PhysicsBodyId(2), Vec3::new(0.0, 1.0, 0.0), Vec3::ONE);
+        let b1 = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 0.0, 0.0), Vec3::ONE);
+        let b2 = PhysicsBody::new(PhysicsBodyId(2), 0, Vec3::new(0.0, 1.0, 0.0), Vec3::ONE);
         p_world.bodies.push(b1);
         p_world.bodies.push(b2);
 
@@ -1209,8 +1303,8 @@ mod tests {
     #[test]
     fn test_physics_x_axis_support() {
         let mut p_world = PhysicsWorld::new();
-        let b1 = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(0.0, 0.0, 0.0), Vec3::ONE);
-        let b2 = PhysicsBody::new(PhysicsBodyId(2), Vec3::new(1.0, 0.0, 0.0), Vec3::ONE);
+        let b1 = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 0.0, 0.0), Vec3::ONE);
+        let b2 = PhysicsBody::new(PhysicsBodyId(2), 0, Vec3::new(1.0, 0.0, 0.0), Vec3::ONE);
         p_world.bodies.push(b1);
         p_world.bodies.push(b2);
         p_world.refresh_dynamic_support();
@@ -1226,11 +1320,11 @@ mod tests {
         let gravity = Vec3::new(10.0, 0.0, 0.0); // Gravity points +X
         p_world.static_colliders.insert(WorldCoord::new(2, 0, 0)); // Wall at X=2
 
-        let mut b1 = PhysicsBody::new(PhysicsBodyId(1), Vec3::new(1.0, 0.0, 0.0), Vec3::ONE);
+        let mut b1 = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(1.0, 0.0, 0.0), Vec3::ONE);
         b1.static_contact_normal = Some(Vec3::NEG_X); // Supported by wall
         b1.is_sleeping = true;
 
-        let mut b2 = PhysicsBody::new(PhysicsBodyId(2), Vec3::new(0.0, 0.0, 0.0), Vec3::ONE);
+        let mut b2 = PhysicsBody::new(PhysicsBodyId(2), 0, Vec3::new(0.0, 0.0, 0.0), Vec3::ONE);
         b2.dynamic_contact = Some((b1.id, Vec3::NEG_X)); // Supported by b1
 
         p_world.bodies.push(b1);
@@ -1252,10 +1346,10 @@ mod tests {
 
         p_world
             .bodies
-            .push(PhysicsBody::new(PhysicsBodyId(1), Vec3::ZERO, Vec3::ONE));
+            .push(PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::ZERO, Vec3::ONE));
         p_world
             .bodies
-            .push(PhysicsBody::new(PhysicsBodyId(2), Vec3::Y, Vec3::ONE));
+            .push(PhysicsBody::new(PhysicsBodyId(2), 0, Vec3::Y, Vec3::ONE));
         p_world.bodies[0].is_sleeping = true;
         p_world.bodies[1].is_sleeping = true;
         p_world.bodies[1].dynamic_contact = Some((p_world.bodies[0].id, Vec3::Y));

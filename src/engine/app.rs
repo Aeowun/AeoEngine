@@ -710,6 +710,8 @@ impl App {
                     }
                 }
 
+                self.physics_world.sync_with_world(world);
+
                 let gravity = self.world.gravity;
 
                 let p_world = &mut self.physics_world;
@@ -1215,6 +1217,7 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
             let matches = match class_name {
                 "Light" => cell.cell_type == crate::world::CellType::Light,
                 "Block" => cell.cell_type == crate::world::CellType::Block,
+                "FxBlock" => cell.cell_type == crate::world::CellType::FxBlock,
                 "SpawnPoint" => cell.cell_type == crate::world::CellType::SpawnPoint,
                 "Player" => cell.cell_type == crate::world::CellType::Player,
                 "NPC" => cell.cell_type == crate::world::CellType::NPC,
@@ -1233,6 +1236,24 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
         if let Some(id) = self.entity_manager.lookup_entity(query) {
             results.push((crate::scripting::value::HandleKind::Entity, id.0));
         }
+
+        // Search for cells with matching entity_identity
+        for coord in self.world.active_blocks() {
+            if let Some(cell) = self.world.get(coord) {
+                if let Some(identity) = &cell.entity_identity {
+                    if identity == query {
+                        // All Cells are identified by their unique ID in the scripting system.
+                        // We use HandleKind::Cell or HandleKind::Light etc. based on cell type.
+                        let kind = match cell.cell_type {
+                            crate::world::CellType::Light => crate::scripting::value::HandleKind::Light,
+                            _ => crate::scripting::value::HandleKind::Cell,
+                        };
+                        results.push((kind, cell.id));
+                    }
+                }
+            }
+        }
+
         results
     }
 

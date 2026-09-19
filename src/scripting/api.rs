@@ -226,6 +226,17 @@ pub fn resolve_host_member_property(
     }
 }
 
+/// Sets a property on an engine handle (e.g. entity.position = ...).
+pub fn set_host_member_property(
+    context: &mut HostContext,
+    handle_kind: HandleKind,
+    handle_id: u64,
+    property_name: &str,
+    value: Value,
+) -> Result<(), String> {
+    context.engine.set_property(handle_kind, handle_id, property_name, value)
+}
+
 /// Dispatches a member function call on an engine handle.
 pub fn call_host_member(
     context: &mut HostContext,

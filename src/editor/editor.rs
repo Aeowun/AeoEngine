@@ -404,6 +404,7 @@ pub enum PropertyChange {
     Visible(bool),
     ColorRgb(glam::Vec3),
     Texture(String),
+    EntityIdentity(Option<String>),
 }
 
 impl Editor {
@@ -424,6 +425,7 @@ impl Editor {
                         PropertyChange::Visible(visible) => other_cell.visible = *visible,
                         PropertyChange::ColorRgb(color) => other_cell.color_rgb = *color,
                         PropertyChange::Texture(texture) => other_cell.texture = texture.clone(),
+                        PropertyChange::EntityIdentity(identity) => other_cell.entity_identity = identity.clone(),
                     }
                 }
             }
@@ -442,7 +444,7 @@ impl Editor {
                     egui::CollapsingHeader::new("IDENTITY")
                         .default_open(true)
                         .show(ui, |ui| {
-                            if let Some(ref cell) = cell_opt {
+                            if let Some(ref mut cell) = cell_opt {
                                 ui.horizontal(|ui| {
                                     ui.label("ID:");
                                     ui.label(RichText::new(format!("{:08}", cell.id)).monospace());
@@ -450,6 +452,20 @@ impl Editor {
                                 ui.horizontal(|ui| {
                                     ui.label("Type:");
                                     ui.label(format!("{:?}", cell.cell_type));
+                                });
+
+                                ui.horizontal(|ui| {
+                                    ui.label("Identity:");
+                                    let mut identity = cell.entity_identity.clone().unwrap_or_default();
+                                    if ui.text_edit_singleline(&mut identity).changed() {
+                                        let new_identity = if identity.trim().is_empty() {
+                                            None
+                                        } else {
+                                            Some(identity)
+                                        };
+                                        cell.entity_identity = new_identity.clone();
+                                        changes.push(PropertyChange::EntityIdentity(new_identity));
+                                    }
                                 });
                             } else {
                                 ui.label("Type: Empty");

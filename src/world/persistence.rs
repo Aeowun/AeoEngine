@@ -38,11 +38,6 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
         world.lighting.ambient_intensity
     )?;
 
-    // Save all issued IDs ever.
-    for id in &world.issued_ids {
-        writeln!(file, "ISSUED_ID {}", id)?;
-    }
-
     for binding in &world.script_bindings {
         writeln!(
             file,
@@ -57,7 +52,7 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                 CellType::Block => {
                     writeln!(
                         file,
-                        "BLOCK {} {} {} {} {} {} {} {} {} {} {}",
+                        "BLOCK {} {} {} {} {} {} {} {} {} {} {} {}",
                         cell.id,
                         coord.x,
                         coord.y,
@@ -68,14 +63,34 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                         cell.texture,
                         cell.color_rgb.x,
                         cell.color_rgb.y,
-                        cell.color_rgb.z
+                        cell.color_rgb.z,
+                        cell.entity_identity.as_deref().unwrap_or("None")
+                    )?;
+                }
+
+                CellType::FxBlock => {
+                    writeln!(
+                        file,
+                        "FX_BLOCK {} {} {} {} {} {} {} {} {} {} {} {}",
+                        cell.id,
+                        coord.x,
+                        coord.y,
+                        coord.z,
+                        cell.visible,
+                        cell.solid,
+                        cell.anchored,
+                        cell.texture,
+                        cell.color_rgb.x,
+                        cell.color_rgb.y,
+                        cell.color_rgb.z,
+                        cell.entity_identity.as_deref().unwrap_or("None")
                     )?;
                 }
 
                 CellType::SpawnPoint => {
                     writeln!(
                         file,
-                        "SPAWN_POINT {} {} {} {} {} {} {} {} {} {} {}",
+                        "SPAWN_POINT {} {} {} {} {} {} {} {} {} {} {} {}",
                         cell.id,
                         coord.x,
                         coord.y,
@@ -86,14 +101,15 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                         cell.texture,
                         cell.color_rgb.x,
                         cell.color_rgb.y,
-                        cell.color_rgb.z
+                        cell.color_rgb.z,
+                        cell.entity_identity.as_deref().unwrap_or("None")
                     )?;
                 }
 
                 CellType::Light => {
                     writeln!(
                         file,
-                        "LIGHT {} {} {} {} {} {} {} {} {} {} {}",
+                        "LIGHT {} {} {} {} {} {} {} {} {} {} {} {}",
                         cell.id,
                         coord.x,
                         coord.y,
@@ -104,7 +120,8 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                         cell.light_intensity,
                         cell.light_range,
                         cell.light_shadows,
-                        cell.light_enabled
+                        cell.light_enabled,
+                        cell.entity_identity.as_deref().unwrap_or("None")
                     )?;
                 }
 
@@ -221,12 +238,6 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
             continue;
         }
 
-        if parts[0] == "ISSUED_ID" && parts.len() >= 2 {
-            if let Ok(id) = parts[1].parse::<u64>() {
-                world.issued_ids.insert(id);
-            }
-            continue;
-        }
 
         if parts[0] == "SCRIPT_BINDING" && parts.len() >= 3 {
             world.script_bindings.push(ScriptBinding::new(
@@ -239,18 +250,11 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
         if parts.len() >= 4 {
             let block_type = parts[0];
 
-            let has_id = match block_type {
-                "BLOCK" | "SPAWN_POINT" | "LIGHT" => parts.len() >= 12 || (block_type == "LIGHT" && parts.len() == 11 && parts[1].parse::<u64>().is_ok()),
-                "PLAYER" | "NPC" => parts.len() >= 13,
-                _ => false,
-            };
-
-            // Heuristic for LIGHT: if part[1] is a large number (ID) vs small (X coord)
-            let has_id = if block_type == "BLOCK" || block_type == "SPAWN_POINT" || block_type == "LIGHT" || block_type == "PLAYER" || block_type == "NPC" {
+            let has_id = if block_type == "BLOCK" || block_type == "SPAWN_POINT" || block_type == "LIGHT" || block_type == "PLAYER" || block_type == "NPC" || block_type == "FX_BLOCK" {
                  // New format always has more parts than legacy counterparts.
                  let legacy_len = match block_type {
                      "BLOCK" | "SPAWN_POINT" | "LIGHT" => 11,
-                     "PLAYER" | "NPC" => 12,
+                     "PLAYER" | "NPC" | "FX_BLOCK" => 12,
                      _ => 0,
                  };
                  parts.len() > legacy_len
@@ -277,10 +281,31 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                     if id.is_none() { legacy_cells.push(coord); }
                     else {
                         let id_val = id.unwrap();
-                        world.issued_ids.insert(id_val);
                         if let Some(cell) = world.get_mut(coord) {
                             cell.id = id_val;
                             parse_block_properties(cell, &parts, offset);
+                            if parts.len() >= offset + 12 {
+                                let identity = parts[offset + 11];
+                                if identity != "None" {
+                                    cell.entity_identity = Some(identity.to_string());
+                                }
+                            }
+                        }
+                    }
+                } else if block_type == "FX_BLOCK" {
+                    world.set_cell(coord, CellType::FxBlock);
+                    if id.is_none() { legacy_cells.push(coord); }
+                    else {
+                        let id_val = id.unwrap();
+                        if let Some(cell) = world.get_mut(coord) {
+                            cell.id = id_val;
+                            parse_block_properties(cell, &parts, offset);
+                            if parts.len() >= offset + 12 {
+                                let identity = parts[offset + 11];
+                                if identity != "None" {
+                                    cell.entity_identity = Some(identity.to_string());
+                                }
+                            }
                         }
                     }
                 } else if block_type == "SPAWN_POINT" {
@@ -288,10 +313,15 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                     if id.is_none() { legacy_cells.push(coord); }
                     else {
                         let id_val = id.unwrap();
-                        world.issued_ids.insert(id_val);
                         if let Some(cell) = world.get_mut(coord) {
                             cell.id = id_val;
                             parse_block_properties(cell, &parts, offset);
+                            if parts.len() >= offset + 12 {
+                                let identity = parts[offset + 11];
+                                if identity != "None" {
+                                    cell.entity_identity = Some(identity.to_string());
+                                }
+                            }
                         }
                     }
                 } else if block_type == "PLAYER" {
@@ -299,7 +329,6 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                     if id.is_none() { legacy_cells.push(coord); }
                     else {
                         let id_val = id.unwrap();
-                        world.issued_ids.insert(id_val);
                         if let Some(cell) = world.get_mut(coord) {
                             cell.id = id_val;
                             parse_block_properties(cell, &parts, offset);
@@ -316,7 +345,6 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                     if id.is_none() { legacy_cells.push(coord); }
                     else {
                         let id_val = id.unwrap();
-                        world.issued_ids.insert(id_val);
                         if let Some(cell) = world.get_mut(coord) {
                             cell.id = id_val;
                             parse_block_properties(cell, &parts, offset);
@@ -333,7 +361,6 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                     if id.is_none() { legacy_cells.push(coord); }
                     else {
                         let id_val = id.unwrap();
-                        world.issued_ids.insert(id_val);
                         if let Some(cell) = world.get_mut(coord) {
                             cell.id = id_val;
                             let r = parts[offset + 4].parse::<f32>().unwrap_or(1.0);
@@ -345,6 +372,12 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                             cell.light_shadows = parts[offset + 9].parse::<bool>().unwrap_or(true);
                             if parts.len() >= offset + 11 {
                                 cell.light_enabled = parts[offset + 10].parse::<bool>().unwrap_or(true);
+                            }
+                            if parts.len() >= offset + 12 {
+                                let identity = parts[offset + 11];
+                                if identity != "None" {
+                                    cell.entity_identity = Some(identity.to_string());
+                                }
                             }
                         }
                     }

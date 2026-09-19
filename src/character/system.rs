@@ -141,7 +141,7 @@ impl CharacterSystem {
                     let coord = WorldCoord::new(x, y, z);
 
                     if let Some(cell) = world.get(coord) {
-                        if !cell.solid {
+                        if !world.is_cell_solid(coord) {
                             continue;
                         }
 
@@ -498,7 +498,7 @@ mod tests {
         system.characters.insert(1, character);
 
         let body_id = PhysicsBodyId(1);
-        let mut body = PhysicsBody::new(body_id, Vec3::new(0.6, 0.0, -0.5), Vec3::ONE);
+        let mut body = PhysicsBody::new(body_id, 0, Vec3::new(0.6, 0.0, -0.5), Vec3::ONE);
         body.solid = true;
         body.anchored = false;
         p_world.bodies.push(body);

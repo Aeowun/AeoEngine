@@ -441,13 +441,13 @@ impl Renderer {
                     let renderable_cell =
                         cell.cell_type == CellType::Block || cell.cell_type == CellType::SpawnPoint;
 
-                    if !renderable_cell || !world.is_cell_visible(coord) || !cell.solid {
+                    if !renderable_cell || !world.is_cell_visible(coord) || !world.is_cell_solid(coord) {
                         continue;
                     }
 
                     let should_draw = match editor.mode {
                         EditorMode::Editor => true,
-                        EditorMode::Play => cell.anchored,
+                        EditorMode::Play => world.is_cell_anchored(coord),
                     };
 
                     if !should_draw {
@@ -747,7 +747,7 @@ impl Renderer {
 
                     let should_draw = match editor.mode {
                         EditorMode::Editor => true,
-                        EditorMode::Play => cell.anchored,
+                        EditorMode::Play => world.is_cell_anchored(coord),
                     };
 
                     if !should_draw {

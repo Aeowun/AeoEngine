@@ -1,7 +1,7 @@
 use super::cell::{Cell, CellType, RuntimeCellState};
 use super::coordinate::WorldCoord;
 use glam::Vec3;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use crate::scripting::binding::ScriptBinding;
 
 #[derive(Clone)]
@@ -38,9 +38,6 @@ pub struct World {
     // Temporary runtime-only overrides for cell state, keyed by Cell ID.
     pub(crate) runtime_state: HashMap<u64, RuntimeCellState>,
 
-    // All IDs ever issued by this world, to prevent reuse.
-    pub(crate) issued_ids: HashSet<u64>,
-
     // The world wide gravity vector used by the physics simulation.
     pub gravity: Vec3,
 
@@ -56,7 +53,6 @@ impl World {
         Self {
             cells: HashMap::new(),
             runtime_state: HashMap::new(),
-            issued_ids: HashSet::new(),
             // We default to Earth standard gravity.
             gravity: Vec3::new(0.0, -9.81, 0.0),
             lighting: LightingSettings::default(),
@@ -235,7 +231,7 @@ impl World {
                 self.runtime_state.remove(&cell.id);
             }
         } else {
-            // Default properties for a new cell
+            // Default properties for a new cell.
             let mut cell = match cell_type {
                 CellType::Block => Cell::new_block(),
                 CellType::Light => Cell::new_light(),
@@ -246,38 +242,44 @@ impl World {
                     c
                 }
             };
+
             cell.id = self.generate_unique_id(coord, cell_type);
             self.cells.insert(coord, cell);
         }
     }
 
-    pub(crate) fn generate_unique_id(&mut self, coord: WorldCoord, cell_type: CellType) -> u64 {
+    pub(crate) fn generate_unique_id(
+        &mut self,
+        coord: WorldCoord,
+        cell_type: CellType,
+    ) -> u64 {
+        use chrono::Local;
         use std::hash::{Hash, Hasher};
-        use std::time::{SystemTime, UNIX_EPOCH};
 
         let mut retry_count = 0;
+
         loop {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
-            // Entropy inputs
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-                .hash(&mut hasher);
+            let timestamp = Local::now()
+                .format("%Y:%m:%d:%S")
+                .to_string();
+
+            timestamp.hash(&mut hasher);
             coord.hash(&mut hasher);
             (cell_type as u32).hash(&mut hasher);
             retry_count.hash(&mut hasher);
 
             let hash = hasher.finish();
 
-            // Map to 8-digit range: 10,000,000 to 99,999,999
+            // Map to 8 digit range: 10,000,000 to 99,999,999.
             let id = 10_000_000 + (hash % 90_000_000);
 
-            if !self.issued_ids.contains(&id) {
-                self.issued_ids.insert(id);
+            // Only currently existing cells participate in collision checks.
+            if !self.cells.values().any(|cell| cell.id == id) {
                 return id;
             }
+
             retry_count += 1;
         }
     }

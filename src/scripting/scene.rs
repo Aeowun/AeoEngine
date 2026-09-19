@@ -520,6 +520,7 @@ mod tests {
                 let matches = match class_name {
                     "Light" => cell.cell_type == CellType::Light,
                     "Block" => cell.cell_type == CellType::Block,
+                    "FxBlock" => cell.cell_type == CellType::FxBlock,
                     "SpawnPoint" => cell.cell_type == CellType::SpawnPoint,
                     "Player" => cell.cell_type == CellType::Player,
                     "NPC" => cell.cell_type == CellType::NPC,
@@ -536,6 +537,20 @@ mod tests {
             let mut results = Vec::new();
             if let Some(id) = self.entity_manager.lookup_entity(query) {
                 results.push((crate::scripting::value::HandleKind::Entity, id.0));
+            }
+
+            for coord in self.world.active_blocks() {
+                if let Some(cell) = self.world.get(coord) {
+                    if let Some(identity) = &cell.entity_identity {
+                        if identity == query {
+                            let kind = match cell.cell_type {
+                                crate::world::CellType::Light => crate::scripting::value::HandleKind::Light,
+                                _ => crate::scripting::value::HandleKind::Cell,
+                            };
+                            results.push((kind, cell.id));
+                        }
+                    }
+                }
             }
             results
         }
@@ -603,6 +618,27 @@ mod tests {
                 HandleKind::Cell | HandleKind::Light => {
                     if let Some(coord) = self.world.resolve_cell_id(id) {
                         match name {
+                            "visible" => {
+                                let visible = value.as_bool()?;
+                                self.world.set_cell_visible_runtime(coord, visible);
+                            }
+                            "solid" => {
+                                let solid = value.as_bool()?;
+                                self.world.set_cell_solid_runtime(coord, solid);
+                            }
+                            "anchored" => {
+                                let anchored = value.as_bool()?;
+                                self.world.set_cell_anchored_runtime(coord, anchored);
+                            }
+                            "color" => {
+                                let basket = value.as_basket()?;
+                                if basket.len() == 3 {
+                                    let r = basket[0].as_number()? as f32;
+                                    let g = basket[1].as_number()? as f32;
+                                    let b = basket[2].as_number()? as f32;
+                                    self.world.set_cell_color_runtime(coord, glam::Vec3::new(r, g, b));
+                                }
+                            }
                             "enabled" => {
                                 let enabled = value.as_bool()?;
                                 self.world.set_light_enabled_runtime(coord, enabled);
@@ -1915,5 +1951,71 @@ on TestEvent() {
         assert_eq!(occurrences[0].script_path.as_deref(), Some("scripts/test.aeo"), "Event should have correct script path");
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_member_assignment_bridge() {
+        use crate::scripting::value::HandleKind;
+        let source = r#"
+entity Test {
+    fn main(b: Cell) {
+        b.color = [1.0, 0.2, 0.2]
+        b.visible = false
+        b.solid = false
+    }
+}
+"#;
+        let mut th = test_host();
+        let coord = WorldCoord::new(1, 2, 3);
+        th.world.set_cell(coord, crate::world::CellType::Block);
+        let cell_id = th.world.get(coord).unwrap().id;
+        let handle = Value::Handle { kind: HandleKind::Cell, id: cell_id };
+
+        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+
+        let mut instance = scene.runtime.interpreter_mut().instantiate_entity("Test", 1, &mut host).unwrap();
+        scene.runtime.interpreter_mut().call(&mut instance, "main", vec![handle], &mut host).unwrap();
+
+        let runtime_state = th.world.runtime_state.get(&cell_id).unwrap();
+        assert_eq!(runtime_state.color_rgb, Some(glam::Vec3::new(1.0, 0.2, 0.2)));
+        assert_eq!(runtime_state.visible, Some(false));
+        assert_eq!(runtime_state.solid, Some(false));
+    }
+
+    #[test]
+    fn test_find_objects_universal_identity() {
+        use crate::scripting::api::EngineHost;
+        let mut th = test_host();
+
+        let c1 = WorldCoord::new(1, 1, 1);
+        let c2 = WorldCoord::new(2, 2, 2);
+        let c3 = WorldCoord::new(3, 3, 3);
+
+        th.world.set_cell(c1, crate::world::CellType::Block);
+        th.world.get_mut(c1).unwrap().entity_identity = Some("Ghost".to_string());
+
+        th.world.set_cell(c2, crate::world::CellType::Light);
+        th.world.get_mut(c2).unwrap().entity_identity = Some("Ghost".to_string());
+
+        th.world.set_cell(c3, crate::world::CellType::NPC);
+        th.world.get_mut(c3).unwrap().entity_identity = Some("Ghost".to_string());
+
+        let results = th.find_objects("Ghost");
+        assert_eq!(results.len(), 3);
+
+        let mut kinds = results.iter().map(|(k, _)| *k).collect::<Vec<_>>();
+        kinds.sort_by_key(|k| format!("{:?}", k));
+
+        // Block -> Cell, Light -> Light, NPC -> Cell
+        use crate::scripting::value::HandleKind;
+        assert!(kinds.contains(&HandleKind::Cell));
+        assert!(kinds.contains(&HandleKind::Light));
+
+        let cell_count = kinds.iter().filter(|&&k| k == HandleKind::Cell).count();
+        let light_count = kinds.iter().filter(|&&k| k == HandleKind::Light).count();
+        assert_eq!(cell_count, 2);
+        assert_eq!(light_count, 1);
     }
 }

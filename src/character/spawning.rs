@@ -24,8 +24,8 @@ pub fn spawn_at_random_point(world: &World, next_id: u64) -> Option<Character> {
     // clearance rules used to validate a candidate position.
     let coord = spawn_points[0];
 
-    let spawn_y = if let Some(cell) = world.get(coord) {
-        if cell.solid {
+    let spawn_y = if let Some(_cell) = world.get(coord) {
+        if world.is_cell_solid(coord) {
             coord.y as f32 + 1.0
         } else {
             coord.y as f32
@@ -86,8 +86,8 @@ fn has_character_clearance(world: &World, position: Vec3, collision: &CharacterC
             for z in min_z..max_z {
                 let coord = WorldCoord::new(x, y, z);
 
-                if let Some(cell) = world.get(coord) {
-                    if cell.solid {
+                if let Some(_cell) = world.get(coord) {
+                    if world.is_cell_solid(coord) {
                         return false;
                     }
                 }
