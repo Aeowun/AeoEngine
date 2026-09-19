@@ -149,7 +149,7 @@ pub fn call_host_function(
                     id,
                 })
                 .collect();
-            Ok(Some(Value::Array(handles)))
+            Ok(Some(Value::array(handles)))
         }
 
         "find" => {
@@ -163,7 +163,7 @@ pub fn call_host_function(
                 .into_iter()
                 .map(|(kind, id)| Value::Handle { kind, id })
                 .collect();
-            Ok(Some(Value::Array(handles)))
+            Ok(Some(Value::array(handles)))
         }
 
         _ => Ok(None),
@@ -211,7 +211,7 @@ pub fn resolve_host_member_property(
             }
             "position" => {
                 if let Some(pos) = context.engine.get_position(handle_id) {
-                    Ok(Some(Value::Array(vec![
+                    Ok(Some(Value::array(vec![
                         Value::Number(pos.x as f64),
                         Value::Number(pos.y as f64),
                         Value::Number(pos.z as f64),
@@ -252,11 +252,11 @@ pub fn call_host_member(
     match name {
         "get_children" => {
             let children = context.engine.get_children(handle_kind, handle_id);
-            let handles = children
+            let handles: Vec<Value> = children
                 .into_iter()
                 .map(|(kind, id)| Value::Handle { kind, id })
                 .collect();
-            return Ok(Some(Value::Array(handles)));
+            return Ok(Some(Value::array(handles)));
         }
         "get_parent" => {
             if let Some((kind, id)) = context.engine.get_parent(handle_kind, handle_id) {

@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::sync::Arc;
 
 /// Kinds of opaque engine handles.
 ///
@@ -22,6 +24,58 @@ impl HandleKind {
     }
 }
 
+/// A wrapper for f64 that implements Ord and Hash using total_cmp.
+#[derive(Clone, Copy, Debug)]
+pub struct OrderedFloat(pub f64);
+
+impl PartialEq for OrderedFloat {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.total_cmp(&other.0) == std::cmp::Ordering::Equal
+    }
+}
+
+impl Eq for OrderedFloat {}
+
+impl PartialOrd for OrderedFloat {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.0.total_cmp(&other.0))
+    }
+}
+
+impl Ord for OrderedFloat {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
+
+impl std::hash::Hash for OrderedFloat {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_u64(self.0.to_bits());
+    }
+}
+
+/// A key in an AeoScript map.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MapKey {
+    Number(OrderedFloat),
+    String(String),
+}
+
+impl std::fmt::Display for MapKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Number(n) => {
+                if n.0.fract() == 0.0 {
+                    write!(f, "{:.0}", n.0)
+                } else {
+                    write!(f, "{}", n.0)
+                }
+            }
+            Self::String(s) => write!(f, "{}", s),
+        }
+    }
+}
+
 /// Values that can exist inside the AeoScript runtime.
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -29,8 +83,8 @@ pub enum Value {
     Bool(bool),
     String(String),
     Nil,
-    Array(Vec<Value>),
-    Map(BTreeMap<String, Value>),
+    Array(Arc<RefCell<Vec<Value>>>),
+    Map(Arc<RefCell<BTreeMap<MapKey, Value>>>),
 
     /// Opaque engine object reference.
     ///
@@ -79,6 +133,14 @@ impl Value {
         }
     }
 
+    pub fn as_index(&self) -> Result<usize, String> {
+        let number = self.as_number()?;
+        if number.fract() != 0.0 || number < 0.0 {
+            return Err("array index must be a non-negative integer.".to_string());
+        }
+        Ok(number as usize)
+    }
+
     pub fn as_bool(&self) -> Result<bool, String> {
         match self {
             Self::Bool(value) => Ok(*value),
@@ -93,10 +155,17 @@ impl Value {
         }
     }
 
-    pub fn as_basket(&self) -> Result<&Vec<Value>, String> {
+    pub fn as_basket(&self) -> Result<Arc<RefCell<Vec<Value>>>, String> {
         match self {
-            Self::Array(value) => Ok(value),
+            Self::Array(value) => Ok(value.clone()),
             other => Err(format!("expected basket, got {}", other.type_name())),
+        }
+    }
+
+    pub fn as_map(&self) -> Result<Arc<RefCell<BTreeMap<MapKey, Value>>>, String> {
+        match self {
+            Self::Map(value) => Ok(value.clone()),
+            other => Err(format!("expected map, got {}", other.type_name())),
         }
     }
 
@@ -105,6 +174,22 @@ impl Value {
             Self::Handle { kind, id } => Ok((*kind, *id)),
             other => Err(format!("expected engine handle, got {}", other.type_name())),
         }
+    }
+
+    pub fn as_map_key(&self) -> Result<MapKey, String> {
+        match self {
+            Self::Number(n) => Ok(MapKey::Number(OrderedFloat(*n))),
+            Self::String(s) => Ok(MapKey::String(s.clone())),
+            other => Err(format!("{} cannot be used as a map key (expected string or number)", other.type_name())),
+        }
+    }
+
+    pub fn array(values: Vec<Value>) -> Self {
+        Self::Array(Arc::new(RefCell::new(values)))
+    }
+
+    pub fn map(values: BTreeMap<MapKey, Value>) -> Self {
+        Self::Map(Arc::new(RefCell::new(values)))
     }
 
     pub fn display_string(&self) -> String {
@@ -124,7 +209,8 @@ impl Value {
             Self::Nil => "nil".to_string(),
 
             Self::Array(values) => {
-                let items = values
+                let borrowed = values.borrow();
+                let items = borrowed
                     .iter()
                     .map(Value::display_string)
                     .collect::<Vec<_>>()
@@ -134,7 +220,8 @@ impl Value {
             }
 
             Self::Map(values) => {
-                let items = values
+                let borrowed = values.borrow();
+                let items = borrowed
                     .iter()
                     .map(|(key, value)| format!("{}: {}", key, value.display_string()))
                     .collect::<Vec<_>>()
@@ -157,8 +244,18 @@ impl PartialEq for Value {
             (Self::Bool(a), Self::Bool(b)) => a == b,
             (Self::String(a), Self::String(b)) => a == b,
             (Self::Nil, Self::Nil) => true,
-            (Self::Array(a), Self::Array(b)) => a == b,
-            (Self::Map(a), Self::Map(b)) => a == b,
+            (Self::Array(a), Self::Array(b)) => {
+                if Arc::ptr_eq(a, b) {
+                    return true;
+                }
+                *a.borrow() == *b.borrow()
+            }
+            (Self::Map(a), Self::Map(b)) => {
+                if Arc::ptr_eq(a, b) {
+                    return true;
+                }
+                *a.borrow() == *b.borrow()
+            }
 
             (
                 Self::Handle {
@@ -220,6 +317,11 @@ impl Scope {
         Ok(())
     }
 
+    pub fn set_or_declare(&mut self, name: String, value: Value) -> Result<(), String> {
+        self.values.insert(name, value);
+        Ok(())
+    }
+
     pub fn contains(&self, name: &str) -> bool {
         self.values.contains_key(name)
     }
@@ -250,8 +352,10 @@ impl Scope {
 
 #[cfg(test)]
 mod tests {
-    use super::{HandleKind, Scope, Value};
+    use super::{HandleKind, Scope, Value, MapKey, OrderedFloat};
     use std::collections::BTreeMap;
+    use std::sync::Arc;
+    use std::cell::RefCell;
 
     #[test]
     fn value_types_are_reported() {
@@ -263,9 +367,9 @@ mod tests {
 
         assert_eq!(Value::Nil.type_name(), "nil");
 
-        assert_eq!(Value::Array(vec![Value::Number(1.0)]).type_name(), "basket");
+        assert_eq!(Value::Array(Arc::new(RefCell::new(vec![Value::Number(1.0)]))).type_name(), "basket");
 
-        assert_eq!(Value::Map(BTreeMap::new()).type_name(), "map");
+        assert_eq!(Value::Map(Arc::new(RefCell::new(BTreeMap::new()))).type_name(), "map");
 
         assert_eq!(
             Value::Handle {
@@ -319,21 +423,21 @@ mod tests {
 
     #[test]
     fn arrays_and_maps_display() {
-        let array = Value::Array(vec![
+        let array = Value::Array(Arc::new(RefCell::new(vec![
             Value::Number(1.0),
             Value::Bool(true),
             Value::String("x".to_string()),
-        ]);
+        ])));
 
         assert_eq!(array.display_string(), "[1, true, x]");
 
         let mut map = BTreeMap::new();
 
-        map.insert("hp".to_string(), Value::Number(100.0));
+        map.insert(MapKey::String("hp".to_string()), Value::Number(100.0));
 
-        map.insert("alive".to_string(), Value::Bool(true));
+        map.insert(MapKey::String("alive".to_string()), Value::Bool(true));
 
-        let map = Value::Map(map);
+        let map = Value::Map(Arc::new(RefCell::new(map)));
 
         assert_eq!(map.display_string(), "{alive: true, hp: 100}");
     }
@@ -384,5 +488,23 @@ mod tests {
         let result = scope.declare("value", Value::Number(20.0), false);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn map_keys_distinct() {
+        let mut map = BTreeMap::new();
+        map.insert(MapKey::Number(OrderedFloat(1.0)), Value::String("number".to_string()));
+        map.insert(MapKey::String("1".to_string()), Value::String("string".to_string()));
+
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get(&MapKey::Number(OrderedFloat(1.0))).unwrap().as_string().unwrap(), "number");
+        assert_eq!(map.get(&MapKey::String("1".to_string())).unwrap().as_string().unwrap(), "string");
+    }
+
+    #[test]
+    fn test_numeric_equality() {
+        assert_eq!(Value::Number(0.0), Value::Number(-0.0));
+        assert_eq!(Value::Number(1.0), Value::Number(1.0));
+        assert_ne!(Value::Number(1.0), Value::Number(2.0));
     }
 }

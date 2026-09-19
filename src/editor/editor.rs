@@ -457,7 +457,7 @@ impl Editor {
                                 ui.horizontal(|ui| {
                                     ui.label("Identity:");
                                     let mut identity = cell.entity_identity.clone().unwrap_or_default();
-                                    if ui.text_edit_singleline(&mut identity).changed() {
+                                    if ui.add(egui::TextEdit::singleline(&mut identity).desired_width(120.0)).changed() {
                                         let new_identity = if identity.trim().is_empty() {
                                             None
                                         } else {
@@ -489,14 +489,26 @@ impl Editor {
                         .default_open(true)
                         .show(ui, |ui| {
                             if let Some(ref cell) = cell_opt {
-                                let identity = format!("{:?}", cell.cell_type);
+                                let identity = if let Some(ref id) = cell.entity_identity {
+                                    id.clone()
+                                } else {
+                                    format!("{:?}", cell.cell_type)
+                                };
                                 let binding_index = world.script_bindings.iter().position(|b| b.target_identity == identity);
 
-                                if let Some(idx) = binding_index {
-                                    ui.label(RichText::new(&world.script_bindings[idx].script_path).strong());
-                                } else {
-                                    ui.label("None");
-                                }
+                                ui.horizontal(|ui| {
+                                    ui.label("Current Identity:");
+                                    ui.label(RichText::new(&identity).monospace());
+                                });
+
+                                ui.horizontal(|ui| {
+                                    ui.label("Bound Script:");
+                                    if let Some(idx) = binding_index {
+                                        ui.label(RichText::new(&world.script_bindings[idx].script_path).strong());
+                                    } else {
+                                        ui.label("None");
+                                    }
+                                });
 
                                 ui.add_space(4.0);
 
@@ -527,6 +539,28 @@ impl Editor {
                                             }
                                         }
                                     });
+                            }
+
+                            ui.add_space(8.0);
+                            ui.label(RichText::new("All Script Bindings:").small().heading());
+                            for b in &world.script_bindings {
+                                let is_active_identity = world.cells.values().any(|c| {
+                                    if let Some(ref id) = c.entity_identity {
+                                        id == &b.target_identity
+                                    } else {
+                                        format!("{:?}", c.cell_type) == b.target_identity
+                                    }
+                                });
+
+                                if !is_active_identity {
+                                    ui.label(RichText::new(format!("⚠️ [STALE] {} -> {}", b.target_identity, b.script_path))
+                                        .color(egui::Color32::from_rgb(255, 140, 0))
+                                        .small());
+                                } else {
+                                    ui.label(RichText::new(format!("{} -> {}", b.target_identity, b.script_path))
+                                        .color(egui::Color32::GRAY)
+                                        .small());
+                                }
                             }
                         });
 
@@ -673,44 +707,39 @@ impl Editor {
 
     fn render_terminal_content(&mut self, ui: &mut egui::Ui) {
         ui.vertical(|ui| {
-            let mut terminal_view = self.terminal_output.clone();
+            let mut job = egui::text::LayoutJob::default();
+            job.wrap.max_width = ui.available_width();
 
-            let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
-                let mut job = egui::text::LayoutJob::default();
-                job.wrap.max_width = wrap_width;
+            for line in self.terminal_output.split_inclusive('\n') {
+                let color = if line.contains("[ERROR]") {
+                    egui::Color32::from_rgb(255, 80, 80)
+                } else if line.contains("[WARNING]") {
+                    egui::Color32::from_rgb(255, 220, 0)
+                } else {
+                    ui.visuals().text_color()
+                };
 
-                for line in string.split_inclusive('\n') {
-                    let color = if line.contains("[ERROR]") {
-                        egui::Color32::from_rgb(255, 80, 80) // Light red for visibility
-                    } else if line.contains("[WARNING]") {
-                        egui::Color32::from_rgb(255, 220, 0) // Vibrant yellow
-                    } else {
-                        ui.visuals().text_color()
-                    };
+                job.append(
+                    line,
+                    0.0,
+                    egui::TextFormat {
+                        font_id: egui::TextStyle::Monospace.resolve(ui.style()),
+                        color,
+                        ..Default::default()
+                    },
+                );
+            }
 
-                    job.append(
-                        line,
-                        0.0,
-                        egui::TextFormat {
-                            font_id: egui::TextStyle::Monospace.resolve(ui.style()),
-                            color,
-                            ..Default::default()
-                        },
-                    );
-                }
-                ui.fonts(|f| f.layout_job(job))
-            };
+            let available_h = ui.available_height();
+            let controls_h = 30.0;
+            let scroll_h = (available_h - controls_h).max(40.0);
 
             egui::ScrollArea::vertical()
                 .id_salt("terminal_scroll")
+                .max_height(scroll_h)
                 .stick_to_bottom(self.terminal_auto_scroll)
                 .show(ui, |ui| {
-                    ui.add(
-                        egui::TextEdit::multiline(&mut terminal_view)
-                            .layouter(&mut layouter)
-                            .desired_width(f32::INFINITY)
-                            .desired_rows(20),
-                    );
+                    ui.add(egui::Label::new(job).selectable(true));
                 });
 
             ui.horizontal(|ui| {

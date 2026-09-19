@@ -1014,7 +1014,31 @@ impl Parser {
 
         if !self.check_simple(&TokenKind::RightBrace) {
             loop {
-                let (key, _) = self.consume_identifier("Expected map key.")?;
+                let key_token = self.peek().clone();
+                let key = match key_token.kind {
+                    TokenKind::String(s) => {
+                        self.advance();
+                        Expression {
+                            span: key_token.span,
+                            kind: ExpressionKind::String(s),
+                        }
+                    }
+                    TokenKind::Number(n) => {
+                        self.advance();
+                        Expression {
+                            span: key_token.span,
+                            kind: ExpressionKind::Number(n),
+                        }
+                    }
+                    TokenKind::Identifier(s) => {
+                        self.advance();
+                        Expression {
+                            span: key_token.span,
+                            kind: ExpressionKind::String(s),
+                        }
+                    }
+                    _ => return Err(ParserError::new("Expected map key (string, number, or identifier).", &key_token)),
+                };
 
                 self.consume_simple(TokenKind::Colon, "Expected ':' after map key.")?;
 

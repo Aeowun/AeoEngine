@@ -205,7 +205,7 @@ pub enum ExpressionKind {
 
     Array(Vec<Expression>),
 
-    Map(Vec<(String, Expression)>),
+    Map(Vec<(Expression, Expression)>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

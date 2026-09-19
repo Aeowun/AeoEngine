@@ -3,9 +3,10 @@ use std::sync::Arc;
 
 use super::ast::*;
 use super::execution::{FiberResult, YieldReason};
-use super::value::{Scope, Value, HandleKind};
+use super::value::{Scope, Value, HandleKind, MapKey};
 use super::api::{HostContext, call_host_function, call_host_member, resolve_host_property, resolve_host_member_property, set_host_member_property};
 use super::log::{LogSeverity, LogRecord};
+use std::cell::RefCell;
 
 const DEFAULT_OPERATION_BUDGET: u64 = 100_000;
 const DEFAULT_MAX_CALL_DEPTH: usize = 64;
@@ -750,7 +751,7 @@ impl Interpreter {
                     };
 
                     let values = match iterable_value {
-                        Value::Array(values) => values,
+                        Value::Array(values) => values.borrow().clone(),
 
                         other => {
                             let err = format!(
@@ -821,8 +822,8 @@ impl Interpreter {
                         };
 
                         if let Err(error) =
-                            scope.set_or_declare(&name, value)
-                        {
+                        scope.set_or_declare(name.clone(), value)
+                    {
                             self.log_error(error.clone());
                             break fiber.fail(error);
                         }
@@ -1166,7 +1167,7 @@ impl Interpreter {
                     self.eval_expression(instance, scopes, iterable, host)?;
 
                 let values = match iterable_value {
-                    Value::Array(values) => values,
+                    Value::Array(values) => values.borrow().clone(),
 
                     other => {
                         return Err(format!(
@@ -1185,7 +1186,7 @@ impl Interpreter {
                         scopes
                             .last_mut()
                             .expect("loop scope exists")
-                            .set_or_declare(name, value)?;
+                            .set_or_declare(name.to_string(), value)?;
 
                         match self.execute_block(
                             instance,
@@ -1265,11 +1266,12 @@ impl Interpreter {
 
             ExpressionKind::Member { object, name } => {
                 let object_value = self.eval_expression(instance, scopes, object, host)?;
+
                 let value = if operator == AssignmentOperator::Assign {
                     right
                 } else {
                     let left = match &object_value {
-                        Value::Map(map) => map.get(name).cloned().ok_or_else(|| format!("map has no key '{}'", name))?,
+                        Value::Map(map) => map.borrow().get(&MapKey::String(name.clone())).cloned().ok_or_else(|| format!("map has no key '{}'", name))?,
                         Value::Handle { kind, id } => {
                             if let Some(v) = resolve_host_member_property(host, *kind, *id, name)? {
                                 v
@@ -1283,16 +1285,8 @@ impl Interpreter {
                 };
 
                 match object_value {
-                    Value::Map(mut map) => {
-                        map.insert(name.clone(), value.clone());
-                        // If the map came from a variable, we need to update it in the scope.
-                        // However, Value::Map is currently cloned in eval_expression for some cases.
-                        // For simplicity in this engine's current state, we assume the user is aware
-                        // of map reference semantics if they exist, or they are just using it as a temporary.
-                        // If it's a property on an object, we'd need to re-write the whole map.
-                        // For now, let's just make sure it works if they do `m = {}; m.x = 1`.
-                        // Re-evaluating the object to find where it's stored is complex.
-                        // The user request specifically mentions handle properties like `b.color`.
+                    Value::Map(map) => {
+                        map.borrow_mut().insert(MapKey::String(name.clone()), value);
                         Ok(())
                     }
                     Value::Handle { kind, id } => {
@@ -1302,10 +1296,47 @@ impl Interpreter {
                 }
             }
 
-            _ => Err(
-                "only identifier assignment is supported by the interpreter yet."
-                    .to_string(),
-            ),
+            ExpressionKind::Index { object, index } => {
+                let object_value = self.eval_expression(instance, scopes, object, host)?;
+                let index_value = self.eval_expression(instance, scopes, index, host)?;
+
+                let value = if operator == AssignmentOperator::Assign {
+                    right
+                } else {
+                    let left = match &object_value {
+                        Value::Array(array) => {
+                            let idx = index_value.as_index()?;
+                            array.borrow().get(idx).cloned().ok_or_else(|| format!("index {} out of bounds", idx))?
+                        }
+                        Value::Map(map) => {
+                            let key = index_value.as_map_key()?;
+                            map.borrow().get(&key).cloned().ok_or_else(|| format!("map has no key '{}'", key))?
+                        }
+                        _ => return Err(format!("cannot index type {}", object_value.type_name())),
+                    };
+                    self.apply_assignment(operator, left, right)?
+                };
+
+                match object_value {
+                    Value::Array(array) => {
+                        let idx = index_value.as_index()?;
+                        let mut borrowed = array.borrow_mut();
+                        if idx >= borrowed.len() {
+                            return Err(format!("index {} out of bounds", idx));
+                        }
+                        borrowed[idx] = value;
+                        Ok(())
+                    }
+                    Value::Map(map) => {
+                        let key = index_value.as_map_key()?;
+                        map.borrow_mut().insert(key, value);
+                        Ok(())
+                    }
+                    _ => Err(format!("cannot assign to index of type {}", object_value.type_name())),
+                }
+            }
+
+            _ => Err(format!("cannot assign to expression of type {:?}", target.kind)),
         }
     }
 
@@ -1502,12 +1533,14 @@ impl Interpreter {
                     self.eval_expression(instance, scopes, object, host)?;
 
                 match value {
-                    Value::Map(map) => map
-                        .get(name)
+                    Value::Map(map) => {
+                        let borrowed = map.borrow();
+                        borrowed.get(&MapKey::String(name.clone()))
                         .cloned()
                         .ok_or_else(|| {
                             format!("map has no key '{}'", name)
-                        }),
+                        })
+                    }
 
                     Value::Handle { kind, id } => {
                         if let Some(value) = resolve_host_member_property(host, kind, id, name)? {
@@ -1553,15 +1586,18 @@ impl Interpreter {
                     );
                 }
 
-                Ok(Value::Array(values))
+                Ok(Value::Array(Arc::new(RefCell::new(values))))
             }
 
             ExpressionKind::Map(entries) => {
                 let mut values = BTreeMap::new();
 
-                for (key, expression) in entries {
+                for (key_expr, expression) in entries {
+                    let key_value = self.eval_expression(instance, scopes, key_expr, host)?;
+                    let key = key_value.as_map_key()?;
+
                     values.insert(
-                        key.clone(),
+                        key,
                         self.eval_expression(
                             instance,
                             scopes,
@@ -1571,7 +1607,7 @@ impl Interpreter {
                     );
                 }
 
-                Ok(Value::Map(values))
+                Ok(Value::Map(Arc::new(RefCell::new(values))))
             }
         }
     }
@@ -1696,7 +1732,7 @@ impl Interpreter {
                             if !values.is_empty() {
                                 return Err("array.len() expects no arguments".to_string());
                             }
-                            return Ok(Value::Number(items.len() as f64));
+                            return Ok(Value::Number(items.borrow().len() as f64));
                         }
                     }
                     Value::Handle { kind, id } => {
@@ -1787,18 +1823,10 @@ impl Interpreter {
     ) -> Result<Value, String> {
         match object {
             Value::Array(values) => {
-                let number = index.as_number()?;
+                let index = index.as_index()?;
+                let borrowed = values.borrow();
 
-                if number.fract() != 0.0 || number < 0.0 {
-                    return Err(
-                        "array index must be a non-negative integer."
-                            .to_string(),
-                    );
-                }
-
-                let index = number as usize;
-
-                values
+                borrowed
                     .get(index)
                     .cloned()
                     .ok_or_else(|| {
@@ -1810,9 +1838,10 @@ impl Interpreter {
             }
 
             Value::Map(map) => {
-                let key = index.as_string()?;
+                let key = index.as_map_key()?;
+                let borrowed = map.borrow();
 
-                map.get(key)
+                borrowed.get(&key)
                     .cloned()
                     .ok_or_else(|| {
                         format!("map has no key '{}'", key)

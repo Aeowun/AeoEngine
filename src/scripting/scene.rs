@@ -586,11 +586,31 @@ mod tests {
                                 "id" => return Ok(Some(Value::Number(cell.id as f64))),
                                 "name" => return Ok(Some(Value::String(cell.entity_identity.clone().unwrap_or_else(|| "Cell".to_string())))),
                                 "cellType" => return Ok(Some(Value::String(format!("{:?}", cell.cell_type)))),
-                                "position" => return Ok(Some(Value::Array(vec![
+                                "position" => return Ok(Some(Value::array(vec![
                                     Value::Number(coord.x as f64),
                                     Value::Number(coord.y as f64),
                                     Value::Number(coord.z as f64),
                                 ]))),
+                                "visible" => return Ok(Some(Value::Bool(self.world.is_cell_visible(coord)))),
+                                "enabled" => return Ok(Some(Value::Bool(self.world.is_light_enabled(coord)))),
+                                "solid" => return Ok(Some(Value::Bool(self.world.is_cell_solid(coord)))),
+                                "anchored" => return Ok(Some(Value::Bool(self.world.is_cell_anchored(coord)))),
+                                "color" => {
+                                    let color = self.world.get_effective_color(coord);
+                                    return Ok(Some(Value::array(vec![
+                                        Value::Number(color.x as f64),
+                                        Value::Number(color.y as f64),
+                                        Value::Number(color.z as f64),
+                                    ])));
+                                }
+                                "offset" => {
+                                    let offset = self.world.get_visual_offset(coord);
+                                    return Ok(Some(Value::array(vec![
+                                        Value::Number(offset.x as f64),
+                                        Value::Number(offset.y as f64),
+                                        Value::Number(offset.z as f64),
+                                    ])));
+                                }
                                 _ => {}
                             }
                         }
@@ -632,10 +652,11 @@ mod tests {
                             }
                             "color" => {
                                 let basket = value.as_basket()?;
-                                if basket.len() == 3 {
-                                    let r = basket[0].as_number()? as f32;
-                                    let g = basket[1].as_number()? as f32;
-                                    let b = basket[2].as_number()? as f32;
+                                let borrowed = basket.borrow();
+                                if borrowed.len() == 3 {
+                                    let r = borrowed[0].as_number()? as f32;
+                                    let g = borrowed[1].as_number()? as f32;
+                                    let b = borrowed[2].as_number()? as f32;
                                     self.world.set_cell_color_runtime(coord, glam::Vec3::new(r, g, b));
                                 }
                             }
@@ -2017,5 +2038,290 @@ entity Test {
         let light_count = kinds.iter().filter(|&&k| k == HandleKind::Light).count();
         assert_eq!(cell_count, 2);
         assert_eq!(light_count, 1);
+    }
+
+    #[test]
+    fn test_save_change_restore_workflow() {
+        use crate::scripting::value::HandleKind;
+        let source = r#"
+entity Test {
+    fn main() {
+        const blocks = getAllCellsOfClass("Block")
+        const saved = {}
+
+        for b in blocks {
+            saved[b.id] = b.color
+        }
+
+        for b in blocks {
+            b.color = [1, 0, 0]
+        }
+
+        // Verify they changed to red
+        for b in blocks {
+            if b.color != [1, 0, 0] {
+                debug.log("Error: not red")
+            }
+        }
+
+        for b in blocks {
+            b.color = saved[b.id]
+        }
+    }
+}
+"#;
+        let mut th = test_host();
+        let c1 = WorldCoord::new(1, 1, 1);
+        let c2 = WorldCoord::new(2, 2, 2);
+        th.world.set_cell(c1, crate::world::CellType::Block);
+        th.world.set_cell(c2, crate::world::CellType::Block);
+        let id1 = th.world.get(c1).unwrap().id;
+        let id2 = th.world.get(c2).unwrap().id;
+        th.world.get_mut(c1).unwrap().color_rgb = glam::Vec3::new(0.1, 0.2, 0.3);
+        th.world.get_mut(c2).unwrap().color_rgb = glam::Vec3::new(0.4, 0.5, 0.6);
+
+        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        let mut instance = scene.runtime.interpreter_mut().instantiate_entity("Test", 1, &mut host).unwrap();
+        scene.runtime.interpreter_mut().call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        let rs1 = th.world.runtime_state.get(&id1).unwrap();
+        let rs2 = th.world.runtime_state.get(&id2).unwrap();
+        assert_eq!(rs1.color_rgb, Some(glam::Vec3::new(0.1, 0.2, 0.3)));
+        assert_eq!(rs2.color_rgb, Some(glam::Vec3::new(0.4, 0.5, 0.6)));
+        assert!(!scene.output().iter().any(|r| r.message.contains("Error")));
+    }
+
+    #[test]
+    fn test_compound_assignment() {
+        let source = r#"
+entity Test {
+    fn main() {
+        x_loc: number = 10
+        x_loc += 5
+        debug.log("x", x_loc)
+
+        const a = [1, 2, 3]
+        a[0] *= 10
+        debug.log("a[0]", a[0])
+
+        const m = {"val": 100}
+        m["val"] -= 50
+        debug.log("m.val", m["val"])
+    }
+}
+"#;
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        let mut instance = scene.runtime.interpreter_mut().instantiate_entity("Test", 1, &mut host).unwrap();
+        scene.runtime.interpreter_mut().call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "x 15"));
+        assert!(output.iter().any(|r| r.message == "a[0] 10"));
+        assert!(output.iter().any(|r| r.message == "m.val 50"));
+    }
+
+    #[test]
+    fn test_nested_mutations() {
+        let source = r#"
+entity Test {
+    fn main() {
+        const data = {
+            "colors": [[1, 0, 0], [0, 1, 0]],
+            "meta": {"id": 42}
+        }
+
+        data["colors"][0][0] = 0.5
+        data["meta"]["name"] = "Ghost"
+
+        debug.log("data.colors[0][0]", data["colors"][0][0])
+        debug.log("data.meta.name", data["meta"]["name"])
+    }
+}
+"#;
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        let mut instance = scene.runtime.interpreter_mut().instantiate_entity("Test", 1, &mut host).unwrap();
+        scene.runtime.interpreter_mut().call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "data.colors[0][0] 0.5"));
+        assert!(output.iter().any(|r| r.message == "data.meta.name Ghost"));
+    }
+
+    #[test]
+    fn test_map_key_types() {
+        let source = r#"
+entity Test {
+    fn main() {
+        const m_loc = {}
+        m_loc[1] = "number"
+        m_loc["1"] = "string"
+
+        debug.log("m[1]", m_loc[1])
+        debug.log("m['1']", m_loc["1"])
+    }
+}
+"#;
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        let mut instance = scene.runtime.interpreter_mut().instantiate_entity("Test", 1, &mut host).unwrap();
+        scene.runtime.interpreter_mut().call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "m[1] number"));
+        assert!(output.iter().any(|r| r.message == "m['1'] string"));
+    }
+
+    #[test]
+    fn test_truthiness() {
+        use crate::scripting::value::HandleKind;
+        let source = r#"
+entity Test {
+    fn main(h: handle) {
+        if nil { debug.log("Error: nil is true") } else { debug.log("nil is false") }
+        if true { debug.log("true is true") }
+        if false { debug.log("Error: false is true") }
+        if h { debug.log("handle is true") }
+    }
+}
+"#;
+        let mut th = test_host();
+        let handle = Value::Handle { kind: HandleKind::Entity, id: 1 };
+        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        let mut instance = scene.runtime.interpreter_mut().instantiate_entity("Test", 1, &mut host).unwrap();
+        scene.runtime.interpreter_mut().call(&mut instance, "main", vec![handle], &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "nil is false"));
+        assert!(output.iter().any(|r| r.message == "true is true"));
+        assert!(output.iter().any(|r| r.message == "handle is true"));
+        assert!(!output.iter().any(|r| r.message.contains("Error")));
+    }
+
+    #[test]
+    fn test_array_indexing_and_mutation() {
+        let source = r#"
+entity Test {
+    fn main() {
+        const a = [10, 20, 30]
+
+        // Read
+        debug.log("a[0]", a[0])
+
+        // Write
+        a[1] = 50
+        debug.log("a[1]", a[1])
+
+        // Compound Write
+        a[2] += 10
+        debug.log("a[2]", a[2])
+
+        // Nested
+        const nested = [[1, 2], [3, 4]]
+        debug.log("nested[1][0]", nested[1][0])
+        nested[1][0] = 99
+        debug.log("nested[1][0] mutated", nested[1][0])
+    }
+}
+"#;
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        let mut instance = scene.runtime.interpreter_mut().instantiate_entity("Test", 1, &mut host).unwrap();
+        scene.runtime.interpreter_mut().call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "a[0] 10"));
+        assert!(output.iter().any(|r| r.message == "a[1] 50"));
+        assert!(output.iter().any(|r| r.message == "a[2] 40"));
+        assert!(output.iter().any(|r| r.message == "nested[1][0] 3"));
+        assert!(output.iter().any(|r| r.message == "nested[1][0] mutated 99"));
+    }
+
+    #[test]
+    fn test_array_indexing_errors() {
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+
+        let cases = [
+            ("const a = [1]\na[1.5]", "non-negative integer"),
+            ("const a = [1]\na[-1]", "non-negative integer"),
+            ("const a = [1]\na[\"0\"]", "expected number"),
+            ("const a = [1]\na[2]", "out of bounds"),
+        ];
+
+        for (code, expected_err) in cases {
+            let source = format!("entity Test {{ fn main() {{\n{}\n }} }}", code);
+            let mut scene = create_scene(&source, &mut host);
+            scene.start(&mut host).unwrap();
+            let mut instance = scene.runtime.interpreter_mut().instantiate_entity("Test", 1, &mut host).unwrap();
+            let result = scene.runtime.interpreter_mut().call(&mut instance, "main", vec![], &mut host);
+            assert!(result.is_err(), "Expected error for: {}", code);
+            assert!(result.unwrap_err().contains(expected_err));
+        }
+    }
+
+    #[test]
+    fn test_collection_reference_semantics() {
+        let source = r#"
+entity Test {
+    fn main() {
+        const a = [1, 2, 3]
+        const b = a
+        b[0] = 99
+        debug.log("a[0]", a[0])
+
+        const m = {}
+        const n = m
+        n["x"] = 10
+        debug.log("m.x", m["x"])
+    }
+}
+"#;
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        let mut instance = scene.runtime.interpreter_mut().instantiate_entity("Test", 1, &mut host).unwrap();
+        scene.runtime.interpreter_mut().call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "a[0] 99"));
+        assert!(output.iter().any(|r| r.message == "m.x 10"));
+    }
+
+    #[test]
+    fn test_map_literals_generalized() {
+        let source = r#"
+entity Test {
+    fn main() {
+        const m = { 1: "number", "1": "string" }
+        debug.log("m[1]", m[1])
+        debug.log("m['1']", m["1"])
+    }
+}
+"#;
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        let mut instance = scene.runtime.interpreter_mut().instantiate_entity("Test", 1, &mut host).unwrap();
+        scene.runtime.interpreter_mut().call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "m[1] number"));
+        assert!(output.iter().any(|r| r.message == "m['1'] string"));
     }
 }

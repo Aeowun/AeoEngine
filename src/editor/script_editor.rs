@@ -96,6 +96,7 @@ pub struct ScriptEditor {
     pub show_problems: bool,
     pub show_output: bool,
     pub output_log: Vec<String>,
+    pub cursor_request: Option<(PathBuf, usize)>,
 }
 
 pub struct SearchResult {
@@ -123,6 +124,7 @@ impl ScriptEditor {
             show_problems: true,
             show_output: true,
             output_log: Vec::new(),
+            cursor_request: None,
         }
     }
 
@@ -380,14 +382,14 @@ impl ScriptEditor {
                         ui.text_edit_singleline(&mut self.new_script_name);
                     });
                     ui.horizontal(|ui| {
-                        if ui.button("Create").clicked() {
+                        if ui.button("Create").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                             if let Some(root) = project_path {
                                 self.create_new_script(root, &self.new_script_name.clone());
                                 self.show_new_script_dialog = false;
                                 self.new_script_name.clear();
                             }
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                             self.show_new_script_dialog = false;
                         }
                     });
@@ -404,7 +406,7 @@ impl ScriptEditor {
                         ui.text_edit_singleline(&mut self.rename_new_name);
                     });
                     ui.horizontal(|ui| {
-                        if ui.button("Rename").clicked() {
+                        if ui.button("Rename").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                             if let (Some(root), Some(target)) = (project_path, self.rename_target.clone()) {
                                 self.rename_script(root, target, &self.rename_new_name.clone());
                                 self.show_rename_dialog = false;
@@ -412,7 +414,7 @@ impl ScriptEditor {
                                 self.rename_target = None;
                             }
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                             self.show_rename_dialog = false;
                             self.rename_target = None;
                         }
@@ -430,7 +432,7 @@ impl ScriptEditor {
                         ui.label(format!("Are you sure you want to delete {:?}?", path.file_name().unwrap_or_default()));
                         ui.add_space(10.0);
                         ui.horizontal(|ui| {
-                            if ui.button("Delete").clicked() {
+                            if ui.button("Delete").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                 let is_dirty = self.open_documents.get(&path).map_or(false, |d| d.dirty);
                                 if is_dirty {
                                     self.closing_path = Some(path.clone());
@@ -439,7 +441,7 @@ impl ScriptEditor {
                                     self.deleting_path = None;
                                 }
                             }
-                            if ui.button("Cancel").clicked() {
+                            if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                                 self.deleting_path = None;
                             }
                         });
@@ -472,7 +474,7 @@ impl ScriptEditor {
                     if ui.button("Don't Save").clicked() {
                         self.apply_dirty_response(project_path, path.clone(), false, false);
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                         self.apply_dirty_response(project_path, path.clone(), false, true);
                     }
                 });
@@ -538,62 +540,63 @@ impl ScriptEditor {
 
             ui.horizontal(|ui| {
                 // LEFT: Explorer
-                let explorer_width = 250.0;
+                let explorer_width = 230.0;
                 ui.allocate_ui(egui::vec2(explorer_width, main_height), |ui| {
-                    ui.vertical(|ui| {
-                        if self.show_search && !self.search_results.is_empty() {
-                            ui.label(RichText::new("SEARCH RESULTS").strong());
-                            egui::ScrollArea::vertical().id_salt("search_results").show(ui, |ui| {
+                    egui::ScrollArea::vertical().id_salt("explorer_scroll").show(ui, |ui| {
+                        ui.vertical(|ui| {
+                            if self.show_search && !self.search_results.is_empty() {
+                                ui.label(RichText::new("SEARCH RESULTS").strong());
                                 for result in &self.search_results {
                                     let filename = result.path.file_name().unwrap_or_default().to_string_lossy();
                                     if ui.selectable_label(false, format!("{}:{} {}", filename, result.line, result.text.trim())).clicked() {
                                         action_open = Some(result.path.clone());
                                     }
                                 }
-                            });
-                            ui.separator();
-                        }
+                                ui.separator();
+                            }
 
-                        ui.label(RichText::new("SCRIPTS").strong());
-                        ui.separator();
-                        egui::ScrollArea::vertical().id_salt("scripts_list").show(ui, |ui| {
+                            ui.label(RichText::new("SCRIPTS").strong());
+                            ui.separator();
                             egui::CollapsingHeader::new("scripts/")
                                 .default_open(true)
                                 .show(ui, |ui| {
                                     for path in &self.scripts_list {
-                                    let filename = path.file_name().unwrap_or_default().to_string_lossy();
-                                    let is_active = self.active_document.as_ref() == Some(path);
-                                    let is_dirty = self.open_documents.get(path).map_or(false, |d| d.dirty);
-                                    let label = if is_dirty {
-                                        format!("{} *", filename)
-                                    } else {
-                                        filename.to_string()
-                                    };
+                                        let filename = path.file_name().unwrap_or_default().to_string_lossy();
+                                        let is_active = self.active_document.as_ref() == Some(path);
+                                        let is_dirty = self.open_documents.get(path).map_or(false, |d| d.dirty);
+                                        let label = if is_dirty {
+                                            format!("{} *", filename)
+                                        } else {
+                                            filename.to_string()
+                                        };
 
-                                    ui.horizontal(|ui| {
-                                        let resp = ui.selectable_label(is_active, label);
-                                        if resp.clicked() {
-                                            action_open = Some(path.clone());
-                                        }
-
-                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                            if ui.small_button("").on_hover_text("Delete script from disk").clicked() {
-                                                self.deleting_path = Some(path.clone());
-                                            }
-                                            if ui.small_button("📝").on_hover_text("Rename script").clicked() {
-                                                self.show_rename_dialog = true;
-                                                self.rename_target = Some(path.clone());
-                                                self.rename_new_name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
-                                            }
-                                            if self.open_documents.contains_key(path) {
-                                                if ui.small_button("❌").on_hover_text("Close document").clicked() {
-                                                    action_close = Some(path.clone());
+                                        ui.horizontal(|ui| {
+                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                if ui.small_button("").on_hover_text("Delete script from disk").clicked() {
+                                                    self.deleting_path = Some(path.clone());
                                                 }
-                                            }
+                                                if ui.small_button("📝").on_hover_text("Rename script").clicked() {
+                                                    self.show_rename_dialog = true;
+                                                    self.rename_target = Some(path.clone());
+                                                    self.rename_new_name = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                                                }
+                                                if self.open_documents.contains_key(path) {
+                                                    if ui.small_button("❌").on_hover_text("Close document").clicked() {
+                                                        action_close = Some(path.clone());
+                                                    }
+                                                }
+
+                                                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                                                    let resp = ui.selectable_label(is_active, label);
+                                                    if resp.clicked() {
+                                                        action_open = Some(path.clone());
+                                                    }
+                                                });
+                                            });
                                         });
-                                    });
-                                }
-                            });
+                                    }
+                                });
                         });
                     });
                 });
@@ -601,8 +604,8 @@ impl ScriptEditor {
                 ui.separator();
 
                 // MIDDLE: Editor
-                let inspector_width = 250.0;
-                let editor_width = ui.available_width() - inspector_width - 10.0;
+                let inspector_width = 240.0;
+                let editor_width = (ui.available_width() - inspector_width - 20.0).max(100.0);
 
                 ui.allocate_ui(egui::vec2(editor_width, main_height), |ui| {
                     if let Some(path) = self.active_document.clone() {
@@ -616,37 +619,62 @@ impl ScriptEditor {
                                     }
                                 });
 
-                                egui::ScrollArea::both().show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        // Gutter for line numbers
-                                        let line_count = doc.source.lines().count().max(1);
-                                        let gutter_width = (line_count.to_string().len() as f32 * 8.0).max(24.0);
+                                let available_h = ui.available_height();
+                                egui::ScrollArea::vertical()
+                                    .id_salt("editor_v_scroll")
+                                    .max_height(available_h)
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            // Gutter for line numbers
+                                            let line_count = doc.source.lines().count().max(1);
+                                            let gutter_width = (line_count.to_string().len() as f32 * 8.0).max(24.0);
 
-                                        ui.allocate_ui(egui::vec2(gutter_width, ui.available_height()), |ui| {
-                                            let mut gutter_text = String::new();
-                                            for i in 1..=line_count {
-                                                gutter_text.push_str(&format!("{}\n", i));
-                                            }
-                                            ui.add(egui::Label::new(egui::RichText::new(gutter_text)
-                                                .monospace()
-                                                .color(egui::Color32::from_gray(120))
-                                                .size(12.0)));
+                                            ui.allocate_ui(egui::vec2(gutter_width, ui.available_height()), |ui| {
+                                                let mut gutter_text = String::new();
+                                                for i in 1..=line_count {
+                                                    gutter_text.push_str(&format!("{}\n", i));
+                                                }
+                                                ui.add(egui::Label::new(egui::RichText::new(gutter_text)
+                                                    .monospace()
+                                                    .color(egui::Color32::from_gray(120))
+                                                    .size(12.0)));
+                                            });
+
+                                            egui::ScrollArea::horizontal()
+                                                .id_salt("editor_h_scroll")
+                                                .show(ui, |ui| {
+                                                    ui.push_id(&path, |ui| {
+                                                        let theme = egui::TextEdit::multiline(&mut doc.source)
+                                                            .font(egui::TextStyle::Monospace)
+                                                            .code_editor()
+                                                            .desired_width(f32::INFINITY)
+                                                            .desired_rows(line_count)
+                                                            .lock_focus(true);
+
+                                                        let response = ui.add(theme);
+
+                                                        let mut clear_req = false;
+                                                        if let Some((req_path, offset)) = &self.cursor_request {
+                                                            if req_path == &path {
+                                                                response.request_focus();
+                                                                let mut state = egui::text_edit::TextEditState::load(ui.ctx(), response.id).unwrap_or_default();
+                                                                state.set_ccursor_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(*offset))));
+                                                                state.store(ui.ctx(), response.id);
+                                                                clear_req = true;
+                                                            }
+                                                        }
+                                                        if clear_req {
+                                                            self.cursor_request = None;
+                                                        }
+
+                                                        if response.changed() {
+                                                            doc.dirty = doc.source != doc.original_source;
+                                                            doc.reparse();
+                                                        }
+                                                    });
+                                                });
                                         });
-
-                                        let theme = egui::TextEdit::multiline(&mut doc.source)
-                                            .font(egui::TextStyle::Monospace)
-                                            .code_editor()
-                                            .desired_width(f32::INFINITY)
-                                            .lock_focus(true);
-
-                                        let response = ui.add(theme);
-
-                                        if response.changed() {
-                                            doc.dirty = doc.source != doc.original_source;
-                                            doc.reparse();
-                                        }
                                     });
-                                });
                             });
                         }
                     } else {
@@ -660,7 +688,9 @@ impl ScriptEditor {
 
                 // RIGHT: Inspector
                 ui.allocate_ui(egui::vec2(inspector_width, main_height), |ui| {
-                    self.draw_inspector(ui);
+                    egui::ScrollArea::vertical().id_salt("inspector_scroll").show(ui, |ui| {
+                        self.draw_inspector(ui);
+                    });
                 });
             });
 
@@ -765,31 +795,65 @@ impl ScriptEditor {
     }
 
     fn draw_problems(&mut self, ui: &mut egui::Ui) {
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            if let Some(path) = &self.active_document {
-                if let Some(doc) = self.open_documents.get(path) {
-                    for diag in doc.diagnostics.as_slice() {
-                        let (start, _) = doc.source_map.span_positions(diag.location.span);
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+
+        let mut click_action = None;
+
+        if let Some(path) = &self.active_document {
+            if let Some(doc) = self.open_documents.get(path) {
+                let mut diags_info = Vec::new();
+                for diag in doc.diagnostics.as_slice() {
+                    let (start, _) = doc.source_map.span_positions(diag.location.span);
+                    diags_info.push((
+                        diag.severity.clone(),
+                        diag.location.file.clone(),
+                        start.line,
+                        start.column,
+                        diag.message.clone(),
+                        diag.location.span.start as usize,
+                    ));
+                }
+
+                egui::ScrollArea::vertical().id_salt("problems_scroll").show(ui, |ui| {
+                    for info in diags_info {
+                        let (severity, file, line, col, message, offset) = info;
+                        let color = match severity {
+                            crate::scripting::diagnostic::DiagnosticSeverity::Error => egui::Color32::RED,
+                            crate::scripting::diagnostic::DiagnosticSeverity::Warning => egui::Color32::YELLOW,
+                            _ => egui::Color32::WHITE,
+                        };
+
                         ui.horizontal(|ui| {
-                            let color = match diag.severity {
-                                crate::scripting::diagnostic::DiagnosticSeverity::Error => egui::Color32::RED,
-                                crate::scripting::diagnostic::DiagnosticSeverity::Warning => egui::Color32::YELLOW,
-                                _ => egui::Color32::WHITE,
-                            };
-                            ui.colored_label(color, format!("{:?}", diag.severity));
-                            ui.label(format!("{}:{}:{}  {}",
-                                diag.location.file.as_deref().unwrap_or("unknown"),
-                                start.line, start.column,
-                                diag.message));
+                            ui.colored_label(color, format!("{:?}", severity));
+                            let msg = format!("{}:{}:{}  {}",
+                                file.as_deref().unwrap_or("unknown"),
+                                line, col, message);
+
+                            let row_resp = ui.selectable_label(false, msg);
+                            if row_resp.clicked() {
+                                if let Some(ref f) = file {
+                                    if let Some(p) = self.scripts_list.iter().find(|p| p.file_name().map_or(false, |n| n.to_string_lossy() == *f)).cloned() {
+                                        click_action = Some((p, offset));
+                                    }
+                                } else if let Some(p) = &self.active_document {
+                                    click_action = Some((p.clone(), offset));
+                                }
+                            }
                         });
                     }
-                }
+                });
             }
-        });
+        }
+
+        if let Some((p, offset)) = click_action {
+            self.open_file(p.clone());
+            self.cursor_request = Some((p, offset));
+        }
     }
 
     fn draw_output(&mut self, ui: &mut egui::Ui) {
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+        egui::ScrollArea::vertical().id_salt("output_scroll").show(ui, |ui| {
             for line in &self.output_log {
                 ui.label(line);
             }

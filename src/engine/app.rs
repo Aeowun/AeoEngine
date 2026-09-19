@@ -652,6 +652,7 @@ impl App {
                     };
                     if let Err(e) = scene.update(frame_time, &mut context) {
                         eprintln!("Scripting error: {}", e);
+                        self.editor.terminal_output.push_str(&format!("[{}] [ERROR] Scripting runtime error: {}\n", get_timestamp(), e));
                     }
 
                     for record in scene.drain_output() {
@@ -854,14 +855,14 @@ impl App {
                 };
                 if let Err(e) = scene.start(&mut host) {
                     eprintln!("Failed to start script scene: {}", e);
-                    self.editor.terminal_output.push_str(&format!("> Startup error: {}\n", e));
+                    self.editor.terminal_output.push_str(&format!("[{}] [ERROR] Scripting startup error: {}\n", get_timestamp(), e));
                 } else {
                     self.script_scene = Some(scene);
                 }
             }
             Err(e) => {
                 eprintln!("Scripting failed to load: {}", e);
-                self.editor.terminal_output.push_str(&format!("> Load error: {}\n", e));
+                self.editor.terminal_output.push_str(&format!("[{}] [ERROR] Scripting load error: {}\n", get_timestamp(), e));
             }
         }
     }
@@ -898,6 +899,7 @@ impl App {
             }];
             if let Err(e) = scene.dispatch_event("PlayerSpawned", args, &mut context) {
                 eprintln!("Failed to dispatch PlayerSpawned: {}", e);
+                self.editor.terminal_output.push_str(&format!("[{}] [ERROR] Event PlayerSpawned error: {}\n", get_timestamp(), e));
             }
         }
     }
@@ -1288,7 +1290,7 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
                         "id" => return Ok(Some(Value::Number(cell.id as f64))),
                         "name" => return Ok(Some(Value::String(cell.entity_identity.clone().unwrap_or_else(|| "Cell".to_string())))),
                         "cellType" => return Ok(Some(Value::String(format!("{:?}", cell.cell_type)))),
-                        "position" => return Ok(Some(Value::Array(vec![
+                        "position" => return Ok(Some(Value::array(vec![
                             Value::Number(coord.x as f64),
                             Value::Number(coord.y as f64),
                             Value::Number(coord.z as f64),
@@ -1299,7 +1301,7 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
                         "anchored" => return Ok(Some(Value::Bool(self.world.is_cell_anchored(coord)))),
                         "color" => {
                             let color = self.world.get_effective_color(coord);
-                            return Ok(Some(Value::Array(vec![
+                            return Ok(Some(Value::array(vec![
                                 Value::Number(color.x as f64),
                                 Value::Number(color.y as f64),
                                 Value::Number(color.z as f64),
@@ -1307,7 +1309,7 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
                         }
                         "offset" => {
                             let offset = self.world.get_visual_offset(coord);
-                            return Ok(Some(Value::Array(vec![
+                            return Ok(Some(Value::array(vec![
                                 Value::Number(offset.x as f64),
                                 Value::Number(offset.y as f64),
                                 Value::Number(offset.z as f64),
@@ -1363,23 +1365,25 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
                         }
                         "color" => {
                             let basket = value.as_basket()?;
-                            if basket.len() != 3 {
+                            let borrowed = basket.borrow();
+                            if borrowed.len() != 3 {
                                 return Err("color must be a basket of 3 numbers [r, g, b]".to_string());
                             }
-                            let r = basket[0].as_number()? as f32;
-                            let g = basket[1].as_number()? as f32;
-                            let b = basket[2].as_number()? as f32;
+                            let r = borrowed[0].as_number()? as f32;
+                            let g = borrowed[1].as_number()? as f32;
+                            let b = borrowed[2].as_number()? as f32;
                             self.world.set_cell_color_runtime(coord, glam::Vec3::new(r, g, b));
                             return Ok(());
                         }
                         "offset" => {
                             let basket = value.as_basket()?;
-                            if basket.len() != 3 {
+                            let borrowed = basket.borrow();
+                            if borrowed.len() != 3 {
                                 return Err("offset must be a basket of 3 numbers [x, y, z]".to_string());
                             }
-                            let x = basket[0].as_number()? as f32;
-                            let y = basket[1].as_number()? as f32;
-                            let z = basket[2].as_number()? as f32;
+                            let x = borrowed[0].as_number()? as f32;
+                            let y = borrowed[1].as_number()? as f32;
+                            let z = borrowed[2].as_number()? as f32;
                             self.world.set_visual_offset_runtime(coord, glam::Vec3::new(x, y, z));
                             return Ok(());
                         }
