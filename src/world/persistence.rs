@@ -270,114 +270,121 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
             if let (Some(x), Some(y), Some(z)) = (x, y, z) {
                 let coord = WorldCoord::new(x, y, z);
-                let id = if has_id {
-                    parts[1].parse::<u64>().ok()
+                let id_val = if has_id {
+                    parts[1].parse::<u64>().unwrap_or(0)
                 } else {
-                    None
+                    0
                 };
+                let is_legacy = id_val == 0;
 
                 if block_type == "BLOCK" {
                     world.set_cell(coord, CellType::Block);
-                    if id.is_none() { legacy_cells.push(coord); }
-                    else {
-                        let id_val = id.unwrap();
-                        if let Some(cell) = world.get_mut(coord) {
+                    if is_legacy {
+                        legacy_cells.push(coord);
+                    }
+                    if let Some(cell) = world.get_mut(coord) {
+                        if !is_legacy {
                             cell.id = id_val;
-                            parse_block_properties(cell, &parts, offset);
-                            if parts.len() >= offset + 12 {
-                                let identity = parts[offset + 11];
-                                if identity != "None" {
-                                    cell.entity_identity = Some(identity.to_string());
-                                }
+                        }
+                        parse_block_properties(cell, &parts, offset);
+                        if parts.len() >= offset + 12 {
+                            let identity = parts[offset + 11];
+                            if identity != "None" {
+                                cell.entity_identity = Some(identity.to_string());
                             }
                         }
                     }
                 } else if block_type == "FX_BLOCK" {
                     world.set_cell(coord, CellType::FxBlock);
-                    if id.is_none() { legacy_cells.push(coord); }
-                    else {
-                        let id_val = id.unwrap();
-                        if let Some(cell) = world.get_mut(coord) {
+                    if is_legacy {
+                        legacy_cells.push(coord);
+                    }
+                    if let Some(cell) = world.get_mut(coord) {
+                        if !is_legacy {
                             cell.id = id_val;
-                            parse_block_properties(cell, &parts, offset);
-                            if parts.len() >= offset + 12 {
-                                let identity = parts[offset + 11];
-                                if identity != "None" {
-                                    cell.entity_identity = Some(identity.to_string());
-                                }
+                        }
+                        parse_block_properties(cell, &parts, offset);
+                        if parts.len() >= offset + 12 {
+                            let identity = parts[offset + 11];
+                            if identity != "None" {
+                                cell.entity_identity = Some(identity.to_string());
                             }
                         }
                     }
                 } else if block_type == "SPAWN_POINT" {
                     world.set_cell(coord, CellType::SpawnPoint);
-                    if id.is_none() { legacy_cells.push(coord); }
-                    else {
-                        let id_val = id.unwrap();
-                        if let Some(cell) = world.get_mut(coord) {
+                    if is_legacy {
+                        legacy_cells.push(coord);
+                    }
+                    if let Some(cell) = world.get_mut(coord) {
+                        if !is_legacy {
                             cell.id = id_val;
-                            parse_block_properties(cell, &parts, offset);
-                            if parts.len() >= offset + 12 {
-                                let identity = parts[offset + 11];
-                                if identity != "None" {
-                                    cell.entity_identity = Some(identity.to_string());
-                                }
+                        }
+                        parse_block_properties(cell, &parts, offset);
+                        if parts.len() >= offset + 12 {
+                            let identity = parts[offset + 11];
+                            if identity != "None" {
+                                cell.entity_identity = Some(identity.to_string());
                             }
                         }
                     }
                 } else if block_type == "PLAYER" {
                     world.set_cell(coord, CellType::Player);
-                    if id.is_none() { legacy_cells.push(coord); }
-                    else {
-                        let id_val = id.unwrap();
-                        if let Some(cell) = world.get_mut(coord) {
+                    if is_legacy {
+                        legacy_cells.push(coord);
+                    }
+                    if let Some(cell) = world.get_mut(coord) {
+                        if !is_legacy {
                             cell.id = id_val;
-                            parse_block_properties(cell, &parts, offset);
-                            if parts.len() >= offset + 12 {
-                                let identity = parts[offset + 11];
-                                if identity != "None" {
-                                    cell.entity_identity = Some(identity.to_string());
-                                }
+                        }
+                        parse_block_properties(cell, &parts, offset);
+                        if parts.len() >= offset + 12 {
+                            let identity = parts[offset + 11];
+                            if identity != "None" {
+                                cell.entity_identity = Some(identity.to_string());
                             }
                         }
                     }
                 } else if block_type == "NPC" {
                     world.set_cell(coord, CellType::NPC);
-                    if id.is_none() { legacy_cells.push(coord); }
-                    else {
-                        let id_val = id.unwrap();
-                        if let Some(cell) = world.get_mut(coord) {
+                    if is_legacy {
+                        legacy_cells.push(coord);
+                    }
+                    if let Some(cell) = world.get_mut(coord) {
+                        if !is_legacy {
                             cell.id = id_val;
-                            parse_block_properties(cell, &parts, offset);
-                            if parts.len() >= offset + 12 {
-                                let identity = parts[offset + 11];
-                                if identity != "None" {
-                                    cell.entity_identity = Some(identity.to_string());
-                                }
+                        }
+                        parse_block_properties(cell, &parts, offset);
+                        if parts.len() >= offset + 12 {
+                            let identity = parts[offset + 11];
+                            if identity != "None" {
+                                cell.entity_identity = Some(identity.to_string());
                             }
                         }
                     }
                 } else if block_type == "LIGHT" {
                     world.set_cell(coord, CellType::Light);
-                    if id.is_none() { legacy_cells.push(coord); }
-                    else {
-                        let id_val = id.unwrap();
-                        if let Some(cell) = world.get_mut(coord) {
+                    if is_legacy {
+                        legacy_cells.push(coord);
+                    }
+                    if let Some(cell) = world.get_mut(coord) {
+                        if !is_legacy {
                             cell.id = id_val;
-                            let r = parts[offset + 4].parse::<f32>().unwrap_or(1.0);
-                            let g = parts[offset + 5].parse::<f32>().unwrap_or(1.0);
-                            let b = parts[offset + 6].parse::<f32>().unwrap_or(1.0);
-                            cell.light_color = Vec3::new(r, g, b);
-                            cell.light_intensity = parts[offset + 7].parse::<f32>().unwrap_or(5.0);
-                            cell.light_range = parts[offset + 8].parse::<f32>().unwrap_or(10.0);
-                            cell.light_shadows = parts[offset + 9].parse::<bool>().unwrap_or(true);
-                            if parts.len() >= offset + 11 {
-                                cell.light_enabled = parts[offset + 10].parse::<bool>().unwrap_or(true);
-                            }
-                            if parts.len() >= offset + 12 {
-                                let identity = parts[offset + 11];
-                                if identity != "None" {
-                                    cell.entity_identity = Some(identity.to_string());
-                                }
+                        }
+                        let r = parts[offset + 4].parse::<f32>().unwrap_or(1.0);
+                        let g = parts[offset + 5].parse::<f32>().unwrap_or(1.0);
+                        let b = parts[offset + 6].parse::<f32>().unwrap_or(1.0);
+                        cell.light_color = Vec3::new(r, g, b);
+                        cell.light_intensity = parts[offset + 7].parse::<f32>().unwrap_or(5.0);
+                        cell.light_range = parts[offset + 8].parse::<f32>().unwrap_or(10.0);
+                        cell.light_shadows = parts[offset + 9].parse::<bool>().unwrap_or(true);
+                        if parts.len() >= offset + 11 {
+                            cell.light_enabled = parts[offset + 10].parse::<bool>().unwrap_or(true);
+                        }
+                        if parts.len() >= offset + 12 {
+                            let identity = parts[offset + 11];
+                            if identity != "None" {
+                                cell.entity_identity = Some(identity.to_string());
                             }
                         }
                     }
@@ -767,6 +774,71 @@ mod tests {
         assert_eq!(loaded_world.gravity.y, -9.81);
         assert!(loaded_world.get(WorldCoord::new(0, 0, 0)).is_some());
         assert!(loaded_world.script_bindings.is_empty());
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_build_path_id_preservation() {
+        // This exercises the fix for the Build tool bug where generated IDs
+        // were overwritten by the template's zero ID.
+        let mut world = World::new();
+        let coord = WorldCoord::new(5, 5, 5);
+
+        // 1. Template has ID 0.
+        let template = Cell::new_block();
+        assert_eq!(template.id, 0);
+
+        // 2. World generates a real ID.
+        world.set_cell(coord, template.cell_type);
+        let generated_id = world.get(coord).unwrap().id;
+        assert_ne!(generated_id, 0);
+
+        // 3. Apply fix-pattern (simulating EditorTool::Build logic in App::on_mouse_button).
+        if let Some(target) = world.get_mut(coord) {
+            let id = target.id;
+            *target = template.clone();
+            target.id = id;
+        }
+
+        // 4. Verify the World cell kept the real ID.
+        assert_eq!(world.get(coord).unwrap().id, generated_id);
+    }
+
+    #[test]
+    fn test_corrupted_id_migration() {
+        // Verify that loading a file with zero IDs (produced by the Build bug)
+        // correctly migrates them to new unique non-zero IDs while preserving
+        // valid existing IDs.
+        let path = Path::new("test_corrupted_ids.dat");
+        {
+            let mut file = File::create(path).unwrap();
+            // Corrupted record 1 (id=0)
+            writeln!(file, "BLOCK 0 10 10 10 true true true Default 0.5 0.5 0.5").unwrap();
+            // Corrupted record 2 (id=0)
+            writeln!(file, "LIGHT 0 20 20 20 1 1 1 5 10 true true").unwrap();
+            // Valid record (id=88888888)
+            writeln!(file, "BLOCK 88888888 30 30 30 true true true Default 0.1 0.2 0.3").unwrap();
+        }
+
+        let mut world = World::new();
+        load_world(&mut world, path).unwrap();
+
+        let c1 = world.get(WorldCoord::new(10, 10, 10)).unwrap();
+        let c2 = world.get(WorldCoord::new(20, 20, 20)).unwrap();
+        let c3 = world.get(WorldCoord::new(30, 30, 30)).unwrap();
+
+        // All zero IDs become non-zero.
+        assert_ne!(c1.id, 0);
+        assert_ne!(c2.id, 0);
+
+        // Resulting IDs are unique.
+        assert_ne!(c1.id, c2.id);
+        assert_ne!(c1.id, c3.id);
+        assert_ne!(c2.id, c3.id);
+
+        // Valid pre-existing IDs remain unchanged.
+        assert_eq!(c3.id, 88888888);
 
         fs::remove_file(path).ok();
     }

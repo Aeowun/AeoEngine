@@ -99,12 +99,12 @@ impl Editor {
             hovered_cell: None,
             selected_coord: None,
             selected_coords: Vec::new(),
-            current_tool: EditorTool::Navigate,
+            current_tool: EditorTool::Select,
 
             navigation_window: NavigationWindow::new(),
             show_properties_window: true,
             show_world_window: true,
-            plane_picking: true,
+            plane_picking: false,
 
             right_panel_split: 0.5,
 

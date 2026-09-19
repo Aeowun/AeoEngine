@@ -161,7 +161,8 @@ pub struct PhysicsWorld {
     pub bodies: Vec<PhysicsBody>,
 
     // Static colliders are blocks that are solid and anchored.
-    pub static_colliders: HashSet<WorldCoord>,
+    // They are stored with their effective runtime position.
+    pub static_colliders: Vec<(u64, Vec3)>,
 
     id_gen: PhysicsIdGenerator,
 
@@ -173,7 +174,7 @@ impl PhysicsWorld {
     pub fn new() -> Self {
         Self {
             bodies: Vec::new(),
-            static_colliders: HashSet::new(),
+            static_colliders: Vec::new(),
             id_gen: PhysicsIdGenerator::new(),
             step_count: 0,
         }
@@ -257,63 +258,45 @@ impl PhysicsWorld {
                 let b_max = body.max_corner();
                 let b_center = (b_min + b_max) * 0.5;
 
-                let x_start = b_min.x.floor() as i32;
-                let x_end = b_max.x.ceil() as i32;
-                let y_start = b_min.y.floor() as i32;
-                let y_end = b_max.y.ceil() as i32;
-                let z_start = b_min.z.floor() as i32;
-                let z_end = b_max.z.ceil() as i32;
-
                 let mut best_collision: Option<(Vec3, f32)> = None;
                 let mut min_overlap = f32::MAX;
 
-                for x in x_start..x_end {
-                    for y in y_start..y_end {
-                        for z in z_start..z_end {
-                            let coord = WorldCoord::new(x, y, z);
-                            if self.static_colliders.contains(&coord) {
-                                let v_min = Vec3::new(x as f32, y as f32, z as f32);
-                                let v_max = v_min + Vec3::ONE;
-                                let v_center = v_min + Vec3::new(0.5, 0.5, 0.5);
+                for (_cell_id, v_min) in &self.static_colliders {
+                    let v_max = v_min + Vec3::ONE;
+                    let v_center = v_min + Vec3::new(0.5, 0.5, 0.5);
 
-                                // Rule: We only resolve actual geometric overlap. Touching is contact.
-                                if Self::aabb_overlap_static(b_min, b_max, v_min, v_max) {
-                                    let overlap_x = b_max.x.min(v_max.x) - b_min.x.max(v_min.x);
-                                    let overlap_y = b_max.y.min(v_max.y) - b_min.y.max(v_min.y);
-                                    let overlap_z = b_max.z.min(v_max.z) - b_min.z.max(v_min.z);
+                    if Self::aabb_overlap_static(b_min, b_max, *v_min, v_max) {
+                        let overlap_x = b_max.x.min(v_max.x) - b_min.x.max(v_min.x);
+                        let overlap_y = b_max.y.min(v_max.y) - b_min.y.max(v_min.y);
+                        let overlap_z = b_max.z.min(v_max.z) - b_min.z.max(v_min.z);
 
-                                    // Identify the normal based only on center relative position
-                                    // on the smallest overlap axis.
-                                    let (axis_normal, depth) =
-                                        if overlap_x < overlap_y && overlap_x < overlap_z {
-                                            let n = if b_center.x < v_center.x {
-                                                Vec3::NEG_X
-                                            } else {
-                                                Vec3::X
-                                            };
-                                            (n, overlap_x)
-                                        } else if overlap_y < overlap_z {
-                                            let n = if b_center.y < v_center.y {
-                                                Vec3::NEG_Y
-                                            } else {
-                                                Vec3::Y
-                                            };
-                                            (n, overlap_y)
-                                        } else {
-                                            let n = if b_center.z < v_center.z {
-                                                Vec3::NEG_Z
-                                            } else {
-                                                Vec3::Z
-                                            };
-                                            (n, overlap_z)
-                                        };
+                        let (axis_normal, depth) =
+                            if overlap_x < overlap_y && overlap_x < overlap_z {
+                                let n = if b_center.x < v_center.x {
+                                    Vec3::NEG_X
+                                } else {
+                                    Vec3::X
+                                };
+                                (n, overlap_x)
+                            } else if overlap_y < overlap_z {
+                                let n = if b_center.y < v_center.y {
+                                    Vec3::NEG_Y
+                                } else {
+                                    Vec3::Y
+                                };
+                                (n, overlap_y)
+                            } else {
+                                let n = if b_center.z < v_center.z {
+                                    Vec3::NEG_Z
+                                } else {
+                                    Vec3::Z
+                                };
+                                (n, overlap_z)
+                            };
 
-                                    if depth < min_overlap {
-                                        min_overlap = depth;
-                                        best_collision = Some((axis_normal, depth));
-                                    }
-                                }
-                            }
+                        if depth < min_overlap {
+                            min_overlap = depth;
+                            best_collision = Some((axis_normal, depth));
                         }
                     }
                 }
@@ -594,23 +577,10 @@ impl PhysicsWorld {
         let epsilon = 0.01;
         let test_min = body.min_corner() - normal * epsilon;
         let test_max = body.max_corner() - normal * epsilon;
-        let x_start = test_min.x.floor() as i32;
-        let x_end = test_max.x.ceil() as i32;
-        let y_start = test_min.y.floor() as i32;
-        let y_end = test_max.y.ceil() as i32;
-        let z_start = test_min.z.floor() as i32;
-        let z_end = test_max.z.ceil() as i32;
-        for x in x_start..x_end {
-            for y in y_start..y_end {
-                for z in z_start..z_end {
-                    if self.static_colliders.contains(&WorldCoord::new(x, y, z)) {
-                        let v_min = Vec3::new(x as f32, y as f32, z as f32);
-                        let v_max = v_min + Vec3::ONE;
-                        if Self::aabb_overlap_static(test_min, test_max, v_min, v_max) {
-                            return true;
-                        }
-                    }
-                }
+        for (_cell_id, v_min) in &self.static_colliders {
+            let v_max = v_min + Vec3::ONE;
+            if Self::aabb_overlap_static(test_min, test_max, *v_min, v_max) {
+                return true;
             }
         }
         false
@@ -624,27 +594,17 @@ impl PhysicsWorld {
             }
             let min = body.min_corner();
             let max = body.max_corner();
-            let x_start = min.x.floor() as i32;
-            let x_end = max.x.ceil() as i32;
-            let y_start = min.y.floor() as i32;
-            let y_end = max.y.ceil() as i32;
-            let z_start = min.z.floor() as i32;
-            let z_end = max.z.ceil() as i32;
-            for x in x_start..x_end {
-                for y in y_start..y_end {
-                    for z in z_start..z_end {
-                        let coord = WorldCoord::new(x, y, z);
-                        if self.static_colliders.contains(&coord) {
-                            let voxel_min = Vec3::new(x as f32, y as f32, z as f32);
-                            let voxel_max = voxel_min + Vec3::ONE;
-                            if Self::aabb_overlap_static(min, max, voxel_min, voxel_max) {
-                                collisions.push(CollisionRecord {
-                                    body_id: body.id,
-                                    block_coord: coord,
-                                });
-                            }
-                        }
-                    }
+            for (_cell_id, v_min) in &self.static_colliders {
+                let voxel_max = v_min + Vec3::ONE;
+                if Self::aabb_overlap_static(min, max, *v_min, voxel_max) {
+                    collisions.push(CollisionRecord {
+                        body_id: body.id,
+                        block_coord: WorldCoord::new(
+                            v_min.x.round() as i32,
+                            v_min.y.round() as i32,
+                            v_min.z.round() as i32,
+                        ),
+                    });
                 }
             }
         }
@@ -661,8 +621,7 @@ impl PhysicsWorld {
     }
 
     pub fn register_from_world(&mut self, world: &World) {
-        self.bodies.clear();
-        self.static_colliders.clear();
+        self.bodies.clear(); self.static_colliders.clear();
         self.id_gen = PhysicsIdGenerator::new();
         self.step_count = 0;
         for coord in world.active_blocks() {
@@ -676,7 +635,8 @@ impl PhysicsWorld {
 
                 if anchored {
                     if solid {
-                        self.static_colliders.insert(coord);
+                        let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32) + world.get_visual_offset(coord);
+                        self.add_static_collider(cell.id, pos);
                     }
                 } else {
                     let id = self.id_gen.next();
@@ -702,6 +662,10 @@ impl PhysicsWorld {
         );
     }
 
+    pub fn add_static_collider(&mut self, cell_id: u64, position: Vec3) {
+        self.static_colliders.push((cell_id, position));
+    }
+
     /// Reconciles the physics simulation state with the World's effective state
     /// (authored data + runtime overrides).
     pub fn sync_with_world(&mut self, world: &World) {
@@ -720,7 +684,8 @@ impl PhysicsWorld {
                     // Transition: Dynamic -> Anchored (Static)
                     let _body = self.bodies.remove(i);
                     if solid {
-                        self.static_colliders.insert(coord);
+                        let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32) + world.get_visual_offset(coord);
+                        self.static_colliders.push((cell_id, pos));
                     }
                     // Since we removed, don't increment i.
                     continue;
@@ -748,13 +713,18 @@ impl PhysicsWorld {
 
                 if anchored {
                     if solid {
-                        self.static_colliders.insert(coord);
+                        let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32) + world.get_visual_offset(coord);
+                        if let Some(existing) = self.static_colliders.iter_mut().find(|(id, _)| *id == cell_id) {
+                            existing.1 = pos;
+                        } else {
+                            self.static_colliders.push((cell_id, pos));
+                        }
                     } else {
-                        self.static_colliders.remove(&coord);
+                        self.static_colliders.retain(|(id, _)| *id != cell_id);
                     }
                 } else {
                     // Effective dynamic
-                    self.static_colliders.remove(&coord);
+                    self.static_colliders.retain(|(id, _)| *id != cell_id);
 
                     if !existing_body_cell_ids.contains(&cell_id) {
                         // Create body for cell that was previously anchored
@@ -777,9 +747,9 @@ impl PhysicsWorld {
         }
 
         // 3. Clean up static colliders for coordinates that no longer exist or changed.
-        self.static_colliders.retain(|coord| {
-            if let Some(_cell) = world.get(*coord) {
-                world.is_cell_anchored(*coord) && world.is_cell_solid(*coord)
+        self.static_colliders.retain(|(cell_id, _)| {
+            if let Some(coord) = world.resolve_cell_id(*cell_id) {
+                world.is_cell_anchored(coord) && world.is_cell_solid(coord)
             } else {
                 false
             }
@@ -951,13 +921,13 @@ mod tests {
             cell.solid = true;
         }
         p_world.register_from_world(&world);
-        assert!(p_world.static_colliders.contains(&c1));
+        assert!(p_world.static_colliders.iter().any(|(_, pos)| *pos == Vec3::new(c1.x as f32, c1.y as f32, c1.z as f32)));
     }
 
     #[test]
     fn test_collision_detection() {
         let mut p_world = PhysicsWorld::new();
-        p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
+        p_world.add_static_collider(0, Vec3::ZERO);
         p_world.bodies.push(PhysicsBody::new(
             PhysicsBodyId(1),
             0,
@@ -970,7 +940,7 @@ mod tests {
     #[test]
     fn test_physics_floor_collision_resolution() {
         let mut p_world = PhysicsWorld::new();
-        p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
+        p_world.add_static_collider(0, Vec3::ZERO);
         let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 0.9, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(0.0, -10.0, 0.0);
         p_world.bodies.push(body);
@@ -982,7 +952,7 @@ mod tests {
     #[test]
     fn test_physics_tangential_velocity_preserved() {
         let mut p_world = PhysicsWorld::new();
-        p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
+        p_world.add_static_collider(0, Vec3::ZERO);
         let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 0.9, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(5.0, -10.0, 0.0);
         p_world.bodies.push(body);
@@ -994,7 +964,7 @@ mod tests {
     #[test]
     fn test_physics_wall_collision_resolution() {
         let mut p_world = PhysicsWorld::new();
-        p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
+        p_world.add_static_collider(0, Vec3::ZERO);
         let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(-0.1, 0.0, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(10.0, 0.0, 0.0);
         p_world.bodies.push(body);
@@ -1027,7 +997,7 @@ mod tests {
     #[test]
     fn test_physics_touching_no_push() {
         let mut p_world = PhysicsWorld::new();
-        p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
+        p_world.add_static_collider(0, Vec3::ZERO);
         p_world.bodies.push(PhysicsBody::new(
             PhysicsBodyId(1),
             0,
@@ -1041,8 +1011,8 @@ mod tests {
     #[test]
     fn test_physics_adjacent_floors_stable() {
         let mut p_world = PhysicsWorld::new();
-        p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
-        p_world.static_colliders.insert(WorldCoord::new(1, 0, 0));
+        p_world.add_static_collider(0, Vec3::ZERO);
+        p_world.add_static_collider(0, Vec3::ZERO);
         let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.5, 0.9, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(0.0, -10.0, 0.0);
         p_world.bodies.push(body);
@@ -1054,7 +1024,7 @@ mod tests {
     #[test]
     fn test_physics_touching_adjacent_regression() {
         let mut p_world = PhysicsWorld::new();
-        p_world.static_colliders.insert(WorldCoord::new(0, -1, -1));
+        p_world.add_static_collider(0, Vec3::ZERO);
         let pos = Vec3::new(0.0, 0.0, -1.0);
         p_world
             .bodies
@@ -1068,7 +1038,7 @@ mod tests {
         let mut p_world = PhysicsWorld::new();
         let gravity = Vec3::new(0.0, -10.0, 0.0);
         let dt = SIMULATION_DT;
-        p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
+        p_world.add_static_collider(0, Vec3::ZERO);
         let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 0.9, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(0.0, -10.0, 0.0);
         p_world.bodies.push(body);
@@ -1089,7 +1059,7 @@ mod tests {
     #[test]
     fn test_physics_tangential_sliding_while_resting() {
         let mut p_world = PhysicsWorld::new();
-        p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
+        p_world.add_static_collider(0, Vec3::ZERO);
         let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 1.0, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(5.0, 0.0, 0.0);
         body.static_contact_normal = Some(Vec3::Y);
@@ -1103,7 +1073,7 @@ mod tests {
     #[test]
     fn test_physics_contact_clearing_when_moving_away() {
         let mut p_world = PhysicsWorld::new();
-        p_world.static_colliders.insert(WorldCoord::new(0, 0, 0));
+        p_world.add_static_collider(0, Vec3::ZERO);
         let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 1.0, 0.0), Vec3::ONE);
         body.velocity = Vec3::new(0.0, 10.0, 0.0);
         body.static_contact_normal = Some(Vec3::Y);
@@ -1116,7 +1086,7 @@ mod tests {
     #[test]
     fn test_physics_arbitrary_gravity_contact() {
         let mut p_world = PhysicsWorld::new();
-        p_world.static_colliders.insert(WorldCoord::new(1, 0, 0));
+        p_world.add_static_collider(0, Vec3::ZERO);
         let body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.1, 0.0, 0.0), Vec3::ONE);
         let gravity = Vec3::new(10.0, 0.0, 0.0);
         p_world.bodies.push(body);
@@ -1148,7 +1118,7 @@ mod tests {
     fn test_physics_static_floor_sleep() {
         let mut p_world = PhysicsWorld::new();
         let gravity = Vec3::new(0.0, -10.0, 0.0);
-        p_world.static_colliders.insert(WorldCoord::new(0, -1, 0));
+        p_world.add_static_collider(0, Vec3::ZERO);
         let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.0, 0.0, 0.0), Vec3::ONE);
         body.static_contact_normal = Some(Vec3::Y);
         p_world.bodies.push(body);
@@ -1237,7 +1207,7 @@ mod tests {
         let dt = SIMULATION_DT;
 
         // Setup: floor, dynamic A at y=5, dynamic B at y=10
-        p_world.static_colliders.insert(WorldCoord::new(0, -1, 0));
+        p_world.add_static_collider(0, Vec3::ZERO);
         p_world.bodies.push(PhysicsBody::new(
             PhysicsBodyId(1),
             0,
@@ -1318,7 +1288,7 @@ mod tests {
     fn test_physics_sideways_stack_sleep() {
         let mut p_world = PhysicsWorld::new();
         let gravity = Vec3::new(10.0, 0.0, 0.0); // Gravity points +X
-        p_world.static_colliders.insert(WorldCoord::new(2, 0, 0)); // Wall at X=2
+        p_world.add_static_collider(0, Vec3::ZERO); // Wall at X=2
 
         let mut b1 = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(1.0, 0.0, 0.0), Vec3::ONE);
         b1.static_contact_normal = Some(Vec3::NEG_X); // Supported by wall

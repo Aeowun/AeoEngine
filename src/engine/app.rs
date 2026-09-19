@@ -564,7 +564,9 @@ impl App {
                             self.world.set_cell(coord, cell.cell_type);
 
                             if let Some(target) = self.world.get_mut(coord) {
+                                let id = target.id;
                                 *target = cell;
+                                target.id = id;
                             }
                         }
 
