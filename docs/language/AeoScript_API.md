@@ -1,16 +1,14 @@
 ﻿# AeoScript API
 
-This document describes the interface between AeoScript and AeoEngine.
+This document describes how AeoScript talks to AeoEngine.
 
-The API should follow the engine as it exists.
-
-This is not a promise that every function below exists yet.
+The API should follow the engine as it actually exists. Not everything below exists yet, and some of this is still planned.
 
 ---
 
 # 1. General Rule
 
-AeoScript should call the engine through small, obvious APIs.
+AeoScript should talk to the engine through small, obvious APIs.
 
 Prefer:
 
@@ -26,15 +24,17 @@ Prefer:
 transform.position
 ```
 
-over exposing the internal transform component layout.
+over exposing the internal transform/component layout.
+
+The scripting API should make sense from the point of view of someone making a game, not someone working inside the engine.
 
 ---
 
 # 2. Entity
 
-The `entity` API deals with the entity the script belongs to and other entities.
+The `entity` API is for the entity a script belongs to, when it is attached, and for working with other entities.
 
-Possible operations:
+Possible properties and operations:
 
 ```aeoscript
 entity.name
@@ -48,7 +48,7 @@ Possible lookup:
 world.find("Door")
 ```
 
-The exact lookup model is not final.
+The exact lookup model is not final yet.
 
 ---
 
@@ -71,7 +71,7 @@ transform.rotate(rotation)
 transform.look_at(position)
 ```
 
-The implementation must use the actual AeoEngine transform system.
+The implementation should use the actual AeoEngine transform system.
 
 ---
 
@@ -86,7 +86,7 @@ character.look(direction)
 character.is_grounded()
 ```
 
-The script should provide intent.
+The script provides the intent.
 
 The engine handles movement, collision, gravity, and the rest of the character system.
 
@@ -107,7 +107,7 @@ physics.apply_force(force)
 physics.apply_impulse(impulse)
 ```
 
-The scripting API should not expose collision solver internals.
+AeoScript should not expose collision solver internals or other low-level physics implementation details.
 
 ---
 
@@ -147,7 +147,7 @@ Later:
 audio.play("door_open", volume)
 ```
 
-Do not expose low-level audio objects until there is a reason to.
+Do not expose low-level audio objects until there is an actual reason to.
 
 ---
 
@@ -180,13 +180,13 @@ world.get_entities()
 world.load_scene("Level2")
 ```
 
-These need to be designed around actual engine behavior.
+These need to be designed around actual engine behavior rather than guessed ahead of time.
 
 ---
 
 # 10. Debug
 
-Development scripts should be able to write useful information.
+Development scripts should be able to print useful information.
 
 Possible API:
 
@@ -202,7 +202,7 @@ debug.draw_line(start, finish)
 debug.draw_point(position)
 ```
 
-These should be development tools, not gameplay dependencies.
+These are development tools and should not become gameplay dependencies.
 
 ---
 
@@ -226,7 +226,7 @@ time.delta()
 time.scale
 ```
 
-There is no need to add this until it is useful.
+There is no reason to add this until it is actually useful.
 
 ---
 
@@ -247,20 +247,20 @@ direction.length()
 direction.normalized()
 ```
 
-The vector API should remain close to the math functionality already used by AeoEngine.
+The vector API should stay close to the math functionality already used by AeoEngine.
 
 ---
 
 # 13. Entity Properties
 
-The engine may expose convenient properties directly:
+The engine may expose commonly used properties directly:
 
 ```aeoscript
 target.position
 target.name
 ```
 
-This is preferable to forcing scripts to repeatedly request components.
+This is preferable to forcing scripts to repeatedly request internal components.
 
 ---
 
@@ -278,13 +278,13 @@ if other.has_tag("Player") {
 
 Tags need to be an engine feature first.
 
-AeoScript should not invent a separate tag system.
+AeoScript should not create a separate tag system on top of the engine.
 
 ---
 
 # 15. Script State
 
-Fields defined on the entity are script state.
+Fields defined by a script are script state.
 
 Example:
 
@@ -292,11 +292,11 @@ Example:
 entity Enemy {
 
     health: number = 100
-    target: Entity? = null
+    target: Entity? = nil
 }
 ```
 
-Every script instance has its own values.
+Each script instance has its own values.
 
 ---
 
@@ -325,7 +325,7 @@ There is no generic "call Rust" operation.
 
 # 17. API Naming
 
-Use names that describe what the game developer wants to do.
+Use names that describe what the game developer is trying to do.
 
 Good:
 
@@ -343,7 +343,9 @@ audio_manager.submit_event()
 entity_manager.remove_handle()
 ```
 
-The scripting API is a user-facing interface.
+The scripting API is a user-facing API.
+
+It should hide engine internals instead of exposing them.
 
 ---
 
@@ -359,13 +361,13 @@ if character.jump() {
 }
 ```
 
-Not every engine function needs a return value.
+Not every engine function needs to return a value.
 
 ---
 
 # 19. Errors
 
-A bad API call should produce a script error that points to the script.
+A bad API call should produce a script error that points back to the script.
 
 Example:
 
@@ -377,7 +379,7 @@ Door.aeo:27
 Entity no longer exists.
 ```
 
-It should not crash the engine.
+A script error should not crash the engine.
 
 ---
 
@@ -385,9 +387,9 @@ It should not crash the engine.
 
 New APIs should be added when an actual gameplay need appears.
 
-Do not build a giant standard API before the scripting runtime exists.
+Do not build a giant standard API just because we can.
 
-First make:
+First make the core pieces work well:
 
 ```text
 entity
@@ -397,7 +399,4 @@ debug
 character
 ```
 
-work well.
-
-Then expand.
-
+Then expand the API as AeoEngine actually needs it.

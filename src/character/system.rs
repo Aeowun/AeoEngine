@@ -22,10 +22,14 @@ impl CharacterSystem {
     }
 
     /// Spawns exactly one player character if a valid spawn point exists.
-    pub fn spawn_player(&mut self, world: &World) {
+    pub fn spawn_player(&mut self, world: &World) -> Option<u64> {
         if let Some(character) = spawn_at_random_point(world, self.next_id) {
-            self.characters.insert(character.id, character);
+            let id = character.id;
+            self.characters.insert(id, character);
             self.next_id += 1;
+            Some(id)
+        } else {
+            None
         }
     }
 

@@ -85,6 +85,9 @@ pub struct Editor {
     pub viewport_rect: egui::Rect,
 
     pub history: History,
+
+    pub terminal_output: String,
+    pub terminal_auto_scroll: bool,
 }
 
 impl Editor {
@@ -118,6 +121,9 @@ impl Editor {
             active_color_target: None,
             viewport_rect: egui::Rect::NOTHING,
             history: History::new(),
+
+            terminal_output: String::new(),
+            terminal_auto_scroll: true,
         }
     }
 
@@ -201,6 +207,13 @@ impl Editor {
                         ui.close_menu();
                     }
                     if ui
+                        .selectable_label(self.script_editor.show_output, "Print Output")
+                        .clicked()
+                    {
+                        self.script_editor.show_output = !self.script_editor.show_output;
+                        ui.close_menu();
+                    }
+                    if ui
                         .selectable_label(self.show_world_window, "World")
                         .clicked()
                     {
@@ -272,8 +285,9 @@ impl Editor {
     fn draw_right_panel(&mut self, ctx: &egui::Context, world: &mut crate::world::World, project_path: &Option<std::path::PathBuf>) {
         let show_prop = self.show_properties_window;
         let show_nav = self.navigation_window.is_open;
+        let show_terminal = self.script_editor.show_output;
 
-        if show_prop || show_nav {
+        if show_prop || show_nav || show_terminal {
             egui::SidePanel::right("right_panel")
                 .resizable(true)
                 .default_width(260.0)
@@ -285,9 +299,13 @@ impl Editor {
                     ui.style_mut().visuals.widgets.hovered.rounding = egui::Rounding::ZERO;
                     ui.style_mut().visuals.widgets.active.rounding = egui::Rounding::ZERO;
 
-                    if show_prop && show_nav {
+                    if show_prop {
                         let total_height = ui.available_height();
-                        let split_height = total_height * self.right_panel_split;
+                        let split_height = if show_nav || show_terminal {
+                            total_height * self.right_panel_split
+                        } else {
+                            total_height
+                        };
 
                         // PROPERTIES (Top)
                         egui::TopBottomPanel::top("prop_top")
@@ -309,28 +327,32 @@ impl Editor {
                                 self.render_properties_content(ui, world, project_path);
                             });
 
-                        // High-vis draggable separator
-                        let (sep_rect, sep_resp) = ui.allocate_exact_size(
-                            egui::vec2(ui.available_width(), 4.0),
-                            egui::Sense::drag(),
-                        );
-                        ui.painter().rect_filled(
-                            sep_rect,
-                            0.0,
-                            egui::Color32::from_rgb(150, 150, 150),
-                        );
-                        if ui.rect_contains_pointer(sep_rect) {
-                            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ResizeVertical);
-                        }
+                        if show_nav || show_terminal {
+                            // High-vis draggable separator
+                            let (sep_rect, sep_resp) = ui.allocate_exact_size(
+                                egui::vec2(ui.available_width(), 4.0),
+                                egui::Sense::drag(),
+                            );
+                            ui.painter().rect_filled(
+                                sep_rect,
+                                0.0,
+                                egui::Color32::from_rgb(150, 150, 150),
+                            );
+                            if ui.rect_contains_pointer(sep_rect) {
+                                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ResizeVertical);
+                            }
 
-                        if sep_resp.dragged() {
-                            self.right_panel_split +=
-                                ui.input(|i| i.pointer.delta().y) / total_height;
+                            if sep_resp.dragged() {
+                                self.right_panel_split +=
+                                    ui.input(|i| i.pointer.delta().y) / total_height;
+                            }
+                            self.right_panel_split = self.right_panel_split.clamp(0.1, 0.9);
                         }
-                        self.right_panel_split = self.right_panel_split.clamp(0.1, 0.9);
+                    }
 
-                        // NAVIGATION (Bottom)
-                        egui::CentralPanel::default().show_inside(ui, |ui| {
+                    // Remaining space (Bottom) for Navigation and Terminal
+                    egui::CentralPanel::default().show_inside(ui, |ui| {
+                        if show_nav {
                             ui.add_space(4.0);
                             ui.horizontal(|ui| {
                                 ui.heading("NAVIGATION");
@@ -345,38 +367,26 @@ impl Editor {
                             });
                             ui.separator();
                             self.render_navigation_content(ui);
-                        });
-                    } else if show_prop {
-                        ui.add_space(4.0);
-                        ui.horizontal(|ui| {
-                            ui.heading("PROPERTIES");
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if ui.button("X").clicked() {
-                                        self.show_properties_window = false;
-                                    }
-                                },
-                            );
-                        });
-                        ui.separator();
-                        self.render_properties_content(ui, world, project_path);
-                    } else if show_nav {
-                        ui.add_space(4.0);
-                        ui.horizontal(|ui| {
-                            ui.heading("NAVIGATION");
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if ui.button("X").clicked() {
-                                        self.navigation_window.is_open = false;
-                                    }
-                                },
-                            );
-                        });
-                        ui.separator();
-                        self.render_navigation_content(ui);
-                    }
+                            ui.add_space(8.0);
+                        }
+
+                        if show_terminal {
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                ui.heading("PRINT OUTPUT");
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if ui.button("X").clicked() {
+                                            self.script_editor.show_output = false;
+                                        }
+                                    },
+                                );
+                            });
+                            ui.separator();
+                            self.render_terminal_content(ui);
+                        }
+                    });
                 });
         }
     }
@@ -621,34 +631,75 @@ impl Editor {
     }
 
     fn render_navigation_content(&mut self, ui: &mut egui::Ui) {
-        egui::ScrollArea::vertical()
-            .id_source("nav_scroll")
-            .show(ui, |ui| {
-                egui::Grid::new("nav_grid")
-                    .spacing([10.0, 10.0])
-                    .show(ui, |ui| {
-                        ui.label("X:");
-                        ui.text_edit_singleline(&mut self.navigation_window.x_buf);
-                        ui.end_row();
+        ui.horizontal(|ui| {
+            ui.label("X:");
+            ui.add(egui::TextEdit::singleline(&mut self.navigation_window.x_buf).desired_width(40.0));
+            ui.add_space(4.0);
+            ui.label("Y:");
+            ui.add(egui::TextEdit::singleline(&mut self.navigation_window.y_buf).desired_width(40.0));
+            ui.add_space(4.0);
+            ui.label("Z:");
+            ui.add(egui::TextEdit::singleline(&mut self.navigation_window.z_buf).desired_width(40.0));
+            ui.add_space(8.0);
 
-                        ui.label("Y:");
-                        ui.text_edit_singleline(&mut self.navigation_window.y_buf);
-                        ui.end_row();
+            if ui.button("Go").clicked() {
+                let x = self.navigation_window.x_buf.parse::<i32>().unwrap_or(0);
+                let y = self.navigation_window.y_buf.parse::<i32>().unwrap_or(0);
+                let z = self.navigation_window.z_buf.parse::<i32>().unwrap_or(0);
+                self.set_anchor(WorldCoord::new(x, y, z));
+            }
+        });
+    }
 
-                        ui.label("Z:");
-                        ui.text_edit_singleline(&mut self.navigation_window.z_buf);
-                        ui.end_row();
-                    });
+    fn render_terminal_content(&mut self, ui: &mut egui::Ui) {
+        ui.vertical(|ui| {
+            let mut terminal_view = self.terminal_output.clone();
 
-                ui.add_space(10.0);
+            let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
+                let mut job = egui::text::LayoutJob::default();
+                job.wrap.max_width = wrap_width;
 
-                if ui.button("Go").clicked() {
-                    let x = self.navigation_window.x_buf.parse::<i32>().unwrap_or(0);
-                    let y = self.navigation_window.y_buf.parse::<i32>().unwrap_or(0);
-                    let z = self.navigation_window.z_buf.parse::<i32>().unwrap_or(0);
-                    self.set_anchor(WorldCoord::new(x, y, z));
+                for line in string.split_inclusive('\n') {
+                    let color = if line.contains("[ERROR]") {
+                        egui::Color32::from_rgb(255, 80, 80) // Light red for visibility
+                    } else if line.contains("[WARNING]") {
+                        egui::Color32::from_rgb(255, 220, 0) // Vibrant yellow
+                    } else {
+                        ui.visuals().text_color()
+                    };
+
+                    job.append(
+                        line,
+                        0.0,
+                        egui::TextFormat {
+                            font_id: egui::TextStyle::Monospace.resolve(ui.style()),
+                            color,
+                            ..Default::default()
+                        },
+                    );
                 }
+                ui.fonts(|f| f.layout_job(job))
+            };
+
+            egui::ScrollArea::vertical()
+                .id_salt("terminal_scroll")
+                .stick_to_bottom(self.terminal_auto_scroll)
+                .show(ui, |ui| {
+                    ui.add(
+                        egui::TextEdit::multiline(&mut terminal_view)
+                            .layouter(&mut layouter)
+                            .desired_width(f32::INFINITY)
+                            .desired_rows(20),
+                    );
+                });
+
+            ui.horizontal(|ui| {
+                if ui.button("Clear").clicked() {
+                    self.terminal_output.clear();
+                }
+                ui.checkbox(&mut self.terminal_auto_scroll, "Auto-scroll");
             });
+        });
     }
 
     fn draw_left_panel(&mut self, ctx: &egui::Context, world: &mut crate::world::World) {

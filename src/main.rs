@@ -113,7 +113,7 @@ fn main() {
     event_loop
         .run(move |event, elwt| match event {
             Event::WindowEvent { event, .. } => {
-                let _ = egui_state.on_window_event(&window, &event);
+                let response = egui_state.on_window_event(&window, &event);
 
                 match &event {
                     WindowEvent::CloseRequested => {
@@ -132,7 +132,9 @@ fn main() {
                     _ => {}
                 }
 
-                app.on_window_event(&event, egui_state.egui_ctx());
+                if !response.consumed {
+                    app.on_window_event(&event, egui_state.egui_ctx());
+                }
             }
 
             Event::DeviceEvent {
@@ -184,6 +186,7 @@ fn main() {
                 app.update_ui(egui_state.egui_ctx());
 
                 let full_output = egui_state.egui_ctx().end_pass();
+                egui_state.handle_platform_output(&window, full_output.platform_output);
 
                 let paint_jobs = egui_state
                     .egui_ctx()

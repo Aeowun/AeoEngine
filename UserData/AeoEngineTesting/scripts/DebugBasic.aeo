@@ -1,0 +1,6 @@
+entity DebugBasic {
+
+    fn on_spawn() {
+        debug.log("TEST 1: ON_SPAWN WORKED")
+    }
+}

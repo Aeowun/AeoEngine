@@ -1,0 +1,3 @@
+on PlayerSpawned(player) {
+    debug.log("TEST 3: PLAYERSPAWNED WORKED")
+}

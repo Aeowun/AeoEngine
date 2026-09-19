@@ -34,6 +34,17 @@ pub trait EngineHost {
     fn lookup_light(&self, x: i32, y: i32, z: i32) -> Option<u64>;
     fn is_light_enabled(&self, id: u64) -> Option<bool>;
     fn set_light_enabled(&mut self, id: u64, enabled: bool);
+
+    // Generic object model support
+    fn get_all_cells_of_class(&self, class_name: &str) -> Vec<u64>;
+    fn find_objects(&self, query: &str) -> Vec<(HandleKind, u64)>;
+    fn get_children(&self, kind: HandleKind, id: u64) -> Vec<(HandleKind, u64)>;
+    fn get_parent(&self, kind: HandleKind, id: u64) -> Option<(HandleKind, u64)>;
+    fn get_cell_object(&self, cell_id: u64) -> Option<(HandleKind, u64)>;
+
+    fn get_property(&self, kind: HandleKind, id: u64, name: &str) -> Result<Option<Value>, String>;
+    fn set_property(&mut self, kind: HandleKind, id: u64, name: &str, value: Value) -> Result<(), String>;
+    fn call_method(&mut self, kind: HandleKind, id: u64, name: &str, args: &[Value]) -> Result<Option<Value>, String>;
 }
 
 /// A simple implementation of EngineHost that just wraps an EntityManager.
@@ -60,6 +71,38 @@ impl EngineHost for EntityManager {
     }
 
     fn set_light_enabled(&mut self, _id: u64, _enabled: bool) {}
+
+    fn get_all_cells_of_class(&self, _class_name: &str) -> Vec<u64> {
+        Vec::new()
+    }
+
+    fn find_objects(&self, _query: &str) -> Vec<(HandleKind, u64)> {
+        Vec::new()
+    }
+
+    fn get_children(&self, _kind: HandleKind, _id: u64) -> Vec<(HandleKind, u64)> {
+        Vec::new()
+    }
+
+    fn get_parent(&self, _kind: HandleKind, _id: u64) -> Option<(HandleKind, u64)> {
+        None
+    }
+
+    fn get_cell_object(&self, _cell_id: u64) -> Option<(HandleKind, u64)> {
+        None
+    }
+
+    fn get_property(&self, _kind: HandleKind, _id: u64, _name: &str) -> Result<Option<Value>, String> {
+        Ok(None)
+    }
+
+    fn set_property(&mut self, _kind: HandleKind, _id: u64, _name: &str, _value: Value) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn call_method(&mut self, _kind: HandleKind, _id: u64, _name: &str, _args: &[Value]) -> Result<Option<Value>, String> {
+        Ok(None)
+    }
 }
 
 /// Context provided by the engine when executing AeoScript host operations.
@@ -88,7 +131,7 @@ pub fn call_host_function(
                     id: id.0,
                 }))
             } else {
-                Ok(Some(Value::Null))
+                Ok(Some(Value::Nil))
             }
         }
 
@@ -107,8 +150,40 @@ pub fn call_host_function(
                     id,
                 }))
             } else {
-                Ok(Some(Value::Null))
+                Ok(Some(Value::Nil))
             }
+        }
+
+        "getAllCellsOfClass" => {
+            if arguments.len() != 1 {
+                return Err("getAllCellsOfClass expects exactly 1 argument (class_name)".to_string());
+            }
+
+            let class_name = arguments[0].as_string()?;
+            let cells = context.engine.get_all_cells_of_class(class_name);
+
+            let handles = cells
+                .into_iter()
+                .map(|id| Value::Handle {
+                    kind: HandleKind::Cell,
+                    id,
+                })
+                .collect();
+            Ok(Some(Value::Array(handles)))
+        }
+
+        "find" => {
+            if arguments.len() != 1 {
+                return Err("find expects exactly 1 argument (query)".to_string());
+            }
+
+            let query = arguments[0].as_string()?;
+            let objects = context.engine.find_objects(query);
+            let handles = objects
+                .into_iter()
+                .map(|(kind, id)| Value::Handle { kind, id })
+                .collect();
+            Ok(Some(Value::Array(handles)))
         }
 
         _ => Ok(None),
@@ -141,8 +216,19 @@ pub fn resolve_host_member_property(
     handle_id: u64,
     property_name: &str,
 ) -> Result<Option<Value>, String> {
+    if let Some(value) = context.engine.get_property(handle_kind, handle_id, property_name)? {
+        return Ok(Some(value));
+    }
+
     match handle_kind {
         HandleKind::Entity => match property_name {
+            "name" => {
+                if let Some(name) = context.engine.entity_manager().get_name(EntityId(handle_id)) {
+                    Ok(Some(Value::String(name.to_string())))
+                } else {
+                    Ok(Some(Value::Nil))
+                }
+            }
             "position" => {
                 if let Some(pos) = context.engine.get_position(handle_id) {
                     Ok(Some(Value::Array(vec![
@@ -151,21 +237,12 @@ pub fn resolve_host_member_property(
                         Value::Number(pos.z as f64),
                     ])))
                 } else {
-                    Ok(Some(Value::Null))
+                    Ok(Some(Value::Nil))
                 }
             }
             _ => Ok(None),
         },
-        HandleKind::Light => match property_name {
-            "is_enabled" => {
-                // We could expose this as a property or a method.
-                // The task says light.is_enabled() which is a method call.
-                // But it's good to have properties if needed.
-                // The task specifically asked for methods.
-                Ok(None)
-            }
-            _ => Ok(None),
-        },
+        _ => Ok(None),
     }
 }
 
@@ -177,7 +254,68 @@ pub fn call_host_member(
     name: &str,
     arguments: &[Value],
 ) -> Result<Option<Value>, String> {
+    if let Some(result) = context.engine.call_method(handle_kind, handle_id, name, arguments)? {
+        return Ok(Some(result));
+    }
+
+    match name {
+        "get_children" => {
+            let children = context.engine.get_children(handle_kind, handle_id);
+            let handles = children
+                .into_iter()
+                .map(|(kind, id)| Value::Handle { kind, id })
+                .collect();
+            return Ok(Some(Value::Array(handles)));
+        }
+        "get_parent" => {
+            if let Some((kind, id)) = context.engine.get_parent(handle_kind, handle_id) {
+                return Ok(Some(Value::Handle { kind, id }));
+            } else {
+                return Ok(Some(Value::Nil));
+            }
+        }
+        _ => {}
+    }
+
     match handle_kind {
+        HandleKind::Cell | HandleKind::Light => match name {
+            "getObject" => {
+                if !arguments.is_empty() {
+                    return Err(format!("{}.getObject() expects 0 arguments", handle_kind.name()));
+                }
+                if let Some((kind, id)) = context.engine.get_cell_object(handle_id) {
+                    Ok(Some(Value::Handle { kind, id }))
+                } else {
+                    Ok(Some(Value::Nil))
+                }
+            }
+
+            "is_enabled" => {
+                if !arguments.is_empty() {
+                    return Err(format!("{}.is_enabled() expects 0 arguments", handle_kind.name()));
+                }
+
+                if let Some(enabled) = context.engine.is_light_enabled(handle_id) {
+                    Ok(Some(Value::Bool(enabled)))
+                } else {
+                    Ok(Some(Value::Nil))
+                }
+            }
+
+            "set_enabled" => {
+                if arguments.len() != 1 {
+                    return Err(format!("{}.set_enabled() expects 1 argument (bool)", handle_kind.name()));
+                }
+
+                let enabled = arguments[0].as_bool()?;
+                context.engine.set_light_enabled(handle_id, enabled);
+
+                Ok(Some(Value::Nil))
+            }
+
+            _ => Ok(None),
+        },
+
         HandleKind::Entity => match name {
             "is_valid" => {
                 if !arguments.is_empty() {
@@ -188,7 +326,7 @@ pub fn call_host_member(
                     context.engine.entity_manager().validate_handle(handle_id),
                 )))
             }
-
+            // ... (keep existing name, set_position, translate)
             "name" => {
                 if !arguments.is_empty() {
                     return Err("entity.name() expects 0 arguments".to_string());
@@ -214,7 +352,7 @@ pub fn call_host_member(
                     context.engine.set_position(handle_id, Vec3::new(x, y, z));
                 }
 
-                Ok(Some(Value::Null))
+                Ok(Some(Value::Nil))
             }
 
             "translate" => {
@@ -231,36 +369,7 @@ pub fn call_host_member(
                     context.engine.set_position(handle_id, new_pos);
                 }
 
-                Ok(Some(Value::Null))
-            }
-
-            _ => Ok(None),
-        },
-
-        HandleKind::Light => match name {
-            "is_enabled" => {
-                if !arguments.is_empty() {
-                    return Err("light.is_enabled() expects 0 arguments".to_string());
-                }
-
-                if let Some(enabled) = context.engine.is_light_enabled(handle_id) {
-                    Ok(Some(Value::Bool(enabled)))
-                } else {
-                    // Returns null or error if handle is invalid.
-                    // Scripting convention usually prefers null for invalid/not found if it's an optional-like check.
-                    Ok(Some(Value::Null))
-                }
-            }
-
-            "set_enabled" => {
-                if arguments.len() != 1 {
-                    return Err("light.set_enabled() expects 1 argument (bool)".to_string());
-                }
-
-                let enabled = arguments[0].as_bool()?;
-                context.engine.set_light_enabled(handle_id, enabled);
-
-                Ok(Some(Value::Null))
+                Ok(Some(Value::Nil))
             }
 
             _ => Ok(None),

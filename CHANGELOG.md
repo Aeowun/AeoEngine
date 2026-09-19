@@ -221,7 +221,7 @@ Version `0.5.0` establishes the first complete runtime character and third perso
 * Shift + Build restores intentional overwrite behavior for the hovered cell.
 * Escape behavior is context-sensitive in Editor mode while preserving Stop Play and Main Menu behavior.
 * Editor world interaction is blocked when the mouse is interacting with egui controls outside the 3D viewport.
-* Play mode falls back to the normal editor camera when no runtime character is active.
+* Play mode falls back to the normal editor camera when no runtime character exists.
 * Cursor capture follows the presence of an active gameplay character rather than Play mode alone.
 * The work-area grid is hidden when Plane picking is disabled.
 * The WORLD panel now functions as an authored-world hierarchy rather than only a lighting/physics settings panel.
@@ -245,9 +245,74 @@ Version `0.6.0` expands AeoEngine from a basic voxel editor into a more capable 
 
 ---
 
-## Current Development
+# Current Development
 
-### In Progress
+## AeoScript V1
+
+### Added
+
+* Initial AeoScript language runtime and execution pipeline.
+* Lexer, parser, AST, interpreter, fibers, scheduler, and script runtime integration.
+* Script source spans and runtime diagnostics.
+* Numbers, strings, booleans, nil, variables, constants, arithmetic, comparisons, conditionals, loops, functions, and returns.
+* Cooperative `wait()` execution through persistent script fibers.
+* Event handler syntax using `on EventName(args)`.
+* Colon-based method calls.
+* Generic object and property access foundations.
+* Runtime `Cell` and `Entity` handles.
+* Generic Basket values with `.len()` and index access.
+* Generic object discovery through `getAllCellsOfClass()`.
+* Generic `find()` object discovery.
+* Parent and child object discovery.
+* `Cell:getObject()` runtime object resolution.
+* Player spawning events through the actual runtime `CharacterSystem` player spawn.
+* Global/unattached event handlers.
+* Existing legacy `get_entity()` compatibility.
+* Existing legacy `get_light()` compatibility.
+* Script-to-engine light control through light handles.
+* Light enable/disable scripting workflow.
+* Script Editor V1.
+* Script workspace expansion and usability improvements.
+* Script creation, opening, editing, saving, and management workflow.
+* Script attachment and authored script integration foundations.
+* Structured `LogRecord` output with Script, Warning, Error, and System severities.
+* Script path, event/function, entity, and object identity logging context.
+* Editor Print Output terminal integration using runtime script output.
+* Selectable terminal text with mouse interaction and keyboard copy/select support.
+* Severity-based terminal presentation with yellow warnings and red errors.
+* Engine-originated warning and error presentation without synthetic `UNKNOWN` or `UNATTACHED` labels.
+* Runtime error propagation from script fibers into structured terminal diagnostics.
+* Non-fatal stale script binding warnings.
+* Generic runtime collection discovery returning script-visible Cell references.
+
+### Changed
+
+* Script runtime state remains separate from authored World state.
+* Global script handlers operate without requiring an authored entity attachment.
+* Script-visible engine objects are represented through opaque runtime handles rather than direct engine references.
+* Runtime script output is routed through the structured logging system.
+* Print Output displays runtime diagnostics from the same structured logging path used by the scripting runtime.
+
+### Fixed
+
+* Fixed duplicate PlayerSpawned handler execution.
+* Fixed silent failures from global/unattached script fibers being discarded.
+* Fixed stale script bindings preventing the scripting scene from loading.
+* Fixed script runtime errors failing to reach the editor output path.
+* Fixed generic light discovery progressing through the AeoScript runtime.
+* Fixed Basket length access for discovered object collections.
+* Improved runtime error context for failing script operations.
+
+### Current AeoScript Work
+
+* String and number concatenation semantics.
+* Continued validation of generic Cell and runtime object method behavior.
+* Continued testing of generic Light discovery and scripted Light control.
+* Continued AeoScript API and Script Editor integration refinement.
+* Continued language, API, and editor documentation updates.
+* Continued runtime diagnostics and Print Output usability refinement.
+
+## Other In Progress
 
 * Physics mass/density integration.
 * Continued refinement and testing of Top-Block ray picking and face detection.
@@ -258,7 +323,7 @@ Version `0.6.0` expands AeoEngine from a basic voxel editor into a more capable 
 * Texture import conflict handling and additional asset workflow validation.
 * Visual and runtime testing of imported project textures.
 
-### Planned
+## Planned
 
 * Project-owned asset library using `.assets`.
 * Controlled project asset importing.
@@ -267,11 +332,11 @@ Version `0.6.0` expands AeoEngine from a basic voxel editor into a more capable 
 * Additional lighting and shadow refinement.
 * Additional character gameplay states and systems.
 
-### Planned Performance & Scalability
+# Planned Performance & Scalability
 
 The current engine architecture is intentionally prototype-oriented. Several systems have known scalability limits that should be addressed as project size and runtime complexity increase.
 
-#### World Rendering
+## World Rendering
 
 The current World representation stores authored cells individually, and active block collection requires traversing the stored authored cells.
 
@@ -300,7 +365,7 @@ GPU rendering
 
 The exact chunk size and meshing strategy will be determined through profiling and representative world workloads.
 
-#### Dynamic Physics Broad Phase
+## Dynamic Physics Broad Phase
 
 The current dynamic collision system performs pairwise body checks.
 
@@ -313,7 +378,7 @@ Future options include:
 
 The existing narrow-phase collision system should remain separate from the broad phase so that candidate generation can be optimized independently.
 
-#### Continuous Collision Detection
+## Continuous Collision Detection
 
 The current physics implementation uses discrete collision testing.
 
@@ -325,7 +390,7 @@ Future options include:
 
 Continuous collision detection should be introduced where tunneling becomes a meaningful gameplay or physics requirement rather than enabled indiscriminately.
 
-#### Runtime Mesh Resources
+## Runtime Mesh Resources
 
 Some runtime rendering paths currently create and destroy GPU vertex objects during mesh drawing.
 
@@ -338,7 +403,7 @@ Future options include:
 
 The intended direction is to create stable GPU resources once and reuse them across frames whenever the geometry permits.
 
-#### Performance Engineering
+## Performance Engineering
 
 Performance improvements should be driven by profiling and representative workloads.
 
@@ -369,4 +434,15 @@ Optimization systems should improve the performance of these paths without makin
 AeoEngine uses Semantic Versioning:
 
 `MAJOR.MINOR.PATCH`
+
+---
+
+# Development Time
+
+Estimated active development time represented by the current sprint:
+
+
+**~50 hours 52 minutes**
+
+*Not sponsored by Red Bull.*
 

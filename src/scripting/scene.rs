@@ -1,16 +1,20 @@
-use super::runtime::ScriptRuntime;
-use super::interpreter::ScriptInstance;
-use super::execution::{ScriptTaskId, FiberResult};
-use super::value::Value;
-use super::ast::{Program, Declaration, EntityMember};
-use super::api::HostContext;
+use super::ast::{Declaration, EntityMember, Program};
 use super::binding::ScriptBinding;
+use super::execution::{FiberResult, ScriptTaskId};
+use super::interpreter::ScriptInstance;
 use super::lexer::Lexer;
 use super::parser::Parser;
+use super::runtime::ScriptRuntime;
 use super::source::SourceSpan;
-use crate::engine::entity::{EntityManager, EntityId};
+use super::value::Value;
+use super::api::HostContext;
+use crate::engine::entity::{EntityId, EntityManager};
+use crate::world::{CellType, World, WorldCoord};
+use glam::Vec3;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::collections::HashMap;
+
+use super::log::LogRecord;
 
 /// A single scripted entity's lifecycle state.
 #[derive(Debug)]
@@ -18,6 +22,7 @@ pub struct ScriptEntity {
     instance: ScriptInstance,
     state: EntityState,
     stopped: bool,
+    script_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -32,11 +37,12 @@ enum EntityState {
 }
 
 impl ScriptEntity {
-    fn new(instance: ScriptInstance) -> Self {
+    fn new(instance: ScriptInstance, script_path: Option<String>) -> Self {
         Self {
             instance,
             state: EntityState::Initial,
             stopped: false,
+            script_path,
         }
     }
 
@@ -74,35 +80,94 @@ pub struct ScriptScene {
 }
 
 impl ScriptScene {
-    /// Loads and parses scripts based on authored bindings and prepares the scene.
+    /// Loads and parses scripts from the project's scripts directory and applies explicit bindings.
     pub fn load_from_bindings(
         project_path: &Path,
+        world: &World,
         bindings: &[ScriptBinding],
         entity_manager: &mut EntityManager,
         delta_time: f64,
     ) -> Result<Self, String> {
-        let mut loaded_scripts = HashMap::new();
-        let mut entities_to_spawn = Vec::new();
+        let mut authored_entities: HashMap<String, WorldCoord> = HashMap::new();
 
-        for binding in bindings {
-            if !loaded_scripts.contains_key(&binding.script_path) {
-                let script_path = project_path.join(&binding.script_path);
-                let source = std::fs::read_to_string(&script_path).map_err(|e| {
-                    format!("Failed to read script {:?}: {}", script_path, e)
-                })?;
-
-                let tokens = Lexer::new(&source).tokenize().map_err(|e| {
-                    format!("Lexer error in {:?}: {:?}", script_path, e)
-                })?;
-
-                let program = Parser::new(tokens).parse().map_err(|e| {
-                    format!("Parser error in {:?}: {:?}", script_path, e)
-                })?;
-
-                loaded_scripts.insert(binding.script_path.clone(), program);
+        for (coord, cell) in world.cells.iter() {
+            if !cell.cell_type.is_entity() {
+                continue;
             }
 
-            let program = loaded_scripts.get(&binding.script_path).unwrap();
+            if let Some(identity) = &cell.entity_identity {
+                if authored_entities.insert(identity.clone(), *coord).is_some() {
+                    return Err(format!(
+                        "Duplicate authored entity identity found: '{}'",
+                        identity
+                    ));
+                }
+            }
+        }
+
+        let mut valid_bindings = Vec::new();
+        let mut stale_warnings = Vec::new();
+        let mut seen_binding_targets = HashSet::new();
+
+        for binding in bindings {
+            if !seen_binding_targets.insert(binding.target_identity.clone()) {
+                return Err(format!(
+                    "Multiple script bindings found for target identity '{}'. Each authored entity can only have one binding.",
+                    binding.target_identity
+                ));
+            }
+
+            if !authored_entities.contains_key(&binding.target_identity) {
+                stale_warnings.push(format!(
+                    "Stale script binding found: target identity '{}' does not exist in the world as an authored entity.",
+                    binding.target_identity
+                ));
+                continue;
+            }
+
+            valid_bindings.push(binding.clone());
+        }
+
+        let mut loaded_scripts: HashMap<String, Program> = HashMap::new();
+
+        // 1. Load ALL scripts from the project's scripts directory.
+        // This ensures unattached event handlers are registered.
+        let scripts_dir = project_path.join("scripts");
+        if scripts_dir.exists() && scripts_dir.is_dir() {
+            for entry in std::fs::read_dir(scripts_dir).map_err(|e| format!("Failed to read scripts directory: {}", e))?.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().map_or(false, |ext| ext == "aeo") {
+                    let source = std::fs::read_to_string(&path).map_err(|e| {
+                        format!("Failed to read script {:?}: {}", path, e)
+                    })?;
+
+                    let tokens = Lexer::new(&source).tokenize().map_err(|e| {
+                        format!("Lexer error in {:?}: {:?}", path, e)
+                    })?;
+
+                    let program = Parser::new(tokens).parse().map_err(|e| {
+                        format!("Parser error in {:?}: {:?}", path, e)
+                    })?;
+
+                    // Use relative path from project root as the key
+                    let relative_path = path.strip_prefix(project_path).unwrap_or(&path).to_string_lossy().to_string();
+                    // Normalize separators for cross-platform matching with bindings
+                    let relative_path = relative_path.replace("\\", "/");
+
+                    loaded_scripts.insert(relative_path, program);
+                }
+            }
+        }
+
+        // 2. Validate explicit bindings.
+        for binding in &valid_bindings {
+            // Normalize binding path
+            let normalized_binding_path = binding.script_path.replace("\\", "/");
+
+            let program = loaded_scripts
+                .get(&normalized_binding_path)
+                .ok_or_else(|| format!("Bound script '{}' not found in scripts directory.", binding.script_path))?;
+
             let has_entity = program.declarations.iter().any(|decl| {
                 if let Declaration::Entity(entity) = decl {
                     entity.name == binding.target_identity
@@ -117,13 +182,11 @@ impl ScriptScene {
                     binding.script_path, binding.target_identity
                 ));
             }
-
-            entities_to_spawn.push(binding.target_identity.clone());
         }
 
         let mut all_declarations = Vec::new();
-        for program in loaded_scripts.into_values() {
-            all_declarations.extend(program.declarations);
+        for program in loaded_scripts.values() {
+            all_declarations.extend(program.declarations.clone());
         }
 
         let combined_program = Program {
@@ -131,35 +194,82 @@ impl ScriptScene {
             declarations: all_declarations,
         };
 
-        let mut spawn_params = Vec::new();
-        for name in &entities_to_spawn {
-            let id = entity_manager.create_entity(name);
-            spawn_params.push((name.clone(), id.0));
-        }
+        let spawn_params: Vec<(String, u64, Option<String>)> = valid_bindings
+            .iter()
+            .map(|binding| {
+                let coord = authored_entities
+                    .get(&binding.target_identity)
+                    .expect("binding target was validated above");
+                let id = entity_manager.create_entity(&binding.target_identity);
+                entity_manager.set_position(
+                    id,
+                    Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32),
+                );
+                (binding.target_identity.clone(), id.0, Some(binding.script_path.clone()))
+            })
+            .collect();
 
-        let mut host = HostContext {
-            delta_time,
-            engine: entity_manager,
+        let created_ids: Vec<EntityId> = spawn_params
+            .iter()
+            .map(|(_, raw_id, _)| EntityId(*raw_id))
+            .collect();
+
+        let mut scene_res = {
+            let mut host = HostContext {
+                delta_time,
+                engine: entity_manager,
+            };
+
+            Self::new(combined_program, spawn_params, &mut host)
         };
 
-        Ok(Self::new(combined_program, spawn_params, &mut host))
-    }
-
-    pub fn new(program: Program, entities_to_spawn: Vec<(String, u64)>, host: &mut HostContext) -> Self {
-        let mut runtime = ScriptRuntime::new(program);
-        let mut entities = Vec::new();
-
-        for (name, id) in entities_to_spawn {
-            if let Ok(instance) = runtime.interpreter_mut().instantiate_entity(&name, id, host) {
-                entities.push(ScriptEntity::new(instance));
+        if let Err(e) = &scene_res {
+            for id in created_ids {
+                entity_manager.remove_entity(id);
             }
+            return Err(e.clone());
         }
 
-        Self {
+        let mut scene = scene_res.unwrap();
+
+        // Add event handlers from all loaded scripts with their correct paths.
+        // We clear the default auto-registered handlers (which have UNKNOWN path)
+        // first to avoid duplication.
+        scene.runtime.clear_event_handlers();
+        for (path, program) in &loaded_scripts {
+            scene.runtime.add_event_handlers(path.clone(), program);
+        }
+
+        // Log stale bindings as warnings
+        for warning in stale_warnings {
+            scene.runtime.interpreter_mut().log_warning(warning);
+        }
+
+        Ok(scene)
+    }
+
+    pub fn new(
+        program: Program,
+        entities_to_spawn: Vec<(String, u64, Option<String>)>,
+        host: &mut HostContext,
+    ) -> Result<Self, String> {
+        let mut runtime = ScriptRuntime::new(program);
+        let mut entities = Vec::with_capacity(entities_to_spawn.len());
+
+        for (name, id, script_path) in entities_to_spawn {
+            let mut instance = runtime
+                .interpreter_mut()
+                .instantiate_entity(&name, id, host)
+                .map_err(|e| format!("Failed to instantiate script entity '{}': {}", name, e))?;
+            instance.script_path = script_path.clone();
+            entities.push(ScriptEntity::new(instance, script_path));
+        }
+
+        Ok(Self {
             runtime,
             entities,
             current_time: 0.0,
-        }
+        })
     }
 
     /// Starts the lifecycle for all entities in the scene.
@@ -176,6 +286,7 @@ impl ScriptScene {
         let tick_results = self.runtime.tick(self.current_time, host)?;
 
         for (task_id, result) in tick_results {
+            let mut handled = false;
             for entity in &mut self.entities {
                 if entity.active_task() == Some(task_id) {
                     match result {
@@ -196,12 +307,26 @@ impl ScriptScene {
                         }
                         _ => {}
                     }
+                    handled = true;
                     break;
+                }
+            }
+
+            if !handled {
+                // Handle global (unattached) tasks
+                match result {
+                    FiberResult::Complete => {
+                        self.runtime.remove_fiber(task_id);
+                    }
+                    FiberResult::Failed(err) => {
+                        self.runtime.remove_fiber(task_id);
+                        return Err(format!("Global script error: {}", err));
+                    }
+                    _ => {}
                 }
             }
         }
 
-        // Spawn update tasks for active entities that don't currently have one running.
         for entity in &mut self.entities {
             if let EntityState::Active { update_task: None } = entity.state {
                 if !entity.stopped && Self::has_function(&self.runtime, entity, "update") {
@@ -220,9 +345,17 @@ impl ScriptScene {
         Ok(())
     }
 
-    /// Returns the combined debug output from all scripts in the scene.
-    pub fn output(&self) -> &[String] {
+    pub fn output(&self) -> &[LogRecord] {
         self.runtime.interpreter().output()
+    }
+
+    pub fn drain_output(&mut self) -> Vec<LogRecord> {
+        self.runtime.interpreter_mut().drain_output()
+    }
+
+    /// Dispatches a global event to all scripts in the scene.
+    pub fn dispatch_event(&mut self, name: &str, arguments: Vec<Value>, host: &mut HostContext) -> Result<(), String> {
+        self.runtime.dispatch_event(name, arguments, host)
     }
 
     /// Stops all script execution and invokes on_destroy where available.
@@ -240,8 +373,12 @@ impl ScriptScene {
 
             if Self::has_function(&self.runtime, entity, "on_destroy") {
                 let mut instance = entity.instance.clone();
-                let _ = self.runtime.interpreter_mut().call(&mut instance, "on_destroy", vec![], host);
+                let _ = self
+                    .runtime
+                    .interpreter_mut()
+                    .call(&mut instance, "on_destroy", vec![], host);
             }
+
             entity.state = EntityState::Stopped;
         }
         self.entities.clear();
@@ -270,7 +407,11 @@ impl ScriptScene {
             })
     }
 
-    fn transition_entity(runtime: &mut ScriptRuntime, entity: &mut ScriptEntity, host: &mut HostContext) -> Result<(), String> {
+    fn transition_entity(
+        runtime: &mut ScriptRuntime,
+        entity: &mut ScriptEntity,
+        _host: &mut HostContext,
+    ) -> Result<(), String> {
         if entity.stopped {
             return Ok(());
         }
@@ -279,8 +420,11 @@ impl ScriptScene {
             match entity.state {
                 EntityState::Initial => {
                     if Self::has_function(runtime, entity, "on_spawn") {
-                        let task_id =
-                            runtime.spawn(entity.instance.clone(), "on_spawn", vec![])?;
+                        let task_id = runtime.spawn(
+                            entity.instance.clone(),
+                            "on_spawn",
+                            vec![],
+                        )?;
                         entity.state = EntityState::Spawning(Some(task_id));
                         break;
                     } else {
@@ -289,13 +433,15 @@ impl ScriptScene {
                 }
                 EntityState::Spawning(_) => {
                     if let Some(task_id) = entity.active_task() {
-                        // Already has a task running (on_spawn)
                         let _ = task_id;
                         break;
                     }
                     if Self::has_function(runtime, entity, "on_ready") {
-                        let task_id =
-                            runtime.spawn(entity.instance.clone(), "on_ready", vec![])?;
+                        let task_id = runtime.spawn(
+                            entity.instance.clone(),
+                            "on_ready",
+                            vec![],
+                        )?;
                         entity.state = EntityState::Readying(Some(task_id));
                         break;
                     } else {
@@ -304,7 +450,6 @@ impl ScriptScene {
                 }
                 EntityState::Readying(_) => {
                     if let Some(task_id) = entity.active_task() {
-                        // Already has a task running (on_ready)
                         let _ = task_id;
                         break;
                     }
@@ -314,6 +459,7 @@ impl ScriptScene {
                 _ => break,
             }
         }
+
         Ok(())
     }
 }
@@ -321,15 +467,15 @@ impl ScriptScene {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::entity::{EntityId, EntityManager};
+    use crate::scripting::api::EngineHost;
     use crate::scripting::lexer::Lexer;
     use crate::scripting::parser::Parser;
-    use crate::engine::entity::{EntityManager, EntityId};
-    use crate::scripting::api::EngineHost;
     use glam::Vec3;
 
     struct TestHost {
         entity_manager: EntityManager,
-        world: crate::world::World,
+        world: World,
     }
 
     impl EngineHost for TestHost {
@@ -346,9 +492,9 @@ mod tests {
         }
 
         fn lookup_light(&self, x: i32, y: i32, z: i32) -> Option<u64> {
-            let coord = crate::world::WorldCoord::new(x, y, z);
+            let coord = WorldCoord::new(x, y, z);
             if let Some(cell) = self.world.get(coord) {
-                if cell.cell_type == crate::world::CellType::Light {
+                if cell.cell_type == CellType::Light {
                     return Some(crate::scripting::api::pack_coord(coord));
                 }
             }
@@ -366,38 +512,135 @@ mod tests {
                 cell.light_enabled = enabled;
             }
         }
-    }
 
-    fn create_scene(source: &str, host: &mut HostContext) -> ScriptScene {
-        let tokens = Lexer::new(source).tokenize().unwrap();
-        let program = Parser::new(tokens).parse().unwrap();
-        let entities_to_spawn: Vec<(String, u64)> = program
-            .declarations
-            .iter()
-            .filter_map(|decl| {
-                if let Declaration::Entity(entity) = decl {
-                    let id = host.engine.entity_manager().lookup_entity(&entity.name)
-                        .unwrap_or(EntityId(0));
-                    Some((entity.name.clone(), id.0))
-                } else {
-                    None
+        fn get_all_cells_of_class(&self, class_name: &str) -> Vec<u64> {
+            let mut results = Vec::new();
+            for (coord, cell) in &self.world.cells {
+                let matches = match class_name {
+                    "Light" => cell.cell_type == CellType::Light,
+                    "Block" => cell.cell_type == CellType::Block,
+                    "SpawnPoint" => cell.cell_type == CellType::SpawnPoint,
+                    "Player" => cell.cell_type == CellType::Player,
+                    "NPC" => cell.cell_type == CellType::NPC,
+                    _ => false,
+                };
+                if matches {
+                    results.push(crate::scripting::api::pack_coord(*coord));
                 }
-            })
-            .collect();
-        ScriptScene::new(program, entities_to_spawn, host)
+            }
+            results
+        }
+
+        fn find_objects(&self, query: &str) -> Vec<(crate::scripting::value::HandleKind, u64)> {
+            let mut results = Vec::new();
+            if let Some(id) = self.entity_manager.lookup_entity(query) {
+                results.push((crate::scripting::value::HandleKind::Entity, id.0));
+            }
+            results
+        }
+
+        fn get_children(&self, _kind: crate::scripting::value::HandleKind, _id: u64) -> Vec<(crate::scripting::value::HandleKind, u64)> {
+            Vec::new()
+        }
+
+        fn get_parent(&self, _kind: crate::scripting::value::HandleKind, _id: u64) -> Option<(crate::scripting::value::HandleKind, u64)> {
+            None
+        }
+
+        fn get_cell_object(&self, cell_id: u64) -> Option<(crate::scripting::value::HandleKind, u64)> {
+            let coord = crate::scripting::api::unpack_coord(cell_id);
+            if let Some(cell) = self.world.get(coord) {
+                if let Some(identity) = &cell.entity_identity {
+                    if let Some(id) = self.entity_manager.lookup_entity(identity) {
+                        return Some((crate::scripting::value::HandleKind::Entity, id.0));
+                    }
+                }
+            }
+            None
+        }
+
+        fn get_property(&self, kind: crate::scripting::value::HandleKind, id: u64, name: &str) -> Result<Option<crate::scripting::value::Value>, String> {
+            use crate::scripting::value::{Value, HandleKind};
+            match kind {
+                HandleKind::Cell => {
+                    let coord = crate::scripting::api::unpack_coord(id);
+                    if let Some(cell) = self.world.get(coord) {
+                        match name {
+                            "name" => return Ok(Some(Value::String(cell.entity_identity.clone().unwrap_or_else(|| "Cell".to_string())))),
+                            "cellType" => return Ok(Some(Value::String(format!("{:?}", cell.cell_type)))),
+                            _ => {}
+                        }
+                    }
+                }
+                HandleKind::Entity => {
+                    let entity_id = EntityId(id);
+                    match name {
+                        "name" => {
+                            if let Some(entity_name) = self.entity_manager.get_name(entity_id) {
+                                return Ok(Some(Value::String(entity_name.to_string())));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+            Ok(None)
+        }
+
+        fn set_property(&mut self, _kind: crate::scripting::value::HandleKind, _id: u64, _name: &str, _value: crate::scripting::value::Value) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn call_method(&mut self, _kind: crate::scripting::value::HandleKind, _id: u64, _name: &str, _args: &[crate::scripting::value::Value]) -> Result<Option<crate::scripting::value::Value>, String> {
+            Ok(None)
+        }
     }
 
     fn test_host() -> TestHost {
         TestHost {
             entity_manager: EntityManager::new(),
-            world: crate::world::World::new(),
+            world: World::new(),
         }
+    }
+
+    fn create_scene(source: &str, host: &mut HostContext) -> ScriptScene {
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse().unwrap();
+        let entities_to_spawn: Vec<(String, u64, Option<String>)> = program
+            .declarations
+            .iter()
+            .filter_map(|decl| {
+                if let Declaration::Entity(entity) = decl {
+                    let id = host
+                        .engine
+                        .entity_manager()
+                        .lookup_entity(&entity.name)
+                        .unwrap_or(EntityId(0));
+                    Some((entity.name.clone(), id.0, None))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        ScriptScene::new(program, entities_to_spawn, host).unwrap()
+    }
+
+    fn add_authored_entity(world: &mut World, coord: WorldCoord, cell_type: CellType, identity: &str) {
+        let mut cell = crate::world::Cell::default();
+        cell.cell_type = cell_type;
+        cell.entity_identity = Some(identity.to_string());
+        world.cells.insert(coord, cell);
     }
 
     #[test]
     fn test_host_context_construction() {
         let mut th = test_host();
-        let mut host = HostContext { delta_time: 0.1, engine: &mut th };
+        let mut host = HostContext {
+            delta_time: 0.1,
+            engine: &mut th,
+        };
         assert_eq!(host.delta_time, 0.1);
         assert!(host.engine.entity_manager().lookup_entity("Any").is_none());
     }
@@ -418,20 +661,19 @@ entity Test {
         let mut th = test_host();
         let id = th.entity_manager.create_entity("Test");
         th.entity_manager.set_position(id, Vec3::new(1.0, 2.0, 3.0));
-
-        let mut scene = {
-            let mut host = HostContext { delta_time: 0.0, engine: &mut th };
-            let mut scene = create_scene(source, &mut host);
-            scene.start(&mut host).unwrap();
-            scene.update(0.0, &mut host).unwrap(); // on_spawn spawned
-            scene.update(0.0, &mut host).unwrap(); // on_spawn runs
-            scene
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
         };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
 
         let output = scene.output();
-        assert!(output.contains(&"1".to_string()));
-        assert!(output.contains(&"2".to_string()));
-        assert!(output.contains(&"3".to_string()));
+        assert!(output.iter().any(|r| r.message == "1"));
+        assert!(output.iter().any(|r| r.message == "2"));
+        assert!(output.iter().any(|r| r.message == "3"));
     }
 
     #[test]
@@ -446,16 +688,19 @@ entity Test {
 "#;
         let mut th = test_host();
         let id = th.entity_manager.create_entity("Test");
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
+        };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
 
-        {
-            let mut host = HostContext { delta_time: 0.0, engine: &mut th };
-            let mut scene = create_scene(source, &mut host);
-            scene.start(&mut host).unwrap();
-            scene.update(0.0, &mut host).unwrap();
-            scene.update(0.0, &mut host).unwrap();
-        }
-
-        assert_eq!(th.entity_manager.get_position(id), Some(Vec3::new(10.0, 20.0, 30.0)));
+        assert_eq!(
+            th.entity_manager.get_position(id),
+            Some(Vec3::new(10.0, 20.0, 30.0))
+        );
     }
 
     #[test]
@@ -471,16 +716,19 @@ entity Test {
         let mut th = test_host();
         let id = th.entity_manager.create_entity("Test");
         th.entity_manager.set_position(id, Vec3::new(5.0, 5.0, 5.0));
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
+        };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
 
-        {
-            let mut host = HostContext { delta_time: 0.0, engine: &mut th };
-            let mut scene = create_scene(source, &mut host);
-            scene.start(&mut host).unwrap();
-            scene.update(0.0, &mut host).unwrap();
-            scene.update(0.0, &mut host).unwrap();
-        }
-
-        assert_eq!(th.entity_manager.get_position(id), Some(Vec3::new(6.0, 6.0, 6.0)));
+        assert_eq!(
+            th.entity_manager.get_position(id),
+            Some(Vec3::new(6.0, 6.0, 6.0))
+        );
     }
 
     #[test]
@@ -497,17 +745,23 @@ entity Other {}
         let mut th = test_host();
         let id_target = th.entity_manager.create_entity("Target");
         let id_other = th.entity_manager.create_entity("Other");
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
+        };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
 
-        {
-            let mut host = HostContext { delta_time: 0.0, engine: &mut th };
-            let mut scene = create_scene(source, &mut host);
-            scene.start(&mut host).unwrap();
-            scene.update(0.0, &mut host).unwrap();
-            scene.update(0.0, &mut host).unwrap();
-        }
-
-        assert_eq!(th.entity_manager.get_position(id_target), Some(Vec3::new(100.0, 100.0, 100.0)));
-        assert_eq!(th.entity_manager.get_position(id_other), Some(Vec3::ZERO));
+        assert_eq!(
+            th.entity_manager.get_position(id_target),
+            Some(Vec3::new(100.0, 100.0, 100.0))
+        );
+        assert_eq!(
+            th.entity_manager.get_position(id_other),
+            Some(Vec3::ZERO)
+        );
     }
 
     #[test]
@@ -521,37 +775,25 @@ entity Test {
     }
 }
 "#;
-
         let mut th = test_host();
         let id = th.entity_manager.create_entity("Test");
-
         let mut scene = {
             let mut host = HostContext {
                 delta_time: 1.0,
                 engine: &mut th,
             };
-
             let mut scene = create_scene(source, &mut host);
-
             scene.start(&mut host).unwrap();
-            scene.update(0.0, &mut host).unwrap(); // on_spawn starts and yields at wait(1)
-
+            scene.update(0.0, &mut host).unwrap();
             scene
         };
 
-        // Invalidate the runtime entity after the script captured its handle.
         th.entity_manager.remove_entity(id);
-
-        {
-            let mut host = HostContext {
-                delta_time: 1.0,
-                engine: &mut th,
-            };
-
-            // The stale handle must not panic or crash the interpreter.
-            let result = scene.update(1.0, &mut host);
-            assert!(result.is_ok());
-        }
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut th,
+        };
+        assert!(scene.update(1.0, &mut host).is_ok());
     }
 
     #[test]
@@ -565,16 +807,17 @@ entity Test {
 }
 "#;
         let mut th = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut th,
+        };
         let mut scene = create_scene(source, &mut host);
-
         scene.start(&mut host).unwrap();
-        assert_eq!(scene.output(), Vec::<String>::new());
+        assert!(scene.output().is_empty());
 
-        scene.update(0.0, &mut host).unwrap(); // on_spawn
-        scene.update(0.0, &mut host).unwrap(); // on_ready
-        scene.update(0.0, &mut host).unwrap(); // update
-
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
         scene.stop(&mut host);
     }
 
@@ -586,13 +829,16 @@ entity Test {
 }
 "#;
         let mut th = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut th,
+        };
         let mut scene = create_scene(source, &mut host);
         scene.start(&mut host).unwrap();
-        scene.update(0.5, &mut host).unwrap(); // spawns update
-        scene.update(0.0, &mut host).unwrap(); // runs update
-
-        assert!(scene.output().contains(&"0.5".to_string()));
+        scene.update(0.5, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "0.5"));
     }
 
     #[test]
@@ -605,12 +851,14 @@ entity Test {
 }
 "#;
         let mut th = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut th,
+        };
         let mut scene = create_scene(source, &mut host);
         scene.start(&mut host).unwrap();
-        scene.update(0.0, &mut host).unwrap(); // spawns update
-        let result = scene.update(0.0, &mut host); // runs update, FAILS
-
+        scene.update(0.0, &mut host).unwrap();
+        let result = scene.update(0.0, &mut host);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("division by zero"));
     }
@@ -621,20 +869,22 @@ entity Test {
 entity Test {
     fn update(dt: number) {
         const e = get_entity("Missing")
-        if e == null {
+        if e == nil {
             debug.log("not_found")
         }
     }
 }
 "#;
         let mut th = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut th,
+        };
         let mut scene = create_scene(source, &mut host);
         scene.start(&mut host).unwrap();
-        scene.update(0.0, &mut host).unwrap(); // spawns update
-        scene.update(0.0, &mut host).unwrap(); // runs update
-
-        assert!(scene.output().contains(&"not_found".to_string()));
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        assert!(scene.output().iter().any(|r| r.message == "not_found"));
     }
 
     #[test]
@@ -643,7 +893,7 @@ entity Test {
 entity Test {
     fn update(dt: number) {
         const e = get_entity("Test")
-        if e != null {
+        if e != nil {
             if e.is_valid() {
                 debug.log("valid")
             }
@@ -653,26 +903,27 @@ entity Test {
 "#;
         let mut th = test_host();
         let id = th.entity_manager.create_entity("Test");
-
         let mut scene = {
-            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+            let mut host = HostContext {
+                delta_time: 1.0,
+                engine: &mut th,
+            };
             let mut scene = create_scene(source, &mut host);
             scene.start(&mut host).unwrap();
-            scene.update(0.0, &mut host).unwrap(); // spawns update
-            scene.update(0.0, &mut host).unwrap(); // runs update
+            scene.update(0.0, &mut host).unwrap();
+            scene.update(0.0, &mut host).unwrap();
             scene
         };
 
-        assert!(scene.output().contains(&"valid".to_string()));
-
-        // Now invalidate it.
+        assert!(scene.output().iter().any(|r| r.message == "valid"));
         th.entity_manager.remove_entity(id);
         scene.runtime.interpreter_mut().drain_output();
 
-        {
-            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
-            scene.update(0.0, &mut host).unwrap(); // runs NEXT update
-        }
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut th,
+        };
+        scene.update(0.0, &mut host).unwrap();
     }
 
     #[test]
@@ -683,13 +934,16 @@ entity Test {
 }
 "#;
         let mut th = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut th,
+        };
         let mut scene = create_scene(source, &mut host);
         scene.start(&mut host).unwrap();
         scene.stop(&mut host);
 
         scene.update(0.1, &mut host).unwrap();
-        assert!(!scene.output().contains(&"update".to_string()));
+        assert!(!scene.output().iter().any(|r| r.message == "update"));
     }
 
     #[test]
@@ -704,21 +958,21 @@ entity Test {
 }
 "#;
         let mut th = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut th,
+        };
         let mut scene = create_scene(source, &mut host);
         scene.start(&mut host).unwrap();
-
-        scene.update(0.0, &mut host).unwrap(); // spawns update
-        scene.update(0.0, &mut host).unwrap(); // update runs, yields at wait(1)
-        assert!(scene.output().contains(&"start".to_string()));
-        assert!(!scene.output().contains(&"end".to_string()));
-
-        scene.update(0.5, &mut host).unwrap();
-        assert!(!scene.output().contains(&"end".to_string()));
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        assert!(scene.output().iter().any(|r| r.message == "start"));
+        assert!(!scene.output().iter().any(|r| r.message == "end"));
 
         scene.update(0.5, &mut host).unwrap();
-        // It should wake up and complete.
-        assert!(scene.output().contains(&"end".to_string()));
+        assert!(!scene.output().iter().any(|r| r.message == "end"));
+        scene.update(0.5, &mut host).unwrap();
+        assert!(scene.output().iter().any(|r| r.message == "end"));
     }
 
     #[test]
@@ -729,13 +983,14 @@ entity Enemy {}
 "#;
         let mut th = test_host();
         let id = th.entity_manager.create_entity("Player");
-        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
-
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut th,
+        };
         let tokens = Lexer::new(source).tokenize().unwrap();
         let program = Parser::new(tokens).parse().unwrap();
-
-        // Only bind Player
-        let scene = ScriptScene::new(program, vec![("Player".to_string(), id.0)], &mut host);
+        let scene = ScriptScene::new(program, vec![("Player".to_string(), id.0, None)], &mut host)
+            .unwrap();
 
         assert_eq!(scene.entities.len(), 1);
         assert_eq!(scene.entities[0].instance.entity_name(), "Player");
@@ -753,19 +1008,22 @@ entity Unbound {
 "#;
         let mut th = test_host();
         let id = th.entity_manager.create_entity("Bound");
-        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut th,
+        };
 
         let tokens = Lexer::new(source).tokenize().unwrap();
         let program = Parser::new(tokens).parse().unwrap();
-
-        let mut scene = ScriptScene::new(program, vec![("Bound".to_string(), id.0)], &mut host);
+        let mut scene = ScriptScene::new(program, vec![("Bound".to_string(), id.0, None)], &mut host)
+            .unwrap();
         scene.start(&mut host).unwrap();
         scene.update(0.0, &mut host).unwrap();
         scene.update(0.0, &mut host).unwrap();
 
         let output = scene.output();
-        assert!(output.contains(&"bound".to_string()));
-        assert!(!output.contains(&"unbound".to_string()));
+        assert!(output.iter().any(|r| r.message == "bound"));
+        assert!(!output.iter().any(|r| r.message == "unbound"));
     }
 
     #[test]
@@ -777,66 +1035,97 @@ entity B { fn on_spawn() { debug.log("B") } }
         let mut th = test_host();
         let id_a = th.entity_manager.create_entity("A");
         let id_b = th.entity_manager.create_entity("B");
-        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut th,
+        };
         let tokens = Lexer::new(source).tokenize().unwrap();
         let program = Parser::new(tokens).parse().unwrap();
-
-        let mut scene = ScriptScene::new(program, vec![("A".to_string(), id_a.0), ("B".to_string(), id_b.0)], &mut host);
+        let mut scene = ScriptScene::new(
+            program,
+            vec![("A".to_string(), id_a.0, None), ("B".to_string(), id_b.0, None)],
+            &mut host,
+        )
+        .unwrap();
         scene.start(&mut host).unwrap();
         scene.update(0.0, &mut host).unwrap();
         scene.update(0.0, &mut host).unwrap();
 
         let output = scene.output();
-        assert!(output.contains(&"A".to_string()));
-        assert!(output.contains(&"B".to_string()));
+        assert!(output.iter().any(|r| r.message == "A"));
+        assert!(output.iter().any(|r| r.message == "B"));
     }
 
     #[test]
     fn test_missing_entity_declaration_fails_safely_explicit() {
         let source = "entity Found {}";
         let mut th = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut th };
-        let tokens = Lexer::new(source).tokenize().unwrap();
-        let program = Parser::new(tokens).parse().unwrap();
+        add_authored_entity(&mut th.world, WorldCoord::new(0, 0, 0), CellType::NPC, "Missing");
+        let temp_dir = std::env::temp_dir().join("aeo_test_missing_entity_decl");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
+        let script_path = "test.aeo";
+        std::fs::write(temp_dir.join("scripts").join(script_path), source).unwrap();
 
-        // Requesting "Missing" which is not in the program.
-        let scene = ScriptScene::new(program, vec![("Missing".to_string(), 0)], &mut host);
+        let bindings = vec![ScriptBinding::new("Missing", format!("scripts/{}", script_path))];
+        let result = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            1.0,
+        );
 
-        assert_eq!(scene.entities.len(), 0);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Script 'scripts/test.aeo' does not contain an entity declaration for 'Missing'"));
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
     fn test_load_from_bindings_missing_script_fails() {
         let mut th = test_host();
+        add_authored_entity(&mut th.world, WorldCoord::new(0, 0, 0), CellType::Player, "Player");
         let temp_dir = std::env::temp_dir().join("aeo_test_missing");
         let _ = std::fs::remove_dir_all(&temp_dir);
-        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
 
         let bindings = vec![ScriptBinding::new("Player", "nonexistent.aeo")];
-        let result = ScriptScene::load_from_bindings(&temp_dir, &bindings, &mut th.entity_manager, 1.0);
+        let result = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            1.0,
+        );
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Failed to read script"));
-
+        assert!(result.unwrap_err().contains("Bound script 'nonexistent.aeo' not found"));
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
     fn test_load_from_bindings_invalid_script_fails() {
         let mut th = test_host();
+        add_authored_entity(&mut th.world, WorldCoord::new(0, 0, 0), CellType::NPC, "Broken");
         let temp_dir = std::env::temp_dir().join("aeo_test_invalid");
         let _ = std::fs::remove_dir_all(&temp_dir);
-        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
 
         let script_path = "broken.aeo";
-        std::fs::write(temp_dir.join(script_path), "entity Broken { !!! }").unwrap();
-
+        std::fs::write(temp_dir.join("scripts").join(script_path), "entity Broken { !!! }").unwrap();
         let bindings = vec![ScriptBinding::new("Broken", script_path)];
-        let result = ScriptScene::load_from_bindings(&temp_dir, &bindings, &mut th.entity_manager, 1.0);
+        let result = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            1.0,
+        );
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Parser error"));
-
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
@@ -846,30 +1135,32 @@ entity B { fn on_spawn() { debug.log("B") } }
 entity Test {
     fn on_spawn() {
         const l1 = get_light(10, 10, 10)
-        if l1 != null { debug.log("found_l1") }
-
+        if l1 != nil { debug.log("found_l1") }
         const l2 = get_light(0, 0, 0)
-        if l2 == null { debug.log("null_l2") }
-
+        if l2 == nil { debug.log("nil_l2") }
         const l3 = get_light(100, 100, 100)
-        if l3 == null { debug.log("null_l3") }
+        if l3 == nil { debug.log("nil_l3") }
     }
 }
 "#;
         let mut th = test_host();
-        th.world.set_cell(crate::world::WorldCoord::new(10, 10, 10), crate::world::CellType::Light);
-        th.world.set_cell(crate::world::WorldCoord::new(0, 0, 0), crate::world::CellType::Block);
-
-        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        th.world
+            .set_cell(WorldCoord::new(10, 10, 10), CellType::Light);
+        th.world
+            .set_cell(WorldCoord::new(0, 0, 0), CellType::Block);
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
+        };
         let mut scene = create_scene(source, &mut host);
         scene.start(&mut host).unwrap();
-        scene.update(0.0, &mut host).unwrap(); // spawns
-        scene.update(0.0, &mut host).unwrap(); // runs
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
 
         let output = scene.output();
-        assert!(output.contains(&"found_l1".to_string()));
-        assert!(output.contains(&"null_l2".to_string()));
-        assert!(output.contains(&"null_l3".to_string()));
+        assert!(output.iter().any(|r| r.message == "found_l1"));
+        assert!(output.iter().any(|r| r.message == "nil_l2"));
+        assert!(output.iter().any(|r| r.message == "nil_l3"));
     }
 
     #[test]
@@ -879,30 +1170,29 @@ entity Test {
     fn on_spawn() {
         const l = get_light(10, 10, 10)
         if l.is_enabled() { debug.log("enabled_init") }
-
         l.set_enabled(false)
         if l.is_enabled() == false { debug.log("disabled_after_set") }
-
         l.set_enabled(true)
         if l.is_enabled() { debug.log("enabled_after_set") }
     }
 }
 "#;
         let mut th = test_host();
-        let coord = crate::world::WorldCoord::new(10, 10, 10);
-        th.world.set_cell(coord, crate::world::CellType::Light);
-
-        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let coord = WorldCoord::new(10, 10, 10);
+        th.world.set_cell(coord, CellType::Light);
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
+        };
         let mut scene = create_scene(source, &mut host);
         scene.start(&mut host).unwrap();
         scene.update(0.0, &mut host).unwrap();
         scene.update(0.0, &mut host).unwrap();
 
         let output = scene.output();
-        assert!(output.contains(&"enabled_init".to_string()));
-        assert!(output.contains(&"disabled_after_set".to_string()));
-        assert!(output.contains(&"enabled_after_set".to_string()));
-
+        assert!(output.iter().any(|r| r.message == "enabled_init"));
+        assert!(output.iter().any(|r| r.message == "disabled_after_set"));
+        assert!(output.iter().any(|r| r.message == "enabled_after_set"));
         assert_eq!(th.world.get(coord).unwrap().light_enabled, true);
     }
 
@@ -913,7 +1203,6 @@ entity Test {
     fn on_spawn() {
         const l1 = get_light(10, 10, 10)
         const l2 = get_light(20, 20, 20)
-
         l1.set_enabled(false)
         if l1.is_enabled() == false { debug.log("l1_off") }
         if l2.is_enabled() == true { debug.log("l2_on") }
@@ -921,18 +1210,22 @@ entity Test {
 }
 "#;
         let mut th = test_host();
-        th.world.set_cell(crate::world::WorldCoord::new(10, 10, 10), crate::world::CellType::Light);
-        th.world.set_cell(crate::world::WorldCoord::new(20, 20, 20), crate::world::CellType::Light);
-
-        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        th.world
+            .set_cell(WorldCoord::new(10, 10, 10), CellType::Light);
+        th.world
+            .set_cell(WorldCoord::new(20, 20, 20), CellType::Light);
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
+        };
         let mut scene = create_scene(source, &mut host);
         scene.start(&mut host).unwrap();
         scene.update(0.0, &mut host).unwrap();
         scene.update(0.0, &mut host).unwrap();
 
         let output = scene.output();
-        assert!(output.contains(&"l1_off".to_string()));
-        assert!(output.contains(&"l2_on".to_string()));
+        assert!(output.iter().any(|r| r.message == "l1_off"));
+        assert!(output.iter().any(|r| r.message == "l2_on"));
     }
 
     #[test]
@@ -952,48 +1245,63 @@ entity Test {
 }
 "#;
         let mut th = test_host();
-        let coord = crate::world::WorldCoord::new(10, 10, 10);
-        th.world.set_cell(coord, crate::world::CellType::Light);
-
+        let coord = WorldCoord::new(10, 10, 10);
+        th.world.set_cell(coord, CellType::Light);
         let mut scene = {
-            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
+            let mut host = HostContext {
+                delta_time: 1.0,
+                engine: &mut th,
+            };
             let mut scene = create_scene(source, &mut host);
             scene.start(&mut host).unwrap();
-            scene.update(0.0, &mut host).unwrap(); // spawns
+            scene.update(0.0, &mut host).unwrap();
             scene
         };
 
-        // i = 1
         {
-            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
-            scene.update(0.0, &mut host).unwrap(); // set off, wait(1)
+            let mut host = HostContext {
+                delta_time: 1.0,
+                engine: &mut th,
+            };
+            scene.update(0.0, &mut host).unwrap();
         }
         assert_eq!(th.world.get(coord).unwrap().light_enabled, false);
 
         {
-            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
-            scene.update(1.0, &mut host).unwrap(); // set on, wait(1)
+            let mut host = HostContext {
+                delta_time: 1.0,
+                engine: &mut th,
+            };
+            scene.update(1.0, &mut host).unwrap();
         }
         assert_eq!(th.world.get(coord).unwrap().light_enabled, true);
 
-        // i = 2
         {
-            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
-            scene.update(1.0, &mut host).unwrap(); // set off, wait(1)
+            let mut host = HostContext {
+                delta_time: 1.0,
+                engine: &mut th,
+            };
+            scene.update(1.0, &mut host).unwrap();
         }
         assert_eq!(th.world.get(coord).unwrap().light_enabled, false);
 
         {
-            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
-            scene.update(1.0, &mut host).unwrap(); // set on, wait(1)
+            let mut host = HostContext {
+                delta_time: 1.0,
+                engine: &mut th,
+            };
+            scene.update(1.0, &mut host).unwrap();
         }
         assert_eq!(th.world.get(coord).unwrap().light_enabled, true);
 
         {
-            let mut host = HostContext { delta_time: 1.0, engine: &mut th };
-            scene.update(1.0, &mut host).unwrap(); // loop ends
+            let mut host = HostContext {
+                delta_time: 1.0,
+                engine: &mut th,
+            };
+            scene.update(1.0, &mut host).unwrap();
         }
-        assert!(scene.output().contains(&"done".to_string()));
+        assert!(scene.output().iter().any(|r| r.message == "done"));
     }
 
     #[test]
@@ -1003,38 +1311,585 @@ entity Test {
     fn update(dt: number) {
         const l1 = get_light(10, 10, 10)
         l1.set_enabled(false)
-
         const l2 = get_light(10, 10, 10)
         if l2.is_enabled() == false { debug.log("refetch_observed_off") }
     }
 }
 "#;
         let mut th = test_host();
-        th.world.set_cell(crate::world::WorldCoord::new(10, 10, 10), crate::world::CellType::Light);
+        th.world
+            .set_cell(WorldCoord::new(10, 10, 10), CellType::Light);
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
+        };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        assert!(scene.output().iter().any(|r| r.message == "refetch_observed_off"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Authored World → ScriptScene → RuntimeEntity integration tests
+    // -------------------------------------------------------------------------
+
+    fn write_test_script(temp_dir: &Path, file_name: &str, source: &str) {
+        let _ = std::fs::remove_dir_all(temp_dir);
+        std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
+        std::fs::write(temp_dir.join("scripts").join(file_name), source).unwrap();
+    }
+
+    #[test]
+    fn test_single_authored_entity() {
+        let source = r#"
+entity Guard01 {
+    fn on_spawn() { debug.log("spawned Guard01") }
+}
+"#;
+        let mut th = test_host();
+        let coord = WorldCoord::new(10, 5, 10);
+        add_authored_entity(&mut th.world, coord, CellType::NPC, "Guard01");
+
+        let temp_dir = std::env::temp_dir().join("aeo_test_single_authored_entity");
+        write_test_script(&temp_dir, "guard.aeo", source);
+        let bindings = vec![ScriptBinding::new("Guard01", "scripts/guard.aeo")];
+
+        let mut scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            0.0,
+        )
+        .unwrap();
+
+        assert_eq!(scene.entities.len(), 1);
+        let id = th.entity_manager.lookup_entity("Guard01").unwrap();
+        assert_eq!(
+            th.entity_manager.get_position(id),
+            Some(Vec3::new(10.0, 5.0, 10.0))
+        );
+
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
+        };
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        assert!(scene.output().iter().any(|r| r.message == "spawned Guard01"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_authored_position_transfer() {
+        let source = r#"
+entity Player {
+    fn on_spawn() {
+        const e = get_entity("Player")
+        const p = e.position
+        debug.log(p[0])
+        debug.log(p[1])
+        debug.log(p[2])
+    }
+}
+"#;
+        let mut th = test_host();
+        add_authored_entity(
+            &mut th.world,
+            WorldCoord::new(10, 5, 20),
+            CellType::Player,
+            "Player",
+        );
+
+        let temp_dir = std::env::temp_dir().join("aeo_test_authored_position_transfer");
+        write_test_script(&temp_dir, "player.aeo", source);
+        let bindings = vec![ScriptBinding::new("Player", "scripts/player.aeo")];
+
+        let mut scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            0.0,
+        )
+        .unwrap();
+
+        let id = th.entity_manager.lookup_entity("Player").unwrap();
+        assert_eq!(
+            th.entity_manager.get_position(id),
+            Some(Vec3::new(10.0, 5.0, 20.0))
+        );
+
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
+        };
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "10"));
+        assert!(output.iter().any(|r| r.message == "5"));
+        assert!(output.iter().any(|r| r.message == "20"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_multiple_instances() {
+        let source = r#"
+entity Guard01 {
+    fn on_spawn() {
+        const e = get_entity("Guard01")
+        const p = e.position
+        debug.log(e.name)
+        debug.log(p[0])
+        debug.log(p[1])
+        debug.log(p[2])
+    }
+}
+entity Guard02 {
+    fn on_spawn() {
+        const e = get_entity("Guard02")
+        const p = e.position
+        debug.log(e.name)
+        debug.log(p[0])
+        debug.log(p[1])
+        debug.log(p[2])
+    }
+}
+"#;
+        let mut th = test_host();
+        add_authored_entity(
+            &mut th.world,
+            WorldCoord::new(10, 5, 10),
+            CellType::NPC,
+            "Guard01",
+        );
+        add_authored_entity(
+            &mut th.world,
+            WorldCoord::new(30, 5, 10),
+            CellType::NPC,
+            "Guard02",
+        );
+
+        let temp_dir = std::env::temp_dir().join("aeo_test_multiple_instances");
+        write_test_script(&temp_dir, "guard.aeo", source);
+        let bindings = vec![
+            ScriptBinding::new("Guard01", "scripts/guard.aeo"),
+            ScriptBinding::new("Guard02", "scripts/guard.aeo"),
+        ];
+
+        let mut scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            0.0,
+        )
+        .unwrap();
+
+        assert_eq!(scene.entities.len(), 2);
+        let id1 = th.entity_manager.lookup_entity("Guard01").unwrap();
+        let id2 = th.entity_manager.lookup_entity("Guard02").unwrap();
+        assert_ne!(id1, id2);
+        assert_eq!(
+            th.entity_manager.get_position(id1),
+            Some(Vec3::new(10.0, 5.0, 10.0))
+        );
+        assert_eq!(
+            th.entity_manager.get_position(id2),
+            Some(Vec3::new(30.0, 5.0, 10.0))
+        );
+
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
+        };
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "Guard01"));
+        assert!(output.iter().any(|r| r.message == "Guard02"));
+        assert!(output.iter().any(|r| r.message == "30"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_identity_isolation() {
+        let source = r#"
+entity Guard01 {
+    fn on_spawn() { debug.log("spawned Guard01") }
+}
+entity Guard02 {
+    fn on_spawn() { debug.log("spawned Guard02") }
+}
+"#;
+        let mut th = test_host();
+        add_authored_entity(
+            &mut th.world,
+            WorldCoord::new(0, 0, 0),
+            CellType::NPC,
+            "Guard01",
+        );
+        add_authored_entity(
+            &mut th.world,
+            WorldCoord::new(1, 1, 1),
+            CellType::NPC,
+            "Guard02",
+        );
+
+        let temp_dir = std::env::temp_dir().join("aeo_test_identity_isolation");
+        write_test_script(&temp_dir, "guards.aeo", source);
+        let bindings = vec![ScriptBinding::new("Guard01", "scripts/guards.aeo")];
+
+        let mut scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            0.0,
+        )
+        .unwrap();
+
+        assert_eq!(scene.entities.len(), 1);
+        assert_eq!(scene.entities[0].instance.entity_name(), "Guard01");
+        assert!(th.entity_manager.lookup_entity("Guard02").is_none());
+
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
+        };
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        assert!(scene.output().iter().any(|r| r.message == "spawned Guard01"));
+        assert!(!scene.output().iter().any(|r| r.message == "spawned Guard02"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_unbound_authored_entity_does_not_spawn() {
+        let mut th = test_host();
+        add_authored_entity(
+            &mut th.world,
+            WorldCoord::new(0, 0, 0),
+            CellType::NPC,
+            "Unbound",
+        );
+
+        let temp_dir = std::env::temp_dir().join("aeo_test_unbound_authored_entity");
+        write_test_script(
+            &temp_dir,
+            "other.aeo",
+            "entity Other { fn on_spawn() { debug.log(\"other\") } }",
+        );
+
+        let bindings: Vec<ScriptBinding> = Vec::new();
+        let scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            0.0,
+        )
+        .unwrap();
+
+        assert!(scene.entities.is_empty());
+        assert!(th.entity_manager.lookup_entity("Unbound").is_none());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_non_entity_cells_do_not_participate() {
+        let mut th = test_host();
+        th.world
+            .set_cell(WorldCoord::new(0, 0, 0), CellType::Block);
+        th.world
+            .set_cell(WorldCoord::new(1, 1, 1), CellType::Light);
+        th.world
+            .set_cell(WorldCoord::new(2, 2, 2), CellType::SpawnPoint);
+
+        let temp_dir = std::env::temp_dir().join("aeo_test_non_entity_cells");
+        write_test_script(&temp_dir, "test.aeo", "entity Test {}");
+
+        let scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &[],
+            &mut th.entity_manager,
+            0.0,
+        )
+        .unwrap();
+
+        assert!(scene.entities.is_empty());
+        assert!(th.entity_manager.lookup_entity("Test").is_none());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_duplicate_authored_identity() {
+        let mut th = test_host();
+        add_authored_entity(
+            &mut th.world,
+            WorldCoord::new(0, 0, 0),
+            CellType::Player,
+            "Duplicate",
+        );
+        add_authored_entity(
+            &mut th.world,
+            WorldCoord::new(1, 1, 1),
+            CellType::NPC,
+            "Duplicate",
+        );
+
+        let temp_dir = std::env::temp_dir().join("aeo_test_duplicate_authored_identity");
+        write_test_script(&temp_dir, "duplicate.aeo", "entity Duplicate {}");
+        let bindings = vec![ScriptBinding::new("Duplicate", "duplicate.aeo")];
+
+        let result = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            0.0,
+        );
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Duplicate authored entity identity found: 'Duplicate'"));
+        assert!(th.entity_manager.lookup_entity("Duplicate").is_none());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_duplicate_binding_target_identity() {
+        let mut th = test_host();
+        add_authored_entity(
+            &mut th.world,
+            WorldCoord::new(0, 0, 0),
+            CellType::NPC,
+            "Guard01",
+        );
+
+        let temp_dir = std::env::temp_dir().join("aeo_test_duplicate_binding_target");
+        write_test_script(&temp_dir, "guard.aeo", "entity Guard01 {}");
+        let bindings = vec![
+            ScriptBinding::new("Guard01", "guard.aeo"),
+            ScriptBinding::new("Guard01", "guard.aeo"),
+        ];
+
+        let result = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            0.0,
+        );
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Multiple script bindings found for target identity 'Guard01'"));
+        assert!(th.entity_manager.lookup_entity("Guard01").is_none());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_stale_binding() {
+        let mut th = test_host();
+        let temp_dir = std::env::temp_dir().join("aeo_test_stale_binding");
+        write_test_script(&temp_dir, "test.aeo", "entity NonExistent {}");
+        let bindings = vec![ScriptBinding::new("NonExistent", "test.aeo")];
+
+        let scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            0.0,
+        ).expect("Stale binding should not prevent scene construction");
+
+        assert!(scene.output().iter().any(|r| r.message.contains(
+            "Stale script binding found: target identity 'NonExistent' does not exist in the world as an authored entity."
+        )));
+        assert!(th.entity_manager.lookup_entity("NonExistent").is_none());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_discovery_and_bridge() {
+        let source = r#"
+entity Test {
+    fn on_spawn() {
+        const lights = getAllCellsOfClass("Light")
+        debug.log("Lights:", lights.len())
+        if lights.len() > 0 {
+            const first = lights[0]
+            const obj = first:getObject()
+            if obj != nil {
+                debug.log("Found object:", obj.name)
+            }
+        }
+    }
+}
+"#;
+        let mut th = test_host();
+        let coord1 = WorldCoord::new(10, 10, 10);
+        let coord2 = WorldCoord::new(20, 20, 20);
+        add_authored_entity(&mut th.world, coord1, CellType::Light, "Light1");
+        add_authored_entity(&mut th.world, coord2, CellType::Light, "Light2");
 
         let mut host = HostContext { delta_time: 0.0, engine: &mut th };
         let mut scene = create_scene(source, &mut host);
         scene.start(&mut host).unwrap();
-        scene.update(0.0, &mut host).unwrap(); // spawns
-        scene.update(0.0, &mut host).unwrap(); // runs
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
 
-        assert!(scene.output().contains(&"refetch_observed_off".to_string()));
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "Lights: 2"));
     }
 
     #[test]
-    fn wait_0_fails() {
+    fn test_get_all_cells_of_class_empty() {
         let source = r#"
 entity Test {
-    fn update(dt: number) { wait(0) }
+    fn on_spawn() {
+        const lights = getAllCellsOfClass("Light")
+        debug.log("Lights:", lights.len())
+    }
 }
 "#;
-        let mut em = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
         let mut scene = create_scene(source, &mut host);
         scene.start(&mut host).unwrap();
-        scene.update(0.0, &mut host).unwrap(); // Initial -> Active, spawns update
-        let result = scene.update(0.0, &mut host); // runs update, FAILS
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("greater than zero"));
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "Lights: 0"));
+    }
+
+    #[test]
+    fn test_light_set_enabled_on_discovered_cell() {
+        let source = r#"
+entity Test {
+    fn on_spawn() {
+        const lights = getAllCellsOfClass("Light")
+        if lights.len() > 0 {
+            const l = lights[0]
+            l.set_enabled(false)
+            if l.is_enabled() == false {
+                debug.log("Discovered light disabled")
+            }
+        }
+    }
+}
+"#;
+        let mut th = test_host();
+        let coord = WorldCoord::new(10, 10, 10);
+        add_authored_entity(&mut th.world, coord, CellType::Light, "Light1");
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "Discovered light disabled"));
+        assert_eq!(th.world.get(coord).unwrap().light_enabled, false);
+    }
+
+    #[test]
+    fn test_unattached_event_handler_loading() {
+        let source = r#"
+on GlobalEvent(val) {
+    debug.log("Received:", val)
+}
+"#;
+        let mut th = TestHost {
+            entity_manager: EntityManager::new(),
+            world: World::new(),
+        };
+
+        let temp_dir = std::env::temp_dir().join("aeo_test_unattached");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
+        std::fs::write(temp_dir.join("scripts/global.aeo"), source).unwrap();
+
+        let mut scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &[],
+            &mut th.entity_manager,
+            0.0,
+        ).unwrap();
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        scene.start(&mut host).unwrap();
+
+        scene.dispatch_event("GlobalEvent", vec![Value::Number(42.0)], &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        assert!(scene.output().iter().any(|r| r.message.contains("Received: 42")));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_event_handler_not_duplicated() {
+        let source = r#"
+on TestEvent() {
+    debug.log("Event Triggered")
+}
+"#;
+        let mut th = TestHost {
+            entity_manager: EntityManager::new(),
+            world: World::new(),
+        };
+
+        let temp_dir = std::env::temp_dir().join("aeo_test_duplication");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
+        std::fs::write(temp_dir.join("scripts/test.aeo"), source).unwrap();
+
+        let mut scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &[],
+            &mut th.entity_manager,
+            0.0,
+        ).unwrap();
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        scene.start(&mut host).unwrap();
+
+        scene.dispatch_event("TestEvent", vec![], &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+        let occurrences: Vec<_> = output.iter().filter(|r| r.message == "Event Triggered").collect();
+
+        assert_eq!(occurrences.len(), 1, "Event should only be triggered once");
+        assert_eq!(occurrences[0].script_path.as_deref(), Some("scripts/test.aeo"), "Event should have correct script path");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

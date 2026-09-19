@@ -11,6 +11,7 @@ pub enum Declaration {
     Entity(EntityDecl),
     Function(FunctionDecl),
     Import(ImportDecl),
+    Event(EventDecl),
 }
 
 impl Declaration {
@@ -19,6 +20,7 @@ impl Declaration {
             Self::Entity(entity) => entity.span,
             Self::Function(function) => function.span,
             Self::Import(import) => import.span,
+            Self::Event(event) => event.span,
         }
     }
 }
@@ -51,6 +53,14 @@ pub struct FieldDecl {
     pub name: String,
     pub type_annotation: Option<Type>,
     pub initializer: Option<Expression>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EventDecl {
+    pub span: SourceSpan,
+    pub name: String,
+    pub parameters: Vec<Parameter>,
+    pub body: Block,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -157,7 +167,7 @@ pub enum ExpressionKind {
     Number(f64),
     String(String),
     Bool(bool),
-    Null,
+    Nil,
 
     Identifier(String),
 
@@ -174,6 +184,12 @@ pub enum ExpressionKind {
 
     Call {
         callee: Box<Expression>,
+        arguments: Vec<Expression>,
+    },
+
+    MethodCall {
+        object: Box<Expression>,
+        method: String,
         arguments: Vec<Expression>,
     },
 

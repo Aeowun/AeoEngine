@@ -136,16 +136,21 @@ impl App {
                     },
                 ..
             } => {
-                if egui_ctx.wants_keyboard_input() {
-                    return;
-                }
-
                 if let PhysicalKey::Code(key) = physical_key {
                     let was_pressed = *state == ElementState::Pressed;
                     if was_pressed {
                         self.keys_down.insert(*key);
                     } else {
                         self.keys_down.remove(key);
+                    }
+
+                    if egui_ctx.wants_keyboard_input() {
+                        let ctrl = self.keys_down.contains(&KeyCode::ControlLeft)
+                            || self.keys_down.contains(&KeyCode::ControlRight);
+                        // Allow Ctrl+S and Key G to pass through.
+                        if !(*key == KeyCode::KeyS && ctrl) && !(*key == KeyCode::KeyG) {
+                            return;
+                        }
                     }
 
                     if (*key == KeyCode::ShiftLeft || *key == KeyCode::ShiftRight)
@@ -602,9 +607,17 @@ impl App {
 
                 self.physics_world.register_from_world(&self.world);
 
-                self.character_system.spawn_player(&self.world);
+                let spawned_id = self.character_system.spawn_player(&self.world);
 
                 self.start_scripting();
+
+                if let Some(_char_id) = spawned_id {
+                    let em_id = self.entity_manager.create_entity("Player");
+                    if let Some(player) = self.character_system.get_active_characters().next() {
+                        self.entity_manager.set_position(em_id, player.transform.position);
+                    }
+                    self.fire_player_spawned_event(em_id.0);
+                }
             }
 
             if self.editor.mode == EditorMode::Editor && self.last_mode == EditorMode::Play {
@@ -639,6 +652,61 @@ impl App {
                     };
                     if let Err(e) = scene.update(frame_time, &mut context) {
                         eprintln!("Scripting error: {}", e);
+                    }
+
+                    for record in scene.drain_output() {
+                        let timestamp = get_timestamp();
+
+                        let formatted = if record.script_path.is_none() && record.entity_name.is_none() {
+                            // Engine-originated message
+                            let engine_context = match record.severity {
+                                crate::scripting::log::LogSeverity::Error => "Engine Error",
+                                crate::scripting::log::LogSeverity::Warning => "Engine Warning",
+                                _ => "Engine",
+                            };
+                            format!(
+                                "[{}] [{}] {} | {}\n",
+                                timestamp,
+                                record.severity.name(),
+                                engine_context,
+                                record.message
+                            )
+                        } else {
+                            // Script-originated message
+                            let script_part = if let Some(path) = &record.script_path {
+                                format!("{} | ", path)
+                            } else {
+                                "".to_string()
+                            };
+
+                            let entity_part = if let Some(name) = &record.entity_name {
+                                if name == "Global" {
+                                    "".to_string()
+                                } else {
+                                    format!("Entity: {} | ID: {} | ", name, record.entity_id.unwrap_or(0))
+                                }
+                            } else {
+                                "".to_string()
+                            };
+
+                            let context_part = if let Some(ctx) = &record.context_name {
+                                format!("{} | ", ctx)
+                            } else {
+                                "".to_string()
+                            };
+
+                            format!(
+                                "[{}] [{}] {}{}{}{}\n",
+                                timestamp,
+                                record.severity.name(),
+                                script_part,
+                                entity_part,
+                                context_part,
+                                record.message
+                            )
+                        };
+
+                        self.editor.terminal_output.push_str(&formatted);
                     }
                 }
 
@@ -771,6 +839,7 @@ impl App {
 
         match ScriptScene::load_from_bindings(
             project_path,
+            &self.world,
             &self.world.script_bindings,
             &mut self.entity_manager,
             0.0,
@@ -783,12 +852,14 @@ impl App {
                 };
                 if let Err(e) = scene.start(&mut host) {
                     eprintln!("Failed to start script scene: {}", e);
+                    self.editor.terminal_output.push_str(&format!("> Startup error: {}\n", e));
                 } else {
                     self.script_scene = Some(scene);
                 }
             }
             Err(e) => {
                 eprintln!("Scripting failed to load: {}", e);
+                self.editor.terminal_output.push_str(&format!("> Load error: {}\n", e));
             }
         }
     }
@@ -804,6 +875,28 @@ impl App {
             scene.stop(&mut host);
         }
         em.clear();
+    }
+
+    fn fire_player_spawned_event(&mut self, player_em_id: u64) {
+        if let Some(scene) = &mut self.script_scene {
+            let em = &mut self.entity_manager;
+            let world = &mut self.world;
+            let mut bridge = ScriptHostBridge {
+                entity_manager: em,
+                world,
+            };
+            let mut context = HostContext {
+                delta_time: 0.0,
+                engine: &mut bridge,
+            };
+            let args = vec![crate::scripting::value::Value::Handle {
+                kind: crate::scripting::value::HandleKind::Entity,
+                id: player_em_id,
+            }];
+            if let Err(e) = scene.dispatch_event("PlayerSpawned", args, &mut context) {
+                eprintln!("Failed to dispatch PlayerSpawned: {}", e);
+            }
+        }
     }
 
     pub fn exit_to_home(&mut self) {
@@ -1061,6 +1154,18 @@ impl App {
     }
 }
 
+fn get_timestamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = now.as_secs();
+    let hours = (secs / 3600) % 24;
+    let mins = (secs / 60) % 60;
+    let secs = secs % 60;
+    format!("{:02}:{:02}:{:02}", hours, mins, secs)
+}
+
 struct ScriptHostBridge<'a> {
     entity_manager: &'a mut EntityManager,
     world: &'a mut World,
@@ -1099,5 +1204,94 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
         if let Some(cell) = self.world.get_mut(coord) {
             cell.light_enabled = enabled;
         }
+    }
+
+    fn get_all_cells_of_class(&self, class_name: &str) -> Vec<u64> {
+        let mut results = Vec::new();
+        for (coord, cell) in &self.world.cells {
+            let matches = match class_name {
+                "Light" => cell.cell_type == crate::world::CellType::Light,
+                "Block" => cell.cell_type == crate::world::CellType::Block,
+                "SpawnPoint" => cell.cell_type == crate::world::CellType::SpawnPoint,
+                "Player" => cell.cell_type == crate::world::CellType::Player,
+                "NPC" => cell.cell_type == crate::world::CellType::NPC,
+                _ => false,
+            };
+
+            if matches {
+                results.push(crate::scripting::api::pack_coord(*coord));
+            }
+        }
+        results
+    }
+
+    fn find_objects(&self, query: &str) -> Vec<(crate::scripting::value::HandleKind, u64)> {
+        let mut results = Vec::new();
+        if let Some(id) = self.entity_manager.lookup_entity(query) {
+            results.push((crate::scripting::value::HandleKind::Entity, id.0));
+        }
+        results
+    }
+
+    fn get_children(&self, _kind: crate::scripting::value::HandleKind, _id: u64) -> Vec<(crate::scripting::value::HandleKind, u64)> {
+        Vec::new()
+    }
+
+    fn get_parent(&self, _kind: crate::scripting::value::HandleKind, _id: u64) -> Option<(crate::scripting::value::HandleKind, u64)> {
+        None
+    }
+
+    fn get_cell_object(&self, cell_id: u64) -> Option<(crate::scripting::value::HandleKind, u64)> {
+        let coord = crate::scripting::api::unpack_coord(cell_id);
+        if let Some(cell) = self.world.get(coord) {
+            if let Some(identity) = &cell.entity_identity {
+                if let Some(id) = self.entity_manager.lookup_entity(identity) {
+                    return Some((crate::scripting::value::HandleKind::Entity, id.0));
+                }
+            }
+        }
+        None
+    }
+
+    fn get_property(&self, kind: crate::scripting::value::HandleKind, id: u64, name: &str) -> Result<Option<crate::scripting::value::Value>, String> {
+        use crate::scripting::value::{Value, HandleKind};
+        match kind {
+            HandleKind::Cell => {
+                let coord = crate::scripting::api::unpack_coord(id);
+                if let Some(cell) = self.world.get(coord) {
+                    match name {
+                        "name" => return Ok(Some(Value::String(cell.entity_identity.clone().unwrap_or_else(|| "Cell".to_string())))),
+                        "cellType" => return Ok(Some(Value::String(format!("{:?}", cell.cell_type)))),
+                        "position" => return Ok(Some(Value::Array(vec![
+                            Value::Number(coord.x as f64),
+                            Value::Number(coord.y as f64),
+                            Value::Number(coord.z as f64),
+                        ]))),
+                        _ => {}
+                    }
+                }
+            }
+            HandleKind::Entity => {
+                let entity_id = crate::engine::entity::EntityId(id);
+                match name {
+                    "name" => {
+                        if let Some(entity_name) = self.entity_manager.get_name(entity_id) {
+                            return Ok(Some(Value::String(entity_name.to_string())));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        Ok(None)
+    }
+
+    fn set_property(&mut self, _kind: crate::scripting::value::HandleKind, _id: u64, _name: &str, _value: crate::scripting::value::Value) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn call_method(&mut self, _kind: crate::scripting::value::HandleKind, _id: u64, _name: &str, _args: &[crate::scripting::value::Value]) -> Result<Option<crate::scripting::value::Value>, String> {
+        Ok(None)
     }
 }

@@ -1,12 +1,14 @@
 ﻿# AeoScript Grammar
 
-This document describes the planned grammar for AeoScript.
+This document describes the grammar for AeoScript.
 
-It is intentionally incomplete while the language is being built.
+It is a working document while the language is being built.
 
-The grammar should follow the actual parser as the implementation develops.
-If the parser and this document disagree, fix the document or the parser rather
-than letting them drift apart.
+The parser is the final authority.
+
+If this document and the parser disagree, fix whichever one is wrong. Do not let them drift apart.
+
+The goal is a small, predictable language that is easy to use and easy to extend without adding special syntax for every new engine feature.
 
 ---
 
@@ -29,10 +31,11 @@ Current declaration types:
 declaration
     = entity_declaration
     | function_declaration
-    | import_declaration
+    | const_declaration
+    | event_declaration
 ```
 
-Imports are planned but may not exist in the first implementation.
+Imports and modules are planned for later.
 
 ---
 
@@ -59,7 +62,7 @@ entity Door {
 
 # 4. Entity Members
 
-An entity can currently contain fields and functions.
+An entity can contain fields and functions.
 
 ```text
 entity_member
@@ -70,6 +73,8 @@ entity_member
 ---
 
 # 5. Fields
+
+A field can have an explicit type or use type inference.
 
 ```text
 field_declaration
@@ -94,7 +99,11 @@ health = 100
 
 ```text
 const_declaration
-    = "const" identifier type_annotation? "=" expression
+    = "const"
+      identifier
+      type_annotation?
+      "="
+      expression
 ```
 
 Example:
@@ -103,7 +112,7 @@ Example:
 const MAX_HEALTH = 100
 ```
 
-Whether constants are allowed inside entities is still open.
+Constants are immutable after initialization.
 
 ---
 
@@ -155,7 +164,48 @@ fn damage(target: Entity, amount: number) {
 
 ---
 
-# 9. Types
+# 9. Events
+
+Events use:
+
+```text
+event_declaration
+    = "on"
+      identifier
+      "(" parameter_list? ")"
+      block
+```
+
+Example:
+
+```aeoscript
+on PlayerSpawned(player) {
+    print("Player spawned")
+}
+```
+
+Event names are identifiers.
+
+The grammar does not contain special syntax for individual events.
+
+`PlayerSpawned` is simply one event name.
+
+Future events can use the same syntax:
+
+```aeoscript
+on DoorOpened(door) {
+}
+
+on EntityDestroyed(entity) {
+}
+
+on ButtonPressed(button) {
+}
+```
+
+---
+
+# 10. Types
 
 Initial built-in types:
 
@@ -165,6 +215,8 @@ type
     | "bool"
     | "string"
     | "Entity"
+    | "Cell"
+    | "Basket"
     | "vec2"
     | "vec3"
     | "vec4"
@@ -183,25 +235,75 @@ Example:
 target: Entity?
 ```
 
+A value of an optional type may contain `nil`.
+
+Generic type syntax such as:
+
+```text
+Basket<Entity>
+```
+
+is not part of the language yet.
+
 ---
 
-# 10. Blocks
+# 11. Nil
+
+The language uses:
+
+```aeoscript
+nil
+```
+
+There is no `null` literal.
+
+Grammar:
+
+```text
+nil
+    = "nil"
+```
+
+Example:
+
+```aeoscript
+target = nil
+```
+
+`nil` represents the absence of a value.
+
+---
+
+# 12. Blocks
 
 ```text
 block
     = "{" statement* "}"
 ```
 
+Example:
+
+```aeoscript
+fn update(dt: number) {
+
+    health -= dt
+
+    if health <= 0 {
+        die()
+    }
+}
+```
+
 ---
 
-# 11. Statements
+# 13. Statements
 
-Current statement direction:
+Current statement forms:
 
 ```text
 statement
-    = variable_declaration
-    | assignment
+    = variable_or_assignment
+    | const_declaration
     | if_statement
     | while_statement
     | for_statement
@@ -211,9 +313,9 @@ statement
 
 ---
 
-# 12. Variable Declaration
+# 14. Variables and Assignment
 
-Possible forms:
+A variable may be initialized with or without an explicit type.
 
 ```aeoscript
 health = 100
@@ -223,24 +325,13 @@ health = 100
 health: number = 100
 ```
 
-Grammar:
-
-```text
-variable_declaration
-    = identifier type_annotation? "=" expression
-```
-
----
-
-# 13. Assignment
-
-Simple assignment:
+The same surface form is used when assigning to an existing variable:
 
 ```aeoscript
-health = 100
+health = 50
 ```
 
-Compound assignment:
+Compound assignment is also supported:
 
 ```aeoscript
 health += 10
@@ -249,23 +340,38 @@ health *= 2
 health /= 2
 ```
 
-Planned operators:
+The assignment target may be a variable or a writable property.
 
-```text
-=
-+=
--=
-*=
-/=
+Examples:
+
+```aeoscript
+health = 100
+transform.position = new_position
+entity.name = "Guard"
 ```
 
 ---
 
-# 14. If
+# 15. Assignment Operators
+
+```text
+assignment_operator
+    = "="
+    | "+="
+    | "-="
+    | "*="
+    | "/="
+```
+
+---
+
+# 16. If
 
 ```text
 if_statement
-    = "if" expression block
+    = "if"
+      expression
+      block
       ("else" "if" expression block)*
       ("else" block)?
 ```
@@ -284,11 +390,13 @@ if health <= 0 {
 
 ---
 
-# 15. While
+# 17. While
 
 ```text
 while_statement
-    = "while" expression block
+    = "while"
+      expression
+      block
 ```
 
 Example:
@@ -303,26 +411,34 @@ The runtime may impose execution limits.
 
 ---
 
-# 16. For
+# 18. For
 
-Initial direction:
+The initial `for` form iterates over a value.
 
 ```text
 for_statement
-    = "for" identifier "in" expression block
+    = "for"
+      identifier
+      "in"
+      expression
+      block
 ```
 
 Example:
 
 ```aeoscript
 for enemy in enemies {
-    enemy.highlight()
+    enemy:highlight()
 }
 ```
 
+Baskets are the primary collection used for this kind of iteration.
+
+Numeric/range iteration can be added later if needed.
+
 ---
 
-# 17. Return
+# 19. Return
 
 Without a value:
 
@@ -345,55 +461,79 @@ return_statement
 
 ---
 
-# 18. Expressions
+# 20. Expressions
 
 Expressions include:
 
 ```text
 literals
 identifiers
-property access
 function calls
+property access
+method calls
 index access
 unary operators
 binary operators
 parenthesized expressions
 ```
 
+The object model uses the same expression system for Cells, Entities, Baskets, and other supported values.
+
 ---
 
-# 19. Literals
+# 21. Primary Expressions
 
-Numbers:
+```text
+primary
+    = number_literal
+    | string_literal
+    | boolean_literal
+    | nil
+    | identifier
+    | "(" expression ")"
+```
+
+---
+
+# 22. Numbers
+
+Examples:
 
 ```text
 100
 3.14
--5
+0.5
 ```
 
-Strings:
+Negative numbers are handled through the unary `-` operator rather than being a separate literal.
+
+Example:
 
 ```aeoscript
-"hello"
-```
-
-Booleans:
-
-```text
-true
-false
-```
-
-Null:
-
-```text
-null
+speed = -5
 ```
 
 ---
 
-# 20. Identifiers
+# 23. Strings
+
+```aeoscript
+"hello"
+"door opened"
+```
+
+---
+
+# 24. Booleans
+
+```aeoscript
+true
+false
+```
+
+---
+
+# 25. Identifiers
 
 ```text
 identifier
@@ -411,42 +551,118 @@ move_speed
 target2
 ```
 
+Keywords cannot be used as identifiers.
+
 ---
 
-# 21. Property Access
+# 26. Postfix Expressions
 
-Example:
+AeoScript uses one common postfix expression model for calls, properties, methods, and indexing.
+
+```text
+postfix_expression
+    = primary postfix*
+```
+
+Possible postfix forms:
+
+```text
+postfix
+    = "." identifier
+    | ":" identifier "(" argument_list? ")"
+    | "(" argument_list? ")"
+    | "[" expression "]"
+```
+
+This allows chained expressions such as:
+
+```aeoscript
+player.position
+```
+
+```aeoscript
+player:destroy()
+```
+
+```aeoscript
+player:get_children()
+```
+
+```aeoscript
+children[0]
+```
+
+```aeoscript
+world:find("Door")[0]
+```
+
+The same model is used for engine objects and normal AeoScript values where supported.
+
+---
+
+# 27. Property Access
+
+Properties use dot syntax.
 
 ```aeoscript
 transform.position
+player.name
+light.enabled
 ```
 
-Grammar direction:
+Grammar:
 
 ```text
-member_access
+property_access
     = expression "." identifier
 ```
 
-Chained access:
+Properties are resolved by the object being accessed.
 
-```aeoscript
-player.character.velocity
-```
-
-Whether arbitrary chaining remains legal everywhere is still being worked out.
+The language does not create separate syntax for different engine object types.
 
 ---
 
-# 22. Function Calls
+# 28. Method Calls
 
-Example:
+Methods use colon syntax.
+
+```aeoscript
+object:method()
+```
+
+With arguments:
+
+```aeoscript
+object:method(argument)
+```
+
+Examples:
+
+```aeoscript
+character:jump()
+entity:destroy()
+light:set_enabled(false)
+```
+
+Grammar:
+
+```text
+method_call
+    = expression ":" identifier "(" argument_list? ")"
+```
+
+The colon form is the standard AeoScript method syntax.
+
+---
+
+# 29. Function Calls
+
+Normal function calls use parentheses.
 
 ```aeoscript
 print("Hello")
 ```
-
-Arguments:
 
 ```aeoscript
 move(direction, speed)
@@ -462,28 +678,189 @@ argument_list
     = expression ("," expression)*
 ```
 
+Methods and normal functions are separate syntactic forms.
+
 ---
 
-# 23. Index Access
+# 30. Index Access
+
+Baskets use 0-based indexing.
 
 Example:
 
 ```aeoscript
 items[0]
+items[1]
 ```
 
-Grammar direction:
+Grammar:
 
 ```text
 index_access
     = expression "[" expression "]"
 ```
 
+The index expression may be any valid expression that resolves to an appropriate index value.
+
 ---
 
-# 24. Arithmetic
+# 31. Baskets
 
-Operators:
+Baskets are AeoScript's collection type.
+
+Baskets are 0-based.
+
+Example:
+
+```aeoscript
+children = object:get_children()
+
+first = children[0]
+count = children.len()
+```
+
+Baskets may contain supported AeoScript values including:
+
+```text
+Cells
+Entities
+Baskets
+numbers
+strings
+booleans
+nil
+```
+
+A Basket is not a separate scripting syntax. It is a runtime value.
+
+---
+
+# 32. Cells
+
+A `Cell` represents authored world content.
+
+Examples:
+
+```text
+Block
+Light
+SpawnPoint
+future authored objects
+```
+
+Cells are safe script-facing references to authored content.
+
+They are not live runtime Entities.
+
+A Cell may be used with the normal object model:
+
+```aeoscript
+cell.name
+cell.cellType
+```
+
+and:
+
+```aeoscript
+cell:getObject()
+```
+
+The latter may return an Entity or `nil`.
+
+---
+
+# 33. Entities
+
+An `Entity` represents a live runtime object.
+
+Example:
+
+```aeoscript
+on PlayerSpawned(player) {
+    player.name
+    player.position
+}
+```
+
+Entities may expose properties and methods through the normal object model.
+
+Entity references may also be stored in Baskets and passed to functions or event handlers.
+
+---
+
+# 34. Discovery
+
+Discovery uses normal function calls and object methods.
+
+Examples:
+
+```aeoscript
+lights = getAllCellsOfClass("Light")
+```
+
+```aeoscript
+objects = find("Door")
+```
+
+```aeoscript
+children = object:get_children()
+```
+
+```aeoscript
+parent = object:get_parent()
+```
+
+Discovery does not introduce object-specific grammar.
+
+New engine object types should use the existing object model.
+
+---
+
+# 35. Cell to Entity
+
+A Cell may provide a live runtime object through:
+
+```aeoscript
+object = cell:getObject()
+```
+
+The result is:
+
+```text
+Entity
+```
+
+when a corresponding runtime object exists.
+
+Otherwise:
+
+```text
+nil
+```
+
+---
+
+# 36. Unary Operators
+
+Initial unary operators:
+
+```text
+!
+-
++
+```
+
+Examples:
+
+```aeoscript
+!alive
+-health
++speed
+```
+
+---
+
+# 37. Arithmetic Operators
 
 ```text
 +
@@ -501,13 +878,9 @@ damage = base_damage * multiplier
 
 ---
 
-# 25. Comparison
-
-Operators:
+# 38. Comparison Operators
 
 ```text
-==
-!=
 <
 >
 <=
@@ -524,14 +897,28 @@ if health <= 0 {
 
 ---
 
-# 26. Boolean Operators
+# 39. Equality Operators
 
-Operators:
+```text
+==
+!=
+```
+
+Example:
+
+```aeoscript
+if target == nil {
+    return
+}
+```
+
+---
+
+# 40. Boolean Operators
 
 ```text
 &&
 ||
-!
 ```
 
 Example:
@@ -544,12 +931,12 @@ if alive && health > 0 {
 
 ---
 
-# 27. Operator Precedence
+# 41. Operator Precedence
 
 Initial intended order, highest first:
 
 ```text
-1. function calls / member access / index access
+1. function calls / method calls / property access / index access
 2. unary operators
 3. multiplication / division / modulo
 4. addition / subtraction
@@ -559,11 +946,11 @@ Initial intended order, highest first:
 8. ||
 ```
 
-This may change once parser implementation begins.
+Parentheses override normal precedence.
 
 ---
 
-# 28. Parentheses
+# 42. Parentheses
 
 Parentheses explicitly group expressions.
 
@@ -571,17 +958,23 @@ Parentheses explicitly group expressions.
 damage = (base + bonus) * multiplier
 ```
 
+```aeoscript
+if (health > 0 && alive) {
+    attack()
+}
+```
+
 ---
 
-# 29. Comments
+# 43. Comments
 
-Single line:
+Single-line comments:
 
 ```aeoscript
 // comment
 ```
 
-Multi-line:
+Multi-line comments:
 
 ```aeoscript
 /*
@@ -589,13 +982,13 @@ Multi-line:
 */
 ```
 
-Comments are discarded before semantic analysis.
+Comments do not become part of the AST.
 
 ---
 
-# 30. Whitespace
+# 44. Whitespace
 
-Whitespace is not significant.
+Whitespace is not intended to change the meaning of an expression.
 
 These should mean the same thing:
 
@@ -609,13 +1002,13 @@ and:
 health     =     100
 ```
 
-Indentation is for readability only.
+Indentation is for readability.
 
 ---
 
-# 31. Semicolons
+# 45. Semicolons
 
-Semicolons are not required.
+Semicolons are not required by normal AeoScript style.
 
 Preferred:
 
@@ -623,43 +1016,123 @@ Preferred:
 health = 100
 ```
 
-Not:
+not:
 
 ```aeoscript
 health = 100;
 ```
 
-Whether semicolons are accepted as optional syntax is still open.
+Whether the parser accepts semicolons as compatibility syntax is an implementation detail and should not be relied upon.
 
 ---
 
-# 32. Formal Grammar Status
+# 46. Event Example
 
-This grammar is a working design.
+A complete event example:
 
-The parser should become the authority once implementation starts.
+```aeoscript
+on PlayerSpawned(player) {
 
-The goal is not to produce a giant academic grammar.
+    print("Player spawned")
 
-The goal is to make the language predictable and easy to implement.
-
----
-
-# 33. Next Grammar Work
-
-Before adding advanced syntax, settle:
-
-```text
-expression precedence
-assignment rules
-field initialization
-function declarations
-entity declarations
-optional values
-collections
+    print(player.name)
+}
 ```
 
-After that:
+The event handler receives the live `Entity` reference supplied by the engine.
+
+---
+
+# 47. Attached and Unattached Scripts
+
+AeoScript supports both attached and unattached scripts.
+
+An attached script can work with its parent object through the normal object model.
+
+An unattached script can act as a game/server-style script by discovering objects and responding to events.
+
+The grammar does not need separate syntax for these two cases.
+
+---
+
+# 48. Language Growth
+
+Adding a new engine object should normally not require a new language construct.
+
+For example, adding:
+
+```text
+Door
+NPC
+Vehicle
+Trigger
+Button
+Spawner
+Camera
+```
+
+should normally mean exposing that object through the existing:
+
+```text
+Cell
+Entity
+property
+method
+discovery
+event
+```
+
+model.
+
+The lexer and parser should remain stable.
+
+---
+
+# 49. Formal Grammar Status
+
+This grammar is a working specification.
+
+It is intentionally smaller than a full academic grammar.
+
+The important rules are:
+
+```text
+small language
+generic object model
+predictable syntax
+no object-specific language features
+```
+
+The parser is the implementation authority.
+
+The documentation should be updated whenever the implemented language changes.
+
+---
+
+# 50. Next Grammar Work
+
+Before adding advanced language features, the core syntax should remain stable around:
+
+```text
+entities
+fields
+functions
+constants
+variables
+optional values
+nil
+Cells
+Entities
+Baskets
+property access
+method calls
+index access
+events
+control flow
+expressions
+```
+
+Later features can include:
 
 ```text
 imports
@@ -669,5 +1142,6 @@ maps
 advanced types
 ```
 
-Do not add language features just because another language has them.
+These should only be added when they solve an actual problem in AeoEngine.
 
+Do not add language features just because another language has them.

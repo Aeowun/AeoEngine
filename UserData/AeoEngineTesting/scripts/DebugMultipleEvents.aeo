@@ -1,0 +1,7 @@
+on PlayerSpawned(player) {
+    debug.log("TEST 5: GLOBAL HANDLER A")
+}
+
+on PlayerSpawned(player) {
+    debug.log("TEST 5: GLOBAL HANDLER B")
+}

@@ -1,0 +1,4 @@
+on PlayerSpawned(player) {
+    debug.log("TEST 4: PLAYER ARGUMENT RECEIVED")
+    debug.log(player.position)
+}

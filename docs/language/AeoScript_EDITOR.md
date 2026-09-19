@@ -4,23 +4,19 @@ AeoEngine will use Monaco for editing `.aeo` files.
 
 The editor is part of the scripting workflow, but it should not define the language.
 
-The compiler and parser define the language.
+The lexer, parser, runtime, and engine API define the language.
 
 ---
 
 # 1. Basic Workflow
 
+The editor should make the normal scripting workflow simple:
+
 ```text
-Select Entity
+Create / Open Script
       |
       v
-Add Script
-      |
-      v
-Create .aeo
-      |
-      v
-Open Monaco
+Open in Monaco
       |
       v
 Edit
@@ -29,11 +25,13 @@ Edit
 Save
       |
       v
-Compile
+Validate / Compile
       |
       v
 Run
 ```
+
+When a script is attached to an object, the editor should also make it easy to open that object's script.
 
 ---
 
@@ -54,19 +52,17 @@ Guard.aeo
 
 Selecting a file opens it in Monaco.
 
+Scripts should remain normal `.aeo` project files.
+
 ---
 
 # 3. New Script
 
-Selecting an entity and pressing:
+The editor should be able to create a new `.aeo` file.
 
-```text
-Add Script
-```
+When creating a script for an object, the initial template should match the scripting model actually supported by AeoEngine.
 
-should create a new `.aeo` file.
-
-The initial template could be:
+For example:
 
 ```aeoscript
 entity NewEntity {
@@ -76,13 +72,15 @@ entity NewEntity {
 }
 ```
 
-The final name should come from the selected entity or from a user-entered name.
+The final name should come from the selected object or from a user-entered name.
+
+The editor should not invent special script behavior that the runtime does not support.
 
 ---
 
 # 4. Syntax Highlighting
 
-The editor should eventually understand:
+The editor should eventually understand the current AeoScript syntax, including:
 
 ```text
 entity
@@ -93,30 +91,42 @@ while
 for
 return
 const
+on
 true
 false
-null
+nil
 ```
 
-Types:
+It should also understand the object model syntax:
+
+```text
+.
+:
+```
+
+Types should include supported types such as:
 
 ```text
 number
 bool
 string
 Entity
+Cell
+Basket
 vec2
 vec3
 vec4
 ```
 
-Strings, numbers, comments, operators, and function calls should also receive appropriate highlighting.
+Strings, numbers, comments, operators, properties, methods, and function calls should also receive appropriate highlighting.
+
+The editor should follow the actual language grammar rather than maintaining its own version of it.
 
 ---
 
 # 5. Diagnostics
 
-Compile errors should appear directly in Monaco.
+Compile and parse errors should appear directly in Monaco.
 
 Example:
 
@@ -132,6 +142,8 @@ transform.velocity
 
 The editor should place a marker on the relevant source location.
 
+Diagnostics should come from the actual AeoScript compiler/parser/runtime where possible.
+
 ---
 
 # 6. Autocomplete
@@ -142,7 +154,9 @@ Typing:
 transform.
 ```
 
-should eventually show:
+should eventually show the properties and methods actually exposed by the AeoEngine API.
+
+For example:
 
 ```text
 position
@@ -169,13 +183,23 @@ look
 is_grounded
 ```
 
-These suggestions should come from actual registered AeoEngine APIs.
+Generic object access should work the same way.
+
+For example:
+
+```aeoscript
+object.
+```
+
+should show the properties available for that object type.
+
+These suggestions should come from the same registered API information used by the runtime.
 
 ---
 
 # 7. Hover
 
-Hovering over:
+Hovering over something such as:
 
 ```aeoscript
 character.jump()
@@ -189,7 +213,7 @@ character.jump()
 Requests a jump from the character controller.
 ```
 
-Hover information should eventually come from the same API metadata used by the language service.
+Hover information should eventually come from the same API metadata used by completion and other language-service features.
 
 ---
 
@@ -238,11 +262,11 @@ entity Door {
 }
 ```
 
-The formatter should produce predictable output.
+The formatter should produce predictable output without changing the meaning of the script.
 
 ---
 
-# 11. Save and Compile
+# 11. Save and Validation
 
 Saving a script should eventually trigger validation.
 
@@ -260,27 +284,29 @@ Check
   +---- error --> editor diagnostic
   |
   v
-Compile
+Compile / Prepare
   |
   v
-Bytecode
+Run
 ```
 
-Whether compilation happens immediately or on Play depends on the final editor workflow.
+Whether compilation happens immediately or when Play begins depends on the final runtime/editor workflow.
+
+The editor should not maintain a separate compiler.
 
 ---
 
 # 12. Play Mode
 
-AeoScript is especially important in Play Mode.
+AeoScript is especially important during Play Mode.
 
-The user should be able to:
+The user should be able to quickly:
 
 ```text
 Play
     |
     v
-Select entity
+Select object
     |
     v
 Open script
@@ -292,10 +318,10 @@ Edit
 Save
     |
     v
-Reload
+Reload / Re-run
 ```
 
-The goal is to make iteration fast.
+The goal is fast iteration.
 
 ---
 
@@ -312,7 +338,7 @@ Line 41
 Attempted to access a destroyed entity.
 ```
 
-Clicking the error should open the script at the correct line.
+Clicking the error should open the script at the correct line when source information is available.
 
 ---
 
@@ -329,15 +355,18 @@ diagnostics
 definition
 symbols
 formatting
+signature help
 ```
 
-The language service should use the same parser and semantic information as the compiler whenever possible.
+The language service should use the same parser and semantic information as the compiler/runtime wherever possible.
+
+The editor should not become a second implementation of the language.
 
 ---
 
 # 15. API Metadata
 
-Engine APIs should have enough metadata for editor features.
+Engine APIs should eventually have enough metadata for editor features.
 
 For example:
 
@@ -363,11 +392,13 @@ signature help
 documentation
 ```
 
+The metadata should come from the actual registered AeoEngine API.
+
 ---
 
 # 16. Script Templates
 
-The editor may eventually provide templates:
+The editor may eventually provide simple templates such as:
 
 ```text
 Empty
@@ -377,9 +408,9 @@ Interactable
 Trigger
 ```
 
-These should be simple files.
+These should just generate normal `.aeo` source files.
 
-No special scripting behavior should be hidden inside the editor.
+No important scripting behavior should be hidden inside the editor.
 
 ---
 
@@ -402,6 +433,8 @@ Expected number.
 Got string.
 ```
 
+Warnings and errors should be clearly distinguished in the editor.
+
 ---
 
 # 18. Development Console
@@ -416,7 +449,7 @@ debug.log("Hello")
 
 could appear in a script/runtime panel.
 
-Normal game output should remain separate from compiler diagnostics.
+Compiler diagnostics should remain separate from normal script output.
 
 ---
 
@@ -424,9 +457,9 @@ Normal game output should remain separate from compiler diagnostics.
 
 Scripts should remain normal files.
 
-The editor should not hide the source inside engine-specific storage.
+The editor should not hide source code inside engine-specific storage.
 
-If a user opens the project in another editor, the `.aeo` source should still be readable.
+A user opening the project in another editor should still be able to read and edit the `.aeo` files.
 
 ---
 
@@ -456,11 +489,12 @@ The first useful editor version only needs:
 
 ```text
 Monaco
-syntax highlighting
 load .aeo file
 save .aeo file
+AeoScript syntax highlighting
 basic diagnostics
 ```
 
 Everything else can come after that.
 
+The editor should support the language that AeoEngine actually has. It should not get ahead of the language runtime or create its own scripting rules.

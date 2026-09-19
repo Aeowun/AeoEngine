@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 pub enum HandleKind {
     Entity,
     Light,
+    Cell,
 }
 
 impl HandleKind {
@@ -16,6 +17,7 @@ impl HandleKind {
         match self {
             Self::Entity => "Entity",
             Self::Light => "Light",
+            Self::Cell => "Cell",
         }
     }
 }
@@ -26,7 +28,7 @@ pub enum Value {
     Number(f64),
     Bool(bool),
     String(String),
-    Null,
+    Nil,
     Array(Vec<Value>),
     Map(BTreeMap<String, Value>),
 
@@ -45,8 +47,8 @@ impl Value {
             Self::Number(_) => "number",
             Self::Bool(_) => "bool",
             Self::String(_) => "string",
-            Self::Null => "null",
-            Self::Array(_) => "array",
+            Self::Nil => "nil",
+            Self::Array(_) => "basket",
             Self::Map(_) => "map",
             Self::Handle { .. } => "handle",
         }
@@ -57,11 +59,11 @@ impl Value {
     ///
     ///     if light { ... }
     ///
-    /// becomes true for a valid handle and false for null.
+    /// becomes true for a valid handle and false for nil.
     pub fn is_truthy(&self) -> Result<bool, String> {
         match self {
             Self::Bool(value) => Ok(*value),
-            Self::Null => Ok(false),
+            Self::Nil => Ok(false),
             Self::Handle { .. } => Ok(true),
             other => Err(format!(
                 "expected bool or optional value in condition, got {}",
@@ -112,7 +114,7 @@ impl Value {
 
             Self::String(value) => value.clone(),
 
-            Self::Null => "null".to_string(),
+            Self::Nil => "nil".to_string(),
 
             Self::Array(values) => {
                 let items = values
@@ -147,7 +149,7 @@ impl PartialEq for Value {
             (Self::Number(a), Self::Number(b)) => a == b,
             (Self::Bool(a), Self::Bool(b)) => a == b,
             (Self::String(a), Self::String(b)) => a == b,
-            (Self::Null, Self::Null) => true,
+            (Self::Nil, Self::Nil) => true,
             (Self::Array(a), Self::Array(b)) => a == b,
             (Self::Map(a), Self::Map(b)) => a == b,
 
@@ -252,9 +254,9 @@ mod tests {
 
         assert_eq!(Value::String("hello".to_string()).type_name(), "string");
 
-        assert_eq!(Value::Null.type_name(), "null");
+        assert_eq!(Value::Nil.type_name(), "nil");
 
-        assert_eq!(Value::Array(vec![Value::Number(1.0)]).type_name(), "array");
+        assert_eq!(Value::Array(vec![Value::Number(1.0)]).type_name(), "basket");
 
         assert_eq!(Value::Map(BTreeMap::new()).type_name(), "map");
 
@@ -284,9 +286,9 @@ mod tests {
     }
 
     #[test]
-    fn null_is_falsey() {
+    fn nil_is_falsey() {
         assert_eq!(
-            Value::Null.is_truthy().expect("null should be valid"),
+            Value::Nil.is_truthy().expect("nil should be valid"),
             false
         );
     }

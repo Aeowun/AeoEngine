@@ -1,0 +1,12 @@
+entity DebugUpdate {
+
+    did_log: bool = false
+
+    fn update(dt: number) {
+
+        if !did_log {
+            did_log = true
+            debug.log("TEST 2: UPDATE WORKED")
+        }
+    }
+}

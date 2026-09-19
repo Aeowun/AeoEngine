@@ -316,7 +316,8 @@ impl<'a> Lexer<'a> {
             "import" => TokenKind::Import,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
-            "null" => TokenKind::Null,
+            "nil" => TokenKind::Nil,
+            "on" => TokenKind::On,
             _ => TokenKind::Identifier(text.to_string()),
         };
 

@@ -57,8 +57,66 @@ impl Parser {
 
             TokenKind::Import => self.parse_import().map(Declaration::Import),
 
+            TokenKind::On => self.parse_event().map(Declaration::Event),
+
             _ => Err(self.error_current("Expected a declaration.")),
         }
+    }
+
+    fn parse_event(&mut self) -> Result<EventDecl, ParserError> {
+        let on_token = self.consume_simple(TokenKind::On, "Expected 'on'.")?;
+        let start = on_token.span.start;
+
+        let (name, _) = self.consume_identifier("Expected event name.")?;
+
+        self.consume_simple(TokenKind::LeftParen, "Expected '(' after event name.")?;
+
+        let mut parameters = Vec::new();
+        self.skip_newlines();
+
+        if !self.check_simple(&TokenKind::RightParen) {
+            loop {
+                let (parameter_name, parameter_name_span) =
+                    self.consume_identifier("Expected parameter name.")?;
+
+                let type_annotation = if self.match_simple(&TokenKind::Colon) {
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
+
+                let parameter_end = type_annotation
+                    .as_ref()
+                    .map(|type_annotation| type_annotation.span.end)
+                    .unwrap_or(parameter_name_span.end);
+
+                parameters.push(Parameter {
+                    span: SourceSpan::new(parameter_name_span.start, parameter_end),
+                    name: parameter_name,
+                    type_annotation,
+                });
+
+                self.skip_newlines();
+
+                if !self.match_simple(&TokenKind::Comma) {
+                    break;
+                }
+
+                self.skip_newlines();
+            }
+        }
+
+        self.consume_simple(TokenKind::RightParen, "Expected ')' after parameters.")?;
+        self.skip_newlines();
+
+        let body = self.parse_block()?;
+
+        Ok(EventDecl {
+            span: SourceSpan::new(start, body.span.end),
+            name,
+            parameters,
+            body,
+        })
     }
 
     fn parse_entity(&mut self) -> Result<EntityDecl, ParserError> {
@@ -275,7 +333,7 @@ impl Parser {
             TokenKind::Const => self.parse_variable(true),
 
             TokenKind::Identifier(_) => {
-                if self.peek_next_simple(&TokenKind::Colon) {
+                if self.peek_next_simple(&TokenKind::Colon) && !self.is_method_call_peek() {
                     self.parse_variable(false)
                 } else {
                     self.parse_expression_or_assignment()
@@ -769,6 +827,47 @@ impl Parser {
                 continue;
             }
 
+            if self.match_simple(&TokenKind::Colon) {
+                let (method, _method_span) =
+                    self.consume_identifier("Expected method name after ':'.")?;
+
+                self.consume_simple(TokenKind::LeftParen, "Expected '(' after method name.")?;
+
+                let mut arguments = Vec::new();
+
+                self.skip_newlines();
+
+                if !self.check_simple(&TokenKind::RightParen) {
+                    loop {
+                        arguments.push(self.parse_expression()?);
+
+                        self.skip_newlines();
+
+                        if !self.match_simple(&TokenKind::Comma) {
+                            break;
+                        }
+
+                        self.skip_newlines();
+                    }
+                }
+
+                let right_paren =
+                    self.consume_simple(TokenKind::RightParen, "Expected ')' after arguments.")?;
+
+                let start = expression.span.start;
+
+                expression = Expression {
+                    span: SourceSpan::new(start, right_paren.span.end),
+                    kind: ExpressionKind::MethodCall {
+                        object: Box::new(expression),
+                        method,
+                        arguments,
+                    },
+                };
+
+                continue;
+            }
+
             if self.match_simple(&TokenKind::LeftBracket) {
                 let index = self.parse_expression()?;
 
@@ -834,12 +933,12 @@ impl Parser {
                 })
             }
 
-            TokenKind::Null => {
+            TokenKind::Nil => {
                 self.advance();
 
                 Ok(Expression {
                     span: token.span,
-                    kind: ExpressionKind::Null,
+                    kind: ExpressionKind::Nil,
                 })
             }
 
@@ -1007,6 +1106,17 @@ impl Parser {
 
     fn is_at_end(&self) -> bool {
         matches!(self.peek_kind(), TokenKind::Eof)
+    }
+
+    fn is_method_call_peek(&self) -> bool {
+        if self.current + 3 >= self.tokens.len() {
+            return false;
+        }
+
+        matches!(self.tokens[self.current].kind, TokenKind::Identifier(_))
+            && matches!(self.tokens[self.current + 1].kind, TokenKind::Colon)
+            && matches!(self.tokens[self.current + 2].kind, TokenKind::Identifier(_))
+            && matches!(self.tokens[self.current + 3].kind, TokenKind::LeftParen)
     }
 
     fn skip_newlines(&mut self) {
@@ -1239,7 +1349,7 @@ import Shared.Math
     fn optional_types_keep_their_full_span() {
         let source = r#"
 fn find_player(): Entity? {
-    return null
+    return nil
 }
 "#;
 
@@ -1319,10 +1429,10 @@ entity LightBlinker {
     light: Light?
 
     fn update(dt: number) {
-        light = getLightFromPos(10, 5, 3)
+        light = get_light(10, 5, 3)
 
         if light {
-            light.on()
+            light:set_enabled(true)
         }
     }
 }

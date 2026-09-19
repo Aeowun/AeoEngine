@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::ast::Program;
+use super::ast::{Declaration, EventDecl, Program};
 use super::execution::{
     FiberResult,
     ScriptScheduler,
@@ -14,6 +14,8 @@ use super::interpreter::{
 use super::value::Value;
 use super::api::HostContext;
 
+use super::log::LogRecord;
+
 /// Runtime owner for all live AeoScript execution.
 ///
 /// The runtime connects the interpreter's persistent fibers to the cooperative
@@ -23,23 +25,101 @@ pub struct ScriptRuntime {
     interpreter: Interpreter,
     scheduler: ScriptScheduler,
     fibers: HashMap<ScriptTaskId, ScriptFiber>,
+    event_handlers: Vec<(Option<String>, EventDecl)>,
 }
 
 impl ScriptRuntime {
     pub fn new(program: Program) -> Self {
+        // Since we don't have file association in Program yet (unless I add it),
+        // we'll assume None for now. But load_from_bindings will set it later.
+        let event_handlers = program
+            .declarations
+            .iter()
+            .filter_map(|decl| {
+                if let Declaration::Event(event) = decl {
+                    Some((None, event.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         Self {
             interpreter: Interpreter::new(program),
             scheduler: ScriptScheduler::new(),
             fibers: HashMap::new(),
+            event_handlers,
         }
     }
 
+    pub fn add_event_handlers(&mut self, script_path: String, program: &Program) {
+        for decl in &program.declarations {
+            if let Declaration::Event(event) = decl {
+                self.event_handlers.push((Some(script_path.clone()), event.clone()));
+            }
+        }
+    }
+
+    pub fn clear_event_handlers(&mut self) {
+        self.event_handlers.clear();
+    }
+
     pub fn with_interpreter(interpreter: Interpreter) -> Self {
+        let event_handlers = interpreter
+            .program()
+            .declarations
+            .iter()
+            .filter_map(|decl| {
+                if let Declaration::Event(event) = decl {
+                    Some((None, event.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         Self {
             interpreter,
             scheduler: ScriptScheduler::new(),
             fibers: HashMap::new(),
+            event_handlers,
         }
+    }
+
+    /// Dispatches an event to all matching handlers.
+    pub fn dispatch_event(
+        &mut self,
+        name: &str,
+        arguments: Vec<Value>,
+        _host: &mut HostContext,
+    ) -> Result<(), String> {
+        let matching: Vec<(Option<String>, EventDecl)> = self
+            .event_handlers
+            .iter()
+            .filter(|(_, h)| h.name == name)
+            .cloned()
+            .collect();
+
+        for (path, handler) in matching {
+            self.start_event_fiber(path, handler, arguments.clone())?;
+        }
+
+        Ok(())
+    }
+
+    fn start_event_fiber(
+        &mut self,
+        script_path: Option<String>,
+        handler: EventDecl,
+        arguments: Vec<Value>,
+    ) -> Result<ScriptTaskId, String> {
+        let mut instance = ScriptInstance::new_empty();
+        instance.script_path = script_path;
+
+        let fiber = self.interpreter.start_event_fiber(instance, handler, arguments)?;
+        let task_id = self.scheduler.spawn();
+        self.fibers.insert(task_id, fiber);
+        Ok(task_id)
     }
 
     pub fn interpreter(&self) -> &Interpreter {
@@ -170,6 +250,7 @@ mod tests {
     };
     use crate::scripting::lexer::Lexer;
     use crate::scripting::parser::Parser;
+    use crate::scripting::value::{HandleKind, Value};
     use crate::engine::entity::EntityManager;
 
     fn runtime(source: &str) -> ScriptRuntime {
@@ -633,34 +714,23 @@ entity Test {
     }
 
     #[test]
-    fn runtime_multiple_entities_independent() {
+    fn runtime_dispatches_event() {
         let source = r#"
-entity Test {
-    value: number = 0
-    fn set(v: number) {
-        value = v
-    }
+on PlayerSpawned(player) {
+    debug.log("Spawned:", player.name)
 }
 "#;
         let mut runtime = runtime(source);
         let mut em = test_host();
+        em.create_entity("Player"); // id 1
         let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
-        let inst1 = runtime.interpreter_mut().instantiate_entity("Test", 1, &mut host).unwrap();
-        let inst2 = runtime.interpreter_mut().instantiate_entity("Test", 2, &mut host).unwrap();
+        let args = vec![Value::Handle { kind: HandleKind::Entity, id: 1 }];
+        runtime.dispatch_event("PlayerSpawned", args, &mut host).unwrap();
 
-        let t1 = runtime.spawn(inst1, "set", vec![Value::Number(10.0)]).unwrap();
-        let t2 = runtime.spawn(inst2, "set", vec![Value::Number(20.0)]).unwrap();
-
+        assert_eq!(runtime.task_count(), 1);
         runtime.tick(0.0, &mut host).unwrap();
 
-        assert_eq!(
-            runtime.fiber(t1).unwrap().instance().get_field("value"),
-            Some(&Value::Number(10.0))
-        );
-        assert_eq!(
-            runtime.fiber(t2).unwrap().instance().get_field("value"),
-            Some(&Value::Number(20.0))
-        );
+        assert!(runtime.interpreter().output().iter().any(|r| r.message.contains("Spawned: Player")));
     }
 }

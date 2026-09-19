@@ -21,7 +21,8 @@ pub enum TokenKind {
 
     True,
     False,
-    Null,
+    Nil,
+    On,
 
     // Operators
     Plus,
