@@ -1,0 +1,165 @@
+﻿# AeoScript Engine Handles
+
+AeoScript interacts with AeoEngine through opaque engine handles.
+
+Handles allow scripts to reference engine-managed objects without directly owning native engine memory.
+
+---
+
+# 1. Why Handles Exist
+
+A script should be able to hold a reference to a World Cell or runtime Entity without storing a raw pointer into engine memory.
+
+Instead, the script value identifies an engine-managed object.
+
+~~~text
+AeoScript handle
+      ↓
+Engine lookup
+      ↓
+Authoritative engine object
+~~~
+
+This keeps object ownership inside AeoEngine.
+
+---
+
+# 2. Cell Handles
+
+A `Cell` handle refers to an authored World Cell.
+
+Examples include Blocks and Lights.
+
+Cell handles expose supported runtime properties through the scripting host.
+
+---
+
+# 3. Cell ID
+
+Every authored Cell has a persistent numeric `id`.
+
+This identifies the specific Cell instance.
+
+~~~aeoscript
+const id = cell.id
+~~~
+
+The ID is read-only from script.
+
+The ID is also the target used by persistent script bindings.
+
+---
+
+# 4. Cell Name
+
+A Cell also exposes its human-readable name/identity.
+
+~~~aeoscript
+const name = cell.name
+~~~
+
+Names are not required to be unique.
+
+Two different Cells can therefore have the same `name` while having different IDs.
+
+---
+
+# 5. Cell Runtime Properties
+
+Supported Cell runtime properties include:
+
+* `visible`
+* `solid`
+* `anchored`
+* `color`
+* `offset`
+* `position` as effective runtime position where supported
+
+Example:
+
+~~~aeoscript
+cell.visible = false
+cell.solid = false
+cell.color = [1, 0, 0]
+cell.offset = [0, 2, 0]
+~~~
+
+These are runtime changes and do not silently modify authored World values.
+
+---
+
+# 6. Finding Cells
+
+Scripts can discover Cells by name:
+
+~~~aeoscript
+const walls = find("Wall")
+~~~
+
+The result is a basket of handles.
+
+Because names can be duplicated, `find()` may return multiple Cells.
+
+Scripts can also query by class:
+
+~~~aeoscript
+const blocks = getAllCellsOfClass("Block")
+~~~
+
+---
+
+# 7. Entity Handles
+
+An `Entity` handle refers to a live runtime Entity such as a Player or NPC.
+
+Entity handles represent runtime objects rather than authored World Cells.
+
+Supported Entity access is intentionally limited to the engine API exposed to AeoScript.
+
+---
+
+# 8. Handle Lifetime
+
+A handle can outlive the engine object it originally referenced.
+
+The script runtime must resolve the handle against current engine state rather than assuming the underlying object still exists.
+
+Operations against invalid or stale handles produce runtime errors rather than silently affecting another object.
+
+---
+
+# 9. Handles and Runtime State
+
+Handles provide access to runtime state.
+
+They do not transfer ownership of the underlying engine object into the script.
+
+~~~text
+Script
+  │
+  └── Handle
+          ↓
+     Engine-owned object
+~~~
+
+The engine remains responsible for the object's lifetime.
+
+---
+
+# 10. Handles and Script Bindings
+
+A handle's Cell ID and a script binding's target ID describe the same authored instance identity.
+
+This is why bindings do not use the human-readable name as their unique target.
+
+~~~text
+Authored Cell
+├── id: 18374291
+└── name: Ghost
+
+Script Binding
+└── target ID: 18374291
+~~~
+
+The name can change without changing which Cell the binding targets.
+

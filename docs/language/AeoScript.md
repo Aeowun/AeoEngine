@@ -1,65 +1,179 @@
 # AeoScript Language Overview
 
-AeoScript is AeoEngine's high-performance gameplay scripting language, designed for character logic, physical interactions, and world events.
+AeoScript is AeoEngine's gameplay scripting language, designed for world interaction, gameplay logic, runtime object control, physical interactions, and world events.
+
+AeoScript is integrated directly into AeoEngine and can operate on authored World objects through engine handles while keeping runtime changes separate from authored scene data.
 
 ---
 
 # 1. Values and Types
 
 ### Basic Types
-* `number`: 64-bit floating point.
+
+* `number`: 64-bit floating-point number.
 * `bool`: `true` or `false`.
-* `string`: UTF-8 Unicode text. Supports `+` for concatenation.
+* `string`: UTF-8 Unicode text.
 * `nil`: Represents the absence of a value.
 
-### Engine Handles
-Handles are opaque references to engine-managed objects. They are safe; using a stale handle (e.g., to a deleted block) will not crash but will produce a runtime error.
-* `Cell`: A reference to authored world data (e.g., a Block or Light).
-* `Entity`: A reference to a live runtime object (e.g., a Player or NPC).
+### Collections
 
-### Basket (Arrays)
-A `Basket` is a zero-indexed collection of values. Baskets use **reference semantics**:
-* Assigning a basket to a new variable creates an **alias** to the same shared collection.
-* Mutation through one alias is visible to all others.
-* Use `basket.clone(b)` to create a distinct shallow copy.
-* Use `basket.freeze(b)` to prevent further mutation.
+* `basket`: A zero-indexed, reference-backed sequence of values.
+* `map`: A reference-backed key/value collection.
+
+### Engine Handles
+
+Handles are opaque references to engine-managed objects.
+
+* `Cell`: A reference to an authored World Cell such as a Block or Light.
+* `Entity`: A reference to a live runtime object such as a Player or NPC.
+
+A stale or invalid engine handle does not silently modify unrelated objects. Using an invalid handle produces a runtime error.
 
 ---
 
-# 2. Variables and Constants
+# 2. Baskets
 
-* **Mutation**: Variables are mutable by default.
-* **`const`**: Prevents **reassignment** of a variable.
-  * For Baskets, `const` prevents assigning a *different* basket to the variable, but the *elements* of the basket can still be modified unless it is frozen.
+A `basket` is a zero-indexed collection of values.
+
+Baskets use **reference semantics**:
+
+* Assigning a basket to another variable creates an alias to the same collection.
+* Mutating one alias is visible through every other alias.
+* `basket.clone(b)` creates a distinct shallow copy.
+* `basket.freeze(b)` prevents further mutation.
 
 ```aeoscript
 const ids = [1, 2]
-ids[0] = 99      // VALID (mutating elements)
-ids = [3, 4]     // ERROR (reassigning a const)
+
+ids[0] = 99       // VALID
 ```
 
+The basket now contains:
+
+```text
+[99, 2]
+```
+
+Because baskets are zero-indexed, the first element is at index `0`.
+
 ---
 
-# 3. Unique Cell ID vs Identity
+# 3. Maps
 
-AeoEngine distinguishes between the **Unique Identity** and the **Game Logic Name** of authored objects.
+A `map` stores values using keys.
+
+Maps are not positional collections and do not use zero-based indexing semantics.
+
+Numeric and string keys are distinct:
+
+```aeoscript
+const values = {}
+
+values[1] = "numeric"
+values["1"] = "string"
+
+debug.log(values[1])
+debug.log(values["1"])
+```
+
+Reading a missing key returns `nil`.
+
+Assigning `nil` to an existing key removes that key:
+
+```aeoscript
+values["name"] = nil
+```
+
+Maps use reference semantics, so aliases refer to the same underlying collection.
+
+Nested maps and baskets can therefore be mutated through aliases and retain those changes.
+
+---
+
+# 4. Variables and Constants
+
+Variables are mutable by default.
+
+A variable can be explicitly typed:
+
+```aeoscript
+health: number = 100
+```
+
+or inferred:
+
+```aeoscript
+const name = "Ghost"
+```
+
+### `const`
+
+`const` prevents reassignment of the variable.
+
+For reference-backed collections, `const` does not make the collection immutable.
+
+```aeoscript
+const ids = [1, 2]
+
+ids[0] = 99      // VALID
+
+ids = [3, 4]     // ERROR
+```
+
+Use `basket.freeze()` when the basket itself should no longer be mutated.
+
+---
+
+# 5. Unique Cell ID vs Identity
+
+AeoEngine distinguishes between the **unique Cell ID** of an authored object and its **human-readable name**.
 
 ### Unique Cell ID (`id`)
-Every Cell (Block, Light, etc.) is assigned a permanent, unique 8-digit numeric ID upon creation.
-* **Binding**: Script bindings target this unique ID. If you have five blocks named "Wall", you can attach a different script to each one because they have unique IDs.
-* **Stability**: The ID never changes, even if the cell is moved or renamed.
 
-### Entity Identity (`name`)
-This is the human-readable string (e.g., "Ghost", "Door") assigned in the editor.
-* **Not Unique**: Multiple Cells can share the same Identity.
-* **Search**: `find("Ghost")` returns a Basket containing all Cells or Entities sharing that Identity.
+Every authored Cell has a persistent numeric ID.
+
+The ID is the unique identity of that specific Cell instance.
+
+* Script bindings target the Cell ID.
+* Different Cells can have different scripts even when they share the same name.
+* Moving or renaming a Cell does not change its ID.
+* The ID allows runtime systems and script bindings to reference a specific authored instance without depending on its name.
+
+Example:
+
+```text
+Block
+  ID: 18374291
+  Identity: Wall
+
+Block
+  ID: 62918403
+  Identity: Wall
+```
+
+These are two different Cells even though they have the same name.
+
+### Entity Identity / Name
+
+The `entity_identity` value is the human-readable game-logic name assigned in the editor.
+
+Names do not have to be unique.
+
+```aeoscript
+find("Wall")
+```
+
+can therefore return multiple matching objects.
+
+Use the unique `id` when a specific authored Cell must be targeted.
 
 ---
 
-# 4. Functions and Events
+# 6. Functions
 
-* **Functions**: Declared with `fn` inside an `entity` block.
-* **Event Handlers**: Declared with `on` at the top level to respond to global engine events.
+Functions are declared with `fn`.
+
+Functions may accept parameters and return values.
 
 ```aeoscript
 entity Player {
@@ -68,24 +182,289 @@ entity Player {
     fn take_damage(amount: number) {
         health = math.max(0, health - amount)
     }
-}
 
+    fn get_health() {
+        return health
+    }
+}
+```
+
+Functions can call other functions.
+
+Function locals remain part of the active execution state and are preserved when the current script fiber yields.
+
+---
+
+# 7. Events and Lifecycle
+
+AeoScript supports engine lifecycle functions and event handlers.
+
+Common lifecycle functions include:
+
+* `on_ready()`
+* `update(dt)`
+* `on_destroy()`
+
+Event handlers can respond to engine events:
+
+```aeoscript
 on PlayerSpawned(player: Entity) {
     debug.log("A new player has arrived!")
 }
 ```
 
----
+`update(dt)` receives the current frame delta time.
 
-# 5. Built-in Namespaces
-
-Standard functions are organized into namespaces:
-* **`math`**: Deterministic math (sin, cos, sqrt, clamp, lerp, etc.).
-* **`basket`**: Collection management (insert, remove, sort, move, etc.).
-* **`string`**: Unicode-aware text manipulation (len, reverse, lower, upper, split).
+Lifecycle state persists between executions, allowing script fields to be modified in `on_ready()` or `update()` and observed by later executions.
 
 ---
 
-# 6. Runtime Overrides
+# 8. Fibers and `wait()`
 
-AeoScript operates on a "Runtime Override" model. When a script modifies a property (like `cell.color`), it creates a temporary change that exists only until the game stops. 
+AeoScript uses cooperative script fibers for yielding execution.
+
+The `wait(seconds)` operation suspends the current script execution and resumes it after the requested amount of time.
+
+```aeoscript
+fn flash() {
+    visible = false
+
+    wait(0.25)
+
+    visible = true
+}
+```
+
+The fiber preserves the execution state required to continue correctly after the wait.
+
+This includes:
+
+* Current function
+* Nested function calls
+* Local variables
+* Call stack state
+* Loop state
+* Instruction position
+* Script execution context
+
+A function may therefore yield from inside another function:
+
+```aeoscript
+fn delayed_action() {
+    wait(0.5)
+    score += 10
+}
+
+fn update(dt) {
+    delayed_action()
+}
+```
+
+The suspended function resumes after the `wait()` rather than restarting from the beginning.
+
+---
+
+# 9. Built-in Namespaces
+
+AeoScript provides standard-library functionality through namespaces.
+
+### `math`
+
+Deterministic mathematical operations including:
+
+* `abs`
+* `min`
+* `max`
+* `floor`
+* `ceil`
+* `round`
+* `sqrt`
+* `pow`
+* `sin`
+* `cos`
+* `tan`
+* `clamp`
+* `lerp`
+* `deg_to_rad`
+* `rad_to_deg`
+
+Example:
+
+```aeoscript
+const speed = math.clamp(velocity, 0, 10)
+```
+
+### `basket`
+
+Collection operations including:
+
+* `create`
+* `insert`
+* `remove`
+* `sort`
+* `find`
+* `move`
+* `concat`
+* `clone`
+* `clear`
+* `freeze`
+
+Example:
+
+```aeoscript
+items.insert(0, "Sword")
+```
+
+### `string`
+
+Unicode-aware text operations including:
+
+* `len`
+* `lower`
+* `upper`
+* `reverse`
+* `split`
+
+String operations work with Unicode scalar values rather than treating UTF-8 bytes as individual characters.
+
+---
+
+# 10. Runtime Overrides
+
+AeoScript operates on a **runtime override** model.
+
+When a script modifies a runtime property of a Cell, the change affects the running game without modifying the authored World data.
+
+Examples include:
+
+```aeoscript
+cell.visible = false
+cell.solid = false
+cell.anchored = true
+cell.color = [1, 0, 0]
+cell.offset = [0, 2, 0]
+```
+
+These changes are temporary runtime state.
+
+When Play mode ends:
+
+```text
+Authored World
+      ↓
+Runtime
+      ↓
+Temporary overrides
+      ↓
+Play mode stops
+      ↓
+Authored World remains unchanged
+```
+
+A script does not need to restore runtime overrides manually for the purpose of preserving authored scene data.
+
+The authored World remains authoritative.
+
+---
+
+# 11. Object Discovery
+
+AeoScript can discover engine objects through built-in World queries.
+
+### `find()`
+
+Searches by authored identity/name and returns a basket of matching objects.
+
+```aeoscript
+const walls = find("Wall")
+```
+
+Multiple objects may have the same identity.
+
+### `getAllCellsOfClass()`
+
+Returns authored Cells of a requested class:
+
+```aeoscript
+const blocks = getAllCellsOfClass("Block")
+```
+
+These APIs return handles that can then be inspected or modified through the supported runtime properties.
+
+---
+
+# 12. Script Bindings
+
+Scripts can be attached to authored World Cells.
+
+Bindings target the Cell's unique persistent numeric ID rather than its human-readable name.
+
+This allows:
+
+```text
+Block ID 1001 → scripts/door.aeo
+Block ID 1002 → scripts/button.aeo
+Block ID 1003 → scripts/door.aeo
+```
+
+even when the Cells share the same human-readable identity.
+
+Legacy name-based bindings can be migrated when they resolve unambiguously to a single authored Cell.
+
+---
+
+# 13. Authored State and Runtime State
+
+AeoScript interacts with two related categories of state.
+
+### Authored State
+
+Persistent World data created through the editor.
+
+Examples:
+
+* Cell identity/name
+* Cell type
+* Authored position
+* Authored Block color
+* Authored solidity
+* Authored anchoring
+* Script bindings
+
+### Runtime State
+
+Temporary state used while the game is running.
+
+Examples:
+
+* PhysicsBody position
+* Runtime Cell property overrides
+* Character state
+* Script fiber execution state
+* Script lifecycle fields
+* Temporary gameplay changes
+
+The runtime may derive objects and state from the authored World, but it must not silently rewrite authored scene data.
+
+---
+
+# 14. Current Language Direction
+
+AeoScript is intended to remain:
+
+* General-purpose enough for gameplay logic
+* Closely integrated with AeoEngine
+* Simple to read and write
+* Strongly connected to World and runtime objects
+* Safe around engine-managed references
+* Suitable for yielding gameplay logic
+* Distinct in its own syntax and vocabulary
+
+The language and standard library continue to expand as real games expose additional gameplay requirements.
+
+See:
+
+* [AeoScript API](AeoScript_API.md)
+* [AeoScript Grammar](AeoScript_GRAMMAR.md)
+* [AeoScript VM](AeoScript_VM.md)
+* [AeoScript Editor](AeoScript_EDITOR.md)
