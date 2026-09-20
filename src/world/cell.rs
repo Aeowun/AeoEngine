@@ -1,4 +1,14 @@
 use glam::Vec3;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value")]
+pub enum AttributeValue {
+    Number(f64),
+    Bool(bool),
+    String(String),
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
 pub enum CellType {
@@ -37,6 +47,8 @@ pub struct Cell {
 
     /// Persistent identity for cells that represent scripted entities (e.g. Player, NPC).
     pub entity_identity: Option<String>,
+
+    pub attributes: BTreeMap<String, AttributeValue>,
 }
 
 /// Temporary runtime-only modifications to a cell's state.
@@ -70,6 +82,7 @@ impl Default for Cell {
             light_shadows: true,
             light_enabled: true,
             entity_identity: None,
+            attributes: BTreeMap::new(),
         }
     }
 }
@@ -104,6 +117,7 @@ impl Cell {
             light_shadows: true,
             light_enabled: true,
             entity_identity: None,
+            attributes: BTreeMap::new(),
         }
     }
 

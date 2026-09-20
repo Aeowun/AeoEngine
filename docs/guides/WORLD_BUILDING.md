@@ -89,7 +89,25 @@ Selection supports:
 
 Select a Cell and edit its authored properties through the Properties panel.
 
-Remember that authored properties describe what should be saved in the World.
+### Engine Properties
+
+Built-in properties describe how the engine treats the Cell (e.g., color, physics behavior).
+
+### Cell Attributes
+
+Attributes are game-defined data attached to the Cell.
+
+They provide a flexible way to store authored values like:
+
+* difficulty: "easy"
+* coins: 1000
+* is_hidden: true
+
+Attributes are distinct from engine properties and are used to provide custom context to game-logic systems.
+
+Use the **+ Add Attribute** control in the Properties panel to create new attributes by specifying a name, type, and initial value.
+
+Remember that authored properties and attributes describe what should be saved in the World.
 
 Runtime overrides created during Play are a separate system.
 

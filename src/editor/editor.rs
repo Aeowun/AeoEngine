@@ -2,7 +2,7 @@ use super::navigation::NavigationWindow;
 use super::tools;
 use crate::engine::EditorMode;
 use crate::renderer::camera::CameraController;
-use crate::world::{Cell, WorldCoord};
+use crate::world::{AttributeValue, Cell, WorldCoord};
 use egui::RichText;
 use std::collections::HashMap;
 
@@ -88,6 +88,20 @@ pub struct Editor {
 
     pub terminal_output: String,
     pub terminal_auto_scroll: bool,
+
+    // Attribute add state
+    pub attribute_add_name: String,
+    pub attribute_add_type: AttributeType,
+    pub attribute_add_value: AttributeValue,
+    pub attribute_add_error: Option<String>,
+    pub last_selected_coord: Option<WorldCoord>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AttributeType {
+    Number,
+    Bool,
+    String,
 }
 
 impl Editor {
@@ -124,6 +138,12 @@ impl Editor {
 
             terminal_output: String::new(),
             terminal_auto_scroll: true,
+
+            attribute_add_name: String::new(),
+            attribute_add_type: AttributeType::String,
+            attribute_add_value: AttributeValue::String(String::new()),
+            attribute_add_error: None,
+            last_selected_coord: None,
         }
     }
 
@@ -405,6 +425,8 @@ pub enum PropertyChange {
     ColorRgb(glam::Vec3),
     Texture(String),
     EntityIdentity(Option<String>),
+    AttributeSet(String, AttributeValue),
+    AttributeRemove(String),
 }
 
 impl Editor {
@@ -426,6 +448,12 @@ impl Editor {
                         PropertyChange::ColorRgb(color) => other_cell.color_rgb = *color,
                         PropertyChange::Texture(texture) => other_cell.texture = texture.clone(),
                         PropertyChange::EntityIdentity(identity) => other_cell.entity_identity = identity.clone(),
+                        PropertyChange::AttributeSet(name, value) => {
+                            other_cell.attributes.insert(name.clone(), value.clone());
+                        }
+                        PropertyChange::AttributeRemove(name) => {
+                            other_cell.attributes.remove(name);
+                        }
                     }
                 }
             }
@@ -433,6 +461,14 @@ impl Editor {
     }
 
     fn render_properties_content(&mut self, ui: &mut egui::Ui, world: &mut crate::world::World, project_path: &Option<std::path::PathBuf>) {
+        if self.selected_coord != self.last_selected_coord {
+            self.attribute_add_name.clear();
+            self.attribute_add_type = AttributeType::String;
+            self.attribute_add_value = AttributeValue::String(String::new());
+            self.attribute_add_error = None;
+            self.last_selected_coord = self.selected_coord;
+        }
+
         if let Some(coord) = self.selected_coord {
             let mut cell_opt = world.get(coord).cloned();
             let mut changes = Vec::new();
@@ -717,6 +753,111 @@ impl Editor {
                                 if texture != cell.texture {
                                     cell.texture = texture.clone();
                                     changes.push(PropertyChange::Texture(texture));
+                                }
+                            });
+
+                        // --- ATTRIBUTES ---
+                        egui::CollapsingHeader::new("ATTRIBUTES")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                // Add Attribute workflow
+                                ui.horizontal(|ui| {
+                                    if ui.button("+ Add Attribute").clicked() {
+                                        let name = self.attribute_add_name.trim().to_string();
+                                        if name.is_empty() {
+                                            self.attribute_add_error = Some("Name cannot be empty.".to_string());
+                                        } else if cell.attributes.contains_key(&name) {
+                                            self.attribute_add_error = Some(format!("'{}' already exists.", name));
+                                        } else {
+                                            changes.push(PropertyChange::AttributeSet(name, self.attribute_add_value.clone()));
+                                            self.attribute_add_name.clear();
+                                            self.attribute_add_type = AttributeType::String;
+                                            self.attribute_add_value = AttributeValue::String(String::new());
+                                            self.attribute_add_error = None;
+                                        }
+                                    }
+
+                                    ui.add(egui::TextEdit::singleline(&mut self.attribute_add_name)
+                                        .desired_width(100.0)
+                                        .hint_text("Name"));
+
+                                    let prev_type = self.attribute_add_type;
+                                    egui::ComboBox::from_id_source("attr_type_combo")
+                                        .selected_text(format!("{:?}", self.attribute_add_type))
+                                        .width(80.0)
+                                        .show_ui(ui, |ui| {
+                                            ui.selectable_value(&mut self.attribute_add_type, AttributeType::Number, "Number");
+                                            ui.selectable_value(&mut self.attribute_add_type, AttributeType::Bool, "Bool");
+                                            ui.selectable_value(&mut self.attribute_add_type, AttributeType::String, "String");
+                                        });
+
+                                    if self.attribute_add_type != prev_type {
+                                        self.attribute_add_value = match self.attribute_add_type {
+                                            AttributeType::Number => AttributeValue::Number(0.0),
+                                            AttributeType::Bool => AttributeValue::Bool(false),
+                                            AttributeType::String => AttributeValue::String(String::new()),
+                                        };
+                                    }
+                                });
+
+                                // Initial Value editor for the add form
+                                ui.horizontal(|ui| {
+                                    ui.label("Initial Value:");
+                                    match &mut self.attribute_add_value {
+                                        AttributeValue::Number(n) => {
+                                            ui.add(egui::DragValue::new(n).speed(0.1));
+                                        }
+                                        AttributeValue::Bool(b) => {
+                                            ui.checkbox(b, "");
+                                        }
+                                        AttributeValue::String(s) => {
+                                            ui.add(egui::TextEdit::singleline(s).desired_width(100.0));
+                                        }
+                                    }
+                                });
+
+                                if let Some(ref err) = self.attribute_add_error {
+                                    ui.colored_label(egui::Color32::LIGHT_RED, err);
+                                }
+
+                                ui.separator();
+
+                                // List existing attributes
+                                let mut attr_to_remove = None;
+                                for (name, value) in &cell.attributes {
+                                    ui.horizontal(|ui| {
+                                        ui.label(RichText::new(name).strong());
+                                        ui.add_space(4.0);
+                                        ui.label("|");
+                                        ui.add_space(4.0);
+
+                                        let mut new_value = value.clone();
+                                        let changed = match &mut new_value {
+                                            AttributeValue::Number(n) => {
+                                                ui.add(egui::DragValue::new(n).speed(0.1)).changed()
+                                            }
+                                            AttributeValue::Bool(b) => {
+                                                ui.checkbox(b, "").changed()
+                                            }
+                                            AttributeValue::String(s) => {
+                                                ui.text_edit_singleline(s).changed()
+                                            }
+                                        };
+
+                                        if changed {
+                                            changes.push(PropertyChange::AttributeSet(name.clone(), new_value));
+                                        }
+
+                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                            if ui.button("Remove").clicked() {
+                                                attr_to_remove = Some(name.clone());
+                                            }
+                                        });
+                                    });
+                                }
+
+                                if let Some(name) = attr_to_remove {
+                                    changes.push(PropertyChange::AttributeRemove(name));
                                 }
                             });
                     }

@@ -49,7 +49,7 @@ Depending on the Cell type, authored data may include:
 * Color.
 * Texture.
 * Type-specific properties.
-* Custom attributes (Number, Bool, String).
+* Custom attributes (Number, Bool, String) exposed to AeoScript via the `attributes` property.
 
 ---
 

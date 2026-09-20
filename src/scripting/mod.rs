@@ -14,3 +14,4 @@ pub mod api;
 pub mod binding;
 pub mod log;
 pub mod stdlib;
+pub mod host;

@@ -592,7 +592,10 @@ mod tests {
         }
 
         fn get_property(&self, kind: crate::scripting::value::HandleKind, id: u64, name: &str) -> Result<Option<crate::scripting::value::Value>, String> {
-            use crate::scripting::value::{Value, HandleKind};
+            use crate::scripting::value::{Value, HandleKind, MapKey};
+            use crate::world::cell::AttributeValue;
+            use std::collections::BTreeMap;
+
             match kind {
                 HandleKind::Cell | HandleKind::Light => {
                     if let Some(coord) = self.world.resolve_cell_id(id) {
@@ -625,6 +628,18 @@ mod tests {
                                         Value::Number(offset.y as f64),
                                         Value::Number(offset.z as f64),
                                     ])));
+                                }
+                                "attributes" => {
+                                    let mut map = BTreeMap::new();
+                                    for (key, attr) in &cell.attributes {
+                                        let val = match attr {
+                                            AttributeValue::Number(n) => Value::Number(*n),
+                                            AttributeValue::Bool(b) => Value::Bool(*b),
+                                            AttributeValue::String(s) => Value::String(s.clone()),
+                                        };
+                                        map.insert(MapKey::String(key.clone()), val);
+                                    }
+                                    return Ok(Some(Value::map(map)));
                                 }
                                 _ => {}
                             }
@@ -2547,5 +2562,57 @@ entity NestedWait {
         assert_eq!(scene.entities[0].instance.get_field("val"), Some(&Value::Number(1.0)));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_cell_attributes_aeoscript_access() {
+        use crate::world::cell::AttributeValue;
+        let source = r#"
+entity Test {
+    fn on_spawn() {
+        const chests = find("Chest")
+        for chest in chests {
+            debug.log(chest.attributes["coins"])
+            debug.log(chest.attributes["difficulty"])
+            debug.log(chest.attributes["locked"])
+        }
+    }
+}
+"#;
+        let mut th = test_host();
+        let c1 = WorldCoord::new(0, 0, 0);
+        let c2 = WorldCoord::new(1, 1, 1);
+
+        add_authored_entity(&mut th.world, c1, CellType::Block, "Chest");
+        if let Some(cell) = th.world.get_mut(c1) {
+            cell.attributes.insert("coins".to_string(), AttributeValue::Number(100.0));
+            cell.attributes.insert("difficulty".to_string(), AttributeValue::String("hard".to_string()));
+            cell.attributes.insert("locked".to_string(), AttributeValue::Bool(true));
+        }
+
+        add_authored_entity(&mut th.world, c2, CellType::Block, "Chest");
+        if let Some(cell) = th.world.get_mut(c2) {
+            cell.attributes.insert("coins".to_string(), AttributeValue::Number(50.0));
+            cell.attributes.insert("difficulty".to_string(), AttributeValue::String("easy".to_string()));
+            cell.attributes.insert("locked".to_string(), AttributeValue::Bool(false));
+        }
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+
+        // Check for chest 1 values
+        assert!(output.iter().any(|r| r.message == "100"));
+        assert!(output.iter().any(|r| r.message == "hard"));
+        assert!(output.iter().any(|r| r.message == "true"));
+
+        // Check for chest 2 values
+        assert!(output.iter().any(|r| r.message == "50"));
+        assert!(output.iter().any(|r| r.message == "easy"));
+        assert!(output.iter().any(|r| r.message == "false"));
     }
 }

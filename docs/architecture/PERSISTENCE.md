@@ -43,6 +43,7 @@ Depending on the Cell type, persisted information can include:
 * Anchored state.
 * Color.
 * Light properties.
+* Cell attributes (game-defined data).
 * Other authored properties supported by that Cell type.
 
 ---

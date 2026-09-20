@@ -1,0 +1,14 @@
+fn on_ready() {
+	debug.log("Test script started for: Attributes")
+    const tests = find("Test")
+
+    for test in tests {
+        if test.attributes["testBool"] == true {
+            debug.log(test.attributes["Test"])
+            break
+        }
+    }
+}
+on PlayerSpawned(player) {
+	debug.log("If you are reading this and dont see: Test script started for:... that means on_ready is not fiering.")
+}

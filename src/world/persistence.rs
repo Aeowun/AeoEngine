@@ -3,6 +3,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
 use glam::Vec3;
+use serde_json;
 
 use super::cell::{Cell, CellType};
 use super::coordinate::WorldCoord;
@@ -165,6 +166,12 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
 
                 _ => {}
             }
+
+            if !cell.attributes.is_empty() {
+                let json = serde_json::to_string(&cell.attributes)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                writeln!(file, "ATTRIBUTES {} {}", cell.id, json)?;
+            }
         }
     }
 
@@ -248,6 +255,23 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                 world.script_bindings.push(ScriptBinding::new(id, script_path));
             } else {
                 legacy_bindings.push((target_str.to_string(), script_path));
+            }
+            continue;
+        }
+
+        if parts[0] == "ATTRIBUTES" && parts.len() >= 3 {
+            let id_val = parts[1].parse::<u64>().unwrap_or(0);
+            // We use splitn to ensure we preserve spaces in the JSON payload.
+            let sub_parts: Vec<&str> = line.splitn(3, ' ').collect();
+            if sub_parts.len() == 3 {
+                let json_str = sub_parts[2];
+                if let Some(coord) = world.resolve_cell_id(id_val) {
+                    if let Some(cell) = world.get_mut(coord) {
+                        if let Ok(attrs) = serde_json::from_str(json_str) {
+                            cell.attributes = attrs;
+                        }
+                    }
+                }
             }
             continue;
         }
@@ -376,6 +400,7 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::cell::AttributeValue;
     use crate::world::Cell;
     use glam::Vec3;
     use std::fs;
@@ -838,6 +863,115 @@ mod tests {
 
         // Valid pre-existing IDs remain unchanged.
         assert_eq!(c3.id, 88888888);
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_cell_attributes_defaults() {
+        let cell = Cell::default();
+        assert!(cell.attributes.is_empty());
+
+        let light = Cell::new_light();
+        assert!(light.attributes.is_empty());
+    }
+
+    #[test]
+    fn test_cell_attributes_clone() {
+        let mut cell = Cell::default();
+        cell.attributes.insert("health".to_string(), AttributeValue::Number(100.0));
+        cell.attributes.insert("name".to_string(), AttributeValue::String("Player".to_string()));
+
+        let cloned = cell.clone();
+        assert_eq!(cloned.attributes, cell.attributes);
+        assert_eq!(cloned.attributes.get("health"), Some(&AttributeValue::Number(100.0)));
+    }
+
+    #[test]
+    fn test_world_attributes_persistence() {
+        let mut world = World::new();
+        let coord = WorldCoord::new(1, 1, 1);
+        let id = world.set_cell(coord, CellType::Block);
+
+        if let Some(cell) = world.get_mut(coord) {
+            cell.attributes.insert("score".to_string(), AttributeValue::Number(123.45));
+            cell.attributes.insert("is_active".to_string(), AttributeValue::Bool(true));
+            cell.attributes.insert("description".to_string(), AttributeValue::String("A block with spaces".to_string()));
+        }
+
+        let path = Path::new("test_attributes.dat");
+        save_world(&world, path).unwrap();
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        let loaded_cell = loaded_world.get(coord).unwrap();
+        assert_eq!(loaded_cell.id, id);
+        assert_eq!(loaded_cell.attributes.get("score"), Some(&AttributeValue::Number(123.45)));
+        assert_eq!(loaded_cell.attributes.get("is_active"), Some(&AttributeValue::Bool(true)));
+        assert_eq!(loaded_cell.attributes.get("description"), Some(&AttributeValue::String("A block with spaces".to_string())));
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_world_multiple_attributes_persistence() {
+        let mut world = World::new();
+        let c1 = WorldCoord::new(0, 0, 0);
+        let c2 = WorldCoord::new(1, 1, 1);
+
+        world.set_cell(c1, CellType::Player);
+        if let Some(cell) = world.get_mut(c1) {
+            cell.attributes.insert("speed".to_string(), AttributeValue::Number(5.0));
+        }
+
+        world.set_cell(c2, CellType::NPC);
+        if let Some(cell) = world.get_mut(c2) {
+            cell.attributes.insert("aggro".to_string(), AttributeValue::Bool(false));
+            cell.attributes.insert("greeting".to_string(), AttributeValue::String("Hello traveler".to_string()));
+        }
+
+        let path = Path::new("test_multi_attributes.dat");
+        save_world(&world, path).unwrap();
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        assert_eq!(loaded_world.get(c1).unwrap().attributes.get("speed"), Some(&AttributeValue::Number(5.0)));
+        assert_eq!(loaded_world.get(c2).unwrap().attributes.get("aggro"), Some(&AttributeValue::Bool(false)));
+        assert_eq!(loaded_world.get(c2).unwrap().attributes.get("greeting"), Some(&AttributeValue::String("Hello traveler".to_string())));
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_legacy_load_empty_attributes() {
+        let path = Path::new("test_legacy_no_attrs.dat");
+        {
+            let mut file = File::create(path).unwrap();
+            writeln!(file, "GRAVITY 0 -9.81 0").unwrap();
+            writeln!(file, "BLOCK 12345 0 0 0 true true true Default 0.5 0.5 0.5").unwrap();
+        }
+
+        let mut world = World::new();
+        load_world(&mut world, path).unwrap();
+
+        let cell = world.get(WorldCoord::new(0, 0, 0)).unwrap();
+        assert!(cell.attributes.is_empty());
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_empty_attributes_no_line() {
+        let mut world = World::new();
+        world.set_cell(WorldCoord::new(0, 0, 0), CellType::Block);
+
+        let path = Path::new("test_empty_attr_line.dat");
+        save_world(&world, path).unwrap();
+
+        let content = fs::read_to_string(path).unwrap();
+        assert!(!content.contains("ATTRIBUTES"));
 
         fs::remove_file(path).ok();
     }

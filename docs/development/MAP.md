@@ -54,6 +54,7 @@ Use this section first.
 | AeoScript runtime | `src/scripting/runtime.rs` | `ScriptRuntime` lines 17-27; tick 171-205 |
 | AeoScript scheduler/fibers | `src/scripting/execution.rs` | scheduler lines 79-276 |
 | AeoScript VM/interpreter | `src/scripting/interpreter.rs` | `ScriptInstance` lines 12-22; interpreter is the large execution core |
+| AeoScript host bridge | `src/scripting/host.rs` | concrete AeoEngine -> AeoScript EngineHost implementation |
 | AeoScript values/handles | `src/scripting/value.rs` | `HandleKind` lines 4-23; `Value` lines 79-95 |
 | AeoScript host API | `src/scripting/api.rs` | `EngineHost` lines 4-24 |
 | Script bindings | `src/scripting/binding.rs` | `ScriptBinding` lines 8-13 |
@@ -1953,10 +1954,11 @@ src/editor/editor.rs
     render_properties_content
     lines 406+
 
-SCRIPT EXPOSURE
+SCRIPT EXPOSURE (implemented)
 src/scripting/value.rs
 src/scripting/api.rs
 src/scripting/scene.rs
+src/scripting/host.rs (bridge implementation)
 ```
 
 The intended eventual flow is:
