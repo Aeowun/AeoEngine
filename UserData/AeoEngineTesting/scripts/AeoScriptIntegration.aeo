@@ -502,7 +502,6 @@ fn on_ready() {
 
 fn update(dt) {
     update_ticks += 1
-	debug.log("UPDATE ENTER")
     if dt >= 0 {
         update_seen = true
     }

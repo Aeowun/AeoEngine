@@ -285,6 +285,9 @@ impl ScriptScene {
             let mut handled = false;
             for entity in &mut self.entities {
                 if entity.active_task() == Some(task_id) {
+                    // Synchronize the mutated instance state back to the persistent entity.
+                    Self::sync_entity_instance_from_task(&self.runtime, entity, task_id)?;
+
                     match result {
                         FiberResult::Complete => {
                             self.runtime.remove_fiber(task_id);
@@ -378,6 +381,22 @@ impl ScriptScene {
             entity.state = EntityState::Stopped;
         }
         self.entities.clear();
+    }
+
+    fn sync_entity_instance_from_task(
+        runtime: &ScriptRuntime,
+        entity: &mut ScriptEntity,
+        task_id: ScriptTaskId,
+    ) -> Result<(), String> {
+        if let Some(fiber) = runtime.fiber(task_id) {
+            entity.instance = fiber.instance().clone();
+            Ok(())
+        } else {
+            Err(format!(
+                "Failed to sync instance: task {} not found",
+                task_id.value()
+            ))
+        }
     }
 
     fn has_function(runtime: &ScriptRuntime, entity: &ScriptEntity, name: &str) -> bool {
@@ -2351,6 +2370,181 @@ entity Test {
             r.message.contains("Stale script binding") && r.message.contains(&cell_id.to_string())
         });
         assert!(!has_stale_warning, "Should not report stale binding for valid block identity");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_lifecycle_field_persistence() {
+        let source = r#"
+entity LifecycleTest {
+    ready_set: bool = false
+    update_count: number = 0
+
+    fn on_ready() {
+        ready_set = true
+    }
+
+    fn update(dt: number) {
+        if ready_set {
+            update_count += 1
+        }
+    }
+}
+"#;
+        let mut th = test_host();
+        let cell_id = add_authored_entity(&mut th.world, WorldCoord::new(0, 0, 0), CellType::Block, "LifecycleTest");
+        let temp_dir = std::env::temp_dir().join("aeo_test_lifecycle_persistence");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
+        std::fs::write(temp_dir.join("scripts/test.aeo"), source).unwrap();
+        let bindings = vec![ScriptBinding::new(cell_id, "scripts/test.aeo")];
+
+        let mut scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            0.0,
+        ).unwrap();
+
+        let mut host = HostContext { delta_time: 1.0/60.0, engine: &mut th };
+        scene.start(&mut host).unwrap();
+
+        // Frame 1: on_ready completes. Transitions to Active. Spawns update task.
+        scene.update(1.0/60.0, &mut host).unwrap();
+
+        // Frame 2: first update task ticks. update_count = 1. Spawns next update task.
+        scene.update(1.0/60.0, &mut host).unwrap();
+
+        // Frame 3: second update task ticks. update_count = 2.
+        scene.update(1.0/60.0, &mut host).unwrap();
+
+        let entity = &scene.entities[0];
+        assert_eq!(entity.instance.get_field("ready_set"), Some(&Value::Bool(true)));
+        assert_eq!(entity.instance.get_field("update_count"), Some(&Value::Number(2.0)));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_update_increment_persistence() {
+        let source = r#"
+entity Counter {
+    ticks: number = 0
+    fn update(dt: number) {
+        ticks += 1
+    }
+}
+"#;
+        let mut th = test_host();
+        let cell_id = add_authored_entity(&mut th.world, WorldCoord::new(0, 0, 0), CellType::Block, "Counter");
+        let temp_dir = std::env::temp_dir().join("aeo_test_counter_persistence");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
+        std::fs::write(temp_dir.join("scripts/test.aeo"), source).unwrap();
+        let bindings = vec![ScriptBinding::new(cell_id, "scripts/test.aeo")];
+
+        let mut scene = ScriptScene::load_from_bindings(&temp_dir, &th.world, &bindings, &mut th.entity_manager, 0.0).unwrap();
+        let mut host = HostContext { delta_time: 0.1, engine: &mut th };
+        scene.start(&mut host).unwrap();
+
+        // Frame 1: Spawns update task.
+        scene.update(0.1, &mut host).unwrap();
+        // Frame 2: Ticks first update task. ticks = 1. Spawns second.
+        scene.update(0.1, &mut host).unwrap();
+        assert_eq!(scene.entities[0].instance.get_field("ticks"), Some(&Value::Number(1.0)));
+
+        // Frame 3: Ticks second update task. ticks = 2.
+        scene.update(0.1, &mut host).unwrap();
+        assert_eq!(scene.entities[0].instance.get_field("ticks"), Some(&Value::Number(2.0)));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_update_wait_persistence() {
+        let source = r#"
+entity WaitTest {
+    finished: bool = false
+    fn update(dt: number) {
+        wait(0.05)
+        finished = true
+    }
+}
+"#;
+        let mut th = test_host();
+        let cell_id = add_authored_entity(&mut th.world, WorldCoord::new(0, 0, 0), CellType::Block, "WaitTest");
+        let temp_dir = std::env::temp_dir().join("aeo_test_update_wait");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
+        std::fs::write(temp_dir.join("scripts/test.aeo"), source).unwrap();
+        let bindings = vec![ScriptBinding::new(cell_id, "scripts/test.aeo")];
+
+        let mut scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            0.0,
+        ).unwrap();
+
+        let mut host = HostContext { delta_time: 0.1, engine: &mut th };
+        scene.start(&mut host).unwrap();
+
+        // F1: current_time=0.1. tick runs, nothing. Spawns update task.
+        scene.update(0.1, &mut host).unwrap();
+
+        // F2: current_time=0.2. update runs, calls wait(0.05), yields. wake_at=0.25.
+        scene.update(0.1, &mut host).unwrap();
+        assert_eq!(scene.entities[0].instance.get_field("finished"), Some(&Value::Bool(false)));
+
+        // F3: current_time=0.3. wakes, finished=true, complete.
+        scene.update(0.1, &mut host).unwrap();
+
+        assert_eq!(scene.entities[0].instance.get_field("finished"), Some(&Value::Bool(true)));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_update_nested_wait_persistence() {
+        let source = r#"
+entity NestedWait {
+    val: number = 0
+    fn sub() {
+        wait(0.05)
+        val = 1
+    }
+    fn update(dt: number) {
+        if val == 0 {
+            sub()
+        }
+    }
+}
+"#;
+        let mut th = test_host();
+        let cell_id = add_authored_entity(&mut th.world, WorldCoord::new(0, 0, 0), CellType::Block, "NestedWait");
+        let temp_dir = std::env::temp_dir().join("aeo_test_nested_wait");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
+        std::fs::write(temp_dir.join("scripts/test.aeo"), source).unwrap();
+        let bindings = vec![ScriptBinding::new(cell_id, "scripts/test.aeo")];
+
+        let mut scene = ScriptScene::load_from_bindings(&temp_dir, &th.world, &bindings, &mut th.entity_manager, 0.0).unwrap();
+        let mut host = HostContext { delta_time: 0.1, engine: &mut th };
+        scene.start(&mut host).unwrap();
+
+        // F1: spawns update
+        scene.update(0.1, &mut host).unwrap();
+
+        // F2: update -> sub -> wait(0.05). yields. wake_at=0.25.
+        scene.update(0.1, &mut host).unwrap();
+        assert_eq!(scene.entities[0].instance.get_field("val"), Some(&Value::Number(0.0)));
+
+        // F3: current_time=0.3. wakes, sub sets val=1. complete.
+        scene.update(0.1, &mut host).unwrap();
+        assert_eq!(scene.entities[0].instance.get_field("val"), Some(&Value::Number(1.0)));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
