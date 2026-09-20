@@ -121,6 +121,11 @@ enum Instruction {
         end: usize,
     },
 
+    CallUserFunction {
+        name: String,
+        arguments: Vec<Expression>,
+    },
+
     Wait {
         arguments: Vec<Expression>,
     },
@@ -145,6 +150,17 @@ struct CompiledFunction {
     instructions: Vec<Instruction>,
 }
 
+#[derive(Clone, Debug)]
+struct CallFrame {
+    function: Arc<CompiledFunction>,
+    pc: usize,
+    scopes: Vec<Scope>,
+    for_states: Vec<ForState>,
+    /// If this frame was called as part of an expression, this stores where to put the result.
+    /// Actually, for now let's just support calls as statements.
+    function_name: String,
+}
+
 /// A cooperative AeoScript execution fiber.
 ///
 /// The fiber owns its runtime execution state but not the interpreter itself.
@@ -154,12 +170,8 @@ struct CompiledFunction {
 pub struct ScriptFiber {
     pub script_path: Option<String>,
     pub entity_name: String,
-    pub function_name: String,
     instance: ScriptInstance,
-    function: Arc<CompiledFunction>,
-    pc: usize,
-    scopes: Vec<Scope>,
-    for_states: Vec<ForState>,
+    stack: Vec<CallFrame>,
     finished: bool,
     result: Option<Value>,
 }
@@ -170,11 +182,11 @@ impl ScriptFiber {
     }
 
     pub fn function_name(&self) -> &str {
-        &self.function_name
+        self.stack.first().map(|f| f.function_name.as_str()).unwrap_or("unknown")
     }
 
     pub fn program_counter(&self) -> usize {
-        self.pc
+        self.stack.last().map(|f| f.pc).unwrap_or(0)
     }
 
     pub fn is_finished(&self) -> bool {
@@ -274,6 +286,18 @@ impl Interpreter {
             current_entity_id: None,
             current_function_name: None,
         }
+    }
+
+    pub fn call_function_by_name(
+        &mut self,
+        instance: &mut ScriptInstance,
+        name: &str,
+        arguments: Vec<Value>,
+        host: &mut HostContext,
+    ) -> Result<Value, String> {
+        let function = self.find_function(&instance.entity_name, name)
+            .ok_or_else(|| format!("function '{}' does not exist", name))?;
+        self.call_user_function(instance, &function, arguments, host)
     }
 
     pub fn with_limits(
@@ -495,12 +519,14 @@ impl Interpreter {
         Ok(ScriptFiber {
             script_path: instance.script_path.clone(),
             entity_name,
-            function_name: function_name.to_string(),
             instance,
-            function: compiled,
-            pc: 0,
-            scopes: vec![parameter_scope],
-            for_states: Vec::new(),
+            stack: vec![CallFrame {
+                function: compiled,
+                pc: 0,
+                scopes: vec![parameter_scope],
+                for_states: Vec::new(),
+                function_name: function_name.to_string(),
+            }],
             finished: false,
             result: None,
         })
@@ -543,22 +569,19 @@ impl Interpreter {
         Ok(ScriptFiber {
             script_path: instance.script_path.clone(),
             entity_name: instance.entity_name().to_string(),
-            function_name: event.name.clone(),
             instance,
-            function: compiled,
-            pc: 0,
-            scopes: vec![parameter_scope],
-            for_states: Vec::new(),
+            stack: vec![CallFrame {
+                function: compiled,
+                pc: 0,
+                scopes: vec![parameter_scope],
+                for_states: Vec::new(),
+                function_name: event.name.clone(),
+            }],
             finished: false,
             result: None,
         })
     }
 
-    /// Resumes a persistent fiber until it yields, completes, or fails.
-    ///
-    /// The operation budget is per resume slice. A cooperative wait therefore
-    /// allows a long-running script to continue indefinitely while a script
-    /// that spins without yielding still hits the execution budget.
     pub fn resume_fiber(&mut self, fiber: &mut ScriptFiber, host: &mut HostContext) -> FiberResult {
         if fiber.finished {
             return FiberResult::Failed(
@@ -572,11 +595,20 @@ impl Interpreter {
         self.current_script_path = fiber.script_path.clone();
         self.current_entity_name = Some(fiber.entity_name.clone());
         self.current_entity_id = Some(fiber.instance().id());
-        self.current_function_name = Some(fiber.function_name.clone());
 
         let result = loop {
-            if fiber.pc >= fiber.function.instructions.len() {
+            let Some(frame) = fiber.stack.last_mut() else {
                 break fiber.complete(Value::Nil);
+            };
+
+            self.current_function_name = Some(frame.function_name.clone());
+
+            if frame.pc >= frame.function.instructions.len() {
+                fiber.stack.pop();
+                if fiber.stack.is_empty() {
+                    break fiber.complete(Value::Nil);
+                }
+                continue;
             }
 
             if let Err(error) = self.tick() {
@@ -584,24 +616,24 @@ impl Interpreter {
                 break fiber.fail(error);
             }
 
-            let instruction = fiber.function.instructions[fiber.pc].clone();
+            let instruction = frame.function.instructions[frame.pc].clone();
             match instruction {
                 Instruction::EnterScope => {
-                    fiber.scopes.push(Scope::new());
+                    frame.scopes.push(Scope::new());
 
-                    fiber.pc += 1;
+                    frame.pc += 1;
                 }
 
                 Instruction::ExitScope => {
-                    if fiber.scopes.len() <= 1 {
+                    if frame.scopes.len() <= 1 {
                         let err = "AeoScript runtime scope underflow.".to_string();
                         self.log_error(err.clone());
                         break fiber.fail(err);
                     }
 
-                    fiber.scopes.pop();
+                    frame.scopes.pop();
 
-                    fiber.pc += 1;
+                    frame.pc += 1;
                 }
 
                 Instruction::Variable {
@@ -613,7 +645,7 @@ impl Interpreter {
                         Some(initializer) => {
                             match self.eval_expression(
                                 &mut fiber.instance,
-                                &mut fiber.scopes,
+                                &mut frame.scopes,
                                 &initializer,
                                 host,
                             ) {
@@ -629,7 +661,7 @@ impl Interpreter {
                         None => Value::Nil,
                     };
 
-                    let scope = match fiber.scopes.last_mut() {
+                    let scope = match frame.scopes.last_mut() {
                         Some(scope) => scope,
 
                         None => {
@@ -646,7 +678,7 @@ impl Interpreter {
                         break fiber.fail(error);
                     }
 
-                    fiber.pc += 1;
+                    frame.pc += 1;
                 }
 
                 Instruction::Assignment {
@@ -656,7 +688,7 @@ impl Interpreter {
                 } => {
                     let right = match self.eval_expression(
                         &mut fiber.instance,
-                        &mut fiber.scopes,
+                        &mut frame.scopes,
                         &value,
                         host,
                     ) {
@@ -670,7 +702,7 @@ impl Interpreter {
 
                     if let Err(error) = self.assign_target(
                         &mut fiber.instance,
-                        &mut fiber.scopes,
+                        &mut frame.scopes,
                         &target,
                         operator,
                         right,
@@ -680,13 +712,13 @@ impl Interpreter {
                         break fiber.fail(error);
                     }
 
-                    fiber.pc += 1;
+                    frame.pc += 1;
                 }
 
                 Instruction::Evaluate(expression) => {
                     if let Err(error) = self.eval_expression(
                         &mut fiber.instance,
-                        &mut fiber.scopes,
+                        &mut frame.scopes,
                         &expression,
                         host,
                     ) {
@@ -694,11 +726,11 @@ impl Interpreter {
                         break fiber.fail(error);
                     }
 
-                    fiber.pc += 1;
+                    frame.pc += 1;
                 }
 
                 Instruction::Jump { target } => {
-                    fiber.pc = target;
+                    frame.pc = target;
                 }
 
                 Instruction::JumpIfFalse {
@@ -707,7 +739,7 @@ impl Interpreter {
                 } => {
                     let value = match self.eval_expression(
                         &mut fiber.instance,
-                        &mut fiber.scopes,
+                        &mut frame.scopes,
                         &condition,
                         host,
                     ) {
@@ -720,9 +752,9 @@ impl Interpreter {
                     };
 
                     match value.is_truthy() {
-                        Ok(true) => fiber.pc += 1,
+                        Ok(true) => frame.pc += 1,
 
-                        Ok(false) => fiber.pc = target,
+                        Ok(false) => frame.pc = target,
 
                         Err(error) => {
                             self.log_error(error.clone());
@@ -738,7 +770,7 @@ impl Interpreter {
                 } => {
                     let iterable_value = match self.eval_expression(
                         &mut fiber.instance,
-                        &mut fiber.scopes,
+                        &mut frame.scopes,
                         &iterable,
                         host,
                     ) {
@@ -751,7 +783,7 @@ impl Interpreter {
                     };
 
                     let values = match iterable_value {
-                        Value::Array(values) => values.borrow().clone(),
+                        Value::Array(values) => values.borrow().elements.clone(),
 
                         other => {
                             let err = format!(
@@ -764,19 +796,19 @@ impl Interpreter {
                     };
 
                     if values.is_empty() {
-                        fiber.pc = end;
+                        frame.pc = end;
                         continue;
                     }
 
                     let first_value = values[0].clone();
 
-                    fiber.for_states.push(ForState {
+                    frame.for_states.push(ForState {
                         name: name.clone(),
                         values,
                         next_index: 1,
                     });
 
-                    let scope = match fiber.scopes.last_mut() {
+                    let scope = match frame.scopes.last_mut() {
                         Some(scope) => scope,
 
                         None => {
@@ -793,11 +825,11 @@ impl Interpreter {
                         break fiber.fail(error);
                     }
 
-                    fiber.pc += 1;
+                    frame.pc += 1;
                 }
 
                 Instruction::ForNext { body_start, end } => {
-                    let Some(loop_state) = fiber.for_states.last_mut() else {
+                    let Some(loop_state) = frame.for_states.last_mut() else {
                         let err = "AeoScript runtime for-loop state underflow.".to_string();
                         self.log_error(err.clone());
                         break fiber.fail(err);
@@ -811,7 +843,7 @@ impl Interpreter {
 
                         let name = loop_state.name.clone();
 
-                        let scope = match fiber.scopes.last_mut() {
+                        let scope = match frame.scopes.last_mut() {
                             Some(scope) => scope,
 
                             None => {
@@ -828,12 +860,100 @@ impl Interpreter {
                             break fiber.fail(error);
                         }
 
-                        fiber.pc = body_start;
+                        frame.pc = body_start;
                     } else {
-                        fiber.for_states.pop();
+                        frame.for_states.pop();
 
-                        fiber.pc = end;
+                        frame.pc = end;
                     }
+                }
+
+                Instruction::CallUserFunction { name, arguments } => {
+                    let values = match self.eval_arguments(&mut fiber.instance, &mut frame.scopes, &arguments, host) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            self.log_error(e.clone());
+                            break fiber.fail(e);
+                        }
+                    };
+
+                    // Check if it's a host function
+                    if let Ok(Some(res)) = call_host_function(host, &name, &values) {
+                        // For now we don't store the result because CallUserFunction is only for statements.
+                        let _ = res;
+                        frame.pc += 1;
+                        continue;
+                    }
+
+                    // Built-ins
+                    match name.as_str() {
+                        "print" => {
+                            self.log_values(&values);
+                            frame.pc += 1;
+                            continue;
+                        }
+                        "get_parent" => {
+                            // Only statements, discard result
+                            frame.pc += 1;
+                            continue;
+                        }
+                        "wait" => {
+                            // Should have been handled by Instruction::Wait, but if we're here:
+                            if values.len() != 1 {
+                                let err = "wait() expects exactly one argument.".to_string();
+                                self.log_error(err.clone());
+                                break fiber.fail(err);
+                            }
+                            let seconds = values[0].as_number().unwrap_or(0.0);
+                            frame.pc += 1;
+                            break FiberResult::Yield(YieldReason::WaitSeconds(seconds));
+                        }
+                        _ => {}
+                    }
+
+                    let function = match self.find_function(&fiber.instance.entity_name, &name) {
+                        Some(f) => f,
+                        None => {
+                            let err = format!("function '{}' does not exist", name);
+                            self.log_error(err.clone());
+                            break fiber.fail(err);
+                        }
+                    };
+
+                    if function.parameters.len() != values.len() {
+                        let err = format!(
+                            "function '{}' expected {} argument(s), got {}",
+                            function.name,
+                            function.parameters.len(),
+                            values.len()
+                        );
+                        self.log_error(err.clone());
+                        break fiber.fail(err);
+                    }
+
+                    let cache_key = (fiber.instance.entity_name.clone(), name.clone());
+                    let compiled = if let Some(compiled) = self.compiled_functions.get(&cache_key) {
+                        Arc::clone(compiled)
+                    } else {
+                        let compiled = Arc::new(compile_function(&function));
+                        self.compiled_functions.insert(cache_key, Arc::clone(&compiled));
+                        compiled
+                    };
+
+                    let mut parameter_scope = Scope::new();
+                    for (parameter, argument) in function.parameters.iter().zip(values.into_iter()) {
+                        parameter_scope.declare(parameter.name.clone(), argument, false).unwrap();
+                    }
+
+                    frame.pc += 1; // Advance caller PC BEFORE pushing new frame
+
+                    fiber.stack.push(CallFrame {
+                        function: compiled,
+                        pc: 0,
+                        scopes: vec![parameter_scope],
+                        for_states: Vec::new(),
+                        function_name: name,
+                    });
                 }
 
                 Instruction::Wait { arguments } => {
@@ -845,7 +965,7 @@ impl Interpreter {
 
                     let seconds = match self.eval_expression(
                         &mut fiber.instance,
-                        &mut fiber.scopes,
+                        &mut frame.scopes,
                         &arguments[0],
                         host,
                     ) {
@@ -876,7 +996,7 @@ impl Interpreter {
                         break fiber.fail(err);
                     }
 
-                    fiber.pc += 1;
+                    frame.pc += 1;
 
                     break FiberResult::Yield(
                         YieldReason::WaitSeconds(seconds),
@@ -887,7 +1007,7 @@ impl Interpreter {
                     let value = match expression {
                         Some(expression) => match self.eval_expression(
                             &mut fiber.instance,
-                            &mut fiber.scopes,
+                            &mut frame.scopes,
                             &expression,
                             host,
                         ) {
@@ -902,7 +1022,12 @@ impl Interpreter {
                         None => Value::Nil,
                     };
 
-                    break fiber.complete(value);
+                    fiber.stack.pop();
+                    if fiber.stack.is_empty() {
+                        break fiber.complete(value);
+                    }
+                    // For now we only support calls as statements, so we ignore 'value' here
+                    // unless we implement result passing.
                 }
             }
         };
@@ -1167,7 +1292,7 @@ impl Interpreter {
                     self.eval_expression(instance, scopes, iterable, host)?;
 
                 let values = match iterable_value {
-                    Value::Array(values) => values.borrow().clone(),
+                    Value::Array(values) => values.borrow().elements.clone(),
 
                     other => {
                         return Err(format!(
@@ -1271,7 +1396,7 @@ impl Interpreter {
                     right
                 } else {
                     let left = match &object_value {
-                        Value::Map(map) => map.borrow().get(&MapKey::String(name.clone())).cloned().ok_or_else(|| format!("map has no key '{}'", name))?,
+                        Value::Map(map) => map.borrow().get(&MapKey::String(name.clone())).cloned().unwrap_or(Value::Nil),
                         Value::Handle { kind, id } => {
                             if let Some(v) = resolve_host_member_property(host, *kind, *id, name)? {
                                 v
@@ -1286,7 +1411,11 @@ impl Interpreter {
 
                 match object_value {
                     Value::Map(map) => {
-                        map.borrow_mut().insert(MapKey::String(name.clone()), value);
+                        if matches!(value, Value::Nil) {
+                            map.borrow_mut().remove(&MapKey::String(name.clone()));
+                        } else {
+                            map.borrow_mut().insert(MapKey::String(name.clone()), value);
+                        }
                         Ok(())
                     }
                     Value::Handle { kind, id } => {
@@ -1306,11 +1435,11 @@ impl Interpreter {
                     let left = match &object_value {
                         Value::Array(array) => {
                             let idx = index_value.as_index()?;
-                            array.borrow().get(idx).cloned().ok_or_else(|| format!("index {} out of bounds", idx))?
+                            array.borrow().elements.get(idx).cloned().ok_or_else(|| format!("index {} out of bounds", idx))?
                         }
                         Value::Map(map) => {
                             let key = index_value.as_map_key()?;
-                            map.borrow().get(&key).cloned().ok_or_else(|| format!("map has no key '{}'", key))?
+                            map.borrow().get(&key).cloned().unwrap_or(Value::Nil)
                         }
                         _ => return Err(format!("cannot index type {}", object_value.type_name())),
                     };
@@ -1321,15 +1450,22 @@ impl Interpreter {
                     Value::Array(array) => {
                         let idx = index_value.as_index()?;
                         let mut borrowed = array.borrow_mut();
-                        if idx >= borrowed.len() {
+                        if borrowed.frozen {
+                            return Err("cannot mutate frozen basket".to_string());
+                        }
+                        if idx >= borrowed.elements.len() {
                             return Err(format!("index {} out of bounds", idx));
                         }
-                        borrowed[idx] = value;
+                        borrowed.elements[idx] = value;
                         Ok(())
                     }
                     Value::Map(map) => {
                         let key = index_value.as_map_key()?;
-                        map.borrow_mut().insert(key, value);
+                        if matches!(value, Value::Nil) {
+                            map.borrow_mut().remove(&key);
+                        } else {
+                            map.borrow_mut().insert(key, value);
+                        }
                         Ok(())
                     }
                     _ => Err(format!("cannot assign to index of type {}", object_value.type_name())),
@@ -1497,6 +1633,12 @@ impl Interpreter {
                         self.log_values(&arg_values);
                         return Ok(Value::Nil);
                     }
+                    if object_name == "math" || object_name == "basket" || object_name == "string" {
+                        let arg_values = self.eval_arguments(instance, scopes, arguments, host)?;
+                        if let Some(res) = super::stdlib::call_stdlib_function(self, instance, scopes, object_name, method, &arg_values, host)? {
+                            return Ok(res);
+                        }
+                    }
                 }
 
                 let object_value = self.eval_expression(instance, scopes, object, host)?;
@@ -1527,6 +1669,9 @@ impl Interpreter {
                     if let Some(value) = resolve_host_property(host, object_name, name)? {
                         return Ok(value);
                     }
+                    if let Some(value) = super::stdlib::resolve_stdlib_property(object_name, name)? {
+                        return Ok(value);
+                    }
                 }
 
                 let value =
@@ -1535,11 +1680,9 @@ impl Interpreter {
                 match value {
                     Value::Map(map) => {
                         let borrowed = map.borrow();
-                        borrowed.get(&MapKey::String(name.clone()))
+                        Ok(borrowed.get(&MapKey::String(name.clone()))
                         .cloned()
-                        .ok_or_else(|| {
-                            format!("map has no key '{}'", name)
-                        })
+                        .unwrap_or(Value::Nil))
                     }
 
                     Value::Handle { kind, id } => {
@@ -1586,7 +1729,7 @@ impl Interpreter {
                     );
                 }
 
-                Ok(Value::Array(Arc::new(RefCell::new(values))))
+                Ok(Value::array(values))
             }
 
             ExpressionKind::Map(entries) => {
@@ -1681,89 +1824,62 @@ impl Interpreter {
             }
 
             ExpressionKind::Member { object, name } => {
-                if matches!(
-                    object.kind,
-                    ExpressionKind::Identifier(
-                        ref object_name
-                    ) if object_name == "debug"
-                ) && name == "log"
-                {
-                    let values =
-                        self.eval_arguments(
-                            instance,
-                            scopes,
-                            arguments,
-                            host,
-                        )?;
-
-                    self.log_values(&values);
-
-                    return Ok(Value::Nil);
-                }
-
-                if matches!(
-                    object.kind,
-                    ExpressionKind::Identifier(
-                        ref object_name
-                    ) if object_name == "time"
-                ) && name == "delta"
-                {
-                    let values =
-                        self.eval_arguments(
-                            instance,
-                            scopes,
-                            arguments,
-                            host,
-                        )?;
-
-                    if !values.is_empty() {
-                        return Err("time.delta() expects no arguments".to_string());
+                if let ExpressionKind::Identifier(ref object_name) = object.kind {
+                    if object_name == "debug" && name == "log" {
+                        let values = self.eval_arguments(instance, scopes, arguments, host)?;
+                        self.log_values(&values);
+                        return Ok(Value::Nil);
                     }
 
-                    return Ok(Value::Number(host.delta_time));
+                    if object_name == "time" && name == "delta" {
+                        if !arguments.is_empty() {
+                            return Err("time.delta() expects no arguments".to_string());
+                        }
+                        return Ok(Value::Number(host.delta_time));
+                    }
+
+                    if object_name == "math" || object_name == "basket" || object_name == "string" {
+                        let values = self.eval_arguments(instance, scopes, arguments, host)?;
+                        if let Some(res) = super::stdlib::call_stdlib_function(self, instance, scopes, object_name, name, &values, host)? {
+                            return Ok(res);
+                        }
+                    }
                 }
 
                 let object_value = self.eval_expression(instance, scopes, object, host)?;
                 let values = self.eval_arguments(instance, scopes, arguments, host)?;
 
-                match object_value {
-                    Value::Array(ref items) => {
+                match &object_value {
+                    Value::Array(items) => {
                         if name == "len" {
                             if !values.is_empty() {
                                 return Err("array.len() expects no arguments".to_string());
                             }
-                            return Ok(Value::Number(items.borrow().len() as f64));
+                            return Ok(Value::Number(items.borrow().elements.len() as f64));
+                        }
+
+                        let mut all_args = vec![object_value.clone()];
+                        all_args.extend(values.iter().cloned());
+                        if let Some(res) = super::stdlib::call_stdlib_function(self, instance, scopes, "basket", name, &all_args, host)? {
+                            return Ok(res);
                         }
                     }
+
                     Value::Handle { kind, id } => {
-                        if let Some(result) = call_host_member(host, kind, id, name, &values)? {
+                        if let Some(result) = call_host_member(host, *kind, *id, name, &values)? {
                             return Ok(result);
-                        } else {
-                            return Err(format!(
-                                "engine member '{}' is not available on handle kind {} yet",
-                                name, kind.name()
-                            ));
                         }
                     }
                     _ => {}
                 }
 
-                if matches!(
-                    object.kind,
-                    ExpressionKind::Identifier(
-                        ref object_name
-                    ) if object_name == "debug"
-                ) {
-                    return Err(format!(
-                        "unknown debug function '{}'",
-                        name
-                    ));
+                if let ExpressionKind::Identifier(ref object_name) = object.kind {
+                     if object_name == "debug" {
+                        return Err(format!("unknown debug function '{}'", name));
+                     }
                 }
 
-                Err(
-                    "engine/native member calls are not connected to the interpreter yet."
-                        .to_string(),
-                )
+                Err(format!("cannot call '{}' on type {}", name, object_value.type_name()))
             }
 
             _ => Err(
@@ -1826,7 +1942,7 @@ impl Interpreter {
                 let index = index.as_index()?;
                 let borrowed = values.borrow();
 
-                borrowed
+                borrowed.elements
                     .get(index)
                     .cloned()
                     .ok_or_else(|| {
@@ -1841,11 +1957,9 @@ impl Interpreter {
                 let key = index.as_map_key()?;
                 let borrowed = map.borrow();
 
-                borrowed.get(&key)
+                Ok(borrowed.get(&key)
                     .cloned()
-                    .ok_or_else(|| {
-                        format!("map has no key '{}'", key)
-                    })
+                    .unwrap_or(Value::Nil))
             }
 
             other => Err(format!(
@@ -1976,6 +2090,9 @@ impl Interpreter {
         scopes: &[Scope],
         name: &str,
     ) -> Result<Value, String> {
+        if name == "math" || name == "basket" || name == "string" {
+            return Ok(Value::String(name.to_string()));
+        }
         for scope in scopes.iter().rev() {
             if let Some(value) = scope.get(name) {
                 return Ok(value.clone());
@@ -2176,6 +2293,11 @@ impl FunctionCompiler {
                 if let Some(arguments) = standalone_wait_arguments(expression)
                 {
                     self.emit(Instruction::Wait {
+                        arguments,
+                    });
+                } else if let Some((name, arguments)) = standalone_call(expression) {
+                    self.emit(Instruction::CallUserFunction {
+                        name,
                         arguments,
                     });
                 } else {
@@ -2392,6 +2514,25 @@ impl FunctionCompiler {
                 );
             }
         }
+    }
+}
+
+fn standalone_call(
+    expression: &Expression,
+) -> Option<(String, Vec<Expression>)> {
+    match &expression.kind {
+        ExpressionKind::Call {
+            callee,
+            arguments,
+        } => match &callee.kind {
+            ExpressionKind::Identifier(name) => {
+                Some((name.clone(), arguments.clone()))
+            }
+
+            _ => None,
+        },
+
+        _ => None,
     }
 }
 
@@ -3405,8 +3546,8 @@ entity Test {
 entity Test {
     count: number = 0
     fn main() {
-        basket: basket = [1, 2, 3]
-        count = basket.len()
+        b: basket = [1, 2, 3]
+        count = b.len()
     }
 }
 "#;
@@ -3527,5 +3668,434 @@ entity Test {
         assert_eq!(instance.get_field("r3"), Some(&Value::String("value = nil".to_string())));
         assert_eq!(instance.get_field("r4"), Some(&Value::String("10 items".to_string())));
         assert_eq!(instance.get_field("r5"), Some(&Value::String("basket = [1, 2]".to_string())));
+    }
+
+    #[test]
+    fn stdlib_math_works() {
+        let source = r#"
+entity Test {
+    r1: number = 0
+    r2: number = 0
+    r3: number = 0
+    r4: number = 0
+    r5: number = 0
+
+    fn main() {
+        r1 = math.abs(-10.5)
+        r2 = math.max(5, 10)
+        r3 = math.clamp(15, 0, 10)
+        r4 = math.floor(3.7)
+        r5 = math.lerp(10, 20, 0.5)
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+        interpreter.call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        assert_eq!(instance.get_field("r1"), Some(&Value::Number(10.5)));
+        assert_eq!(instance.get_field("r2"), Some(&Value::Number(10.0)));
+        assert_eq!(instance.get_field("r3"), Some(&Value::Number(10.0)));
+        assert_eq!(instance.get_field("r4"), Some(&Value::Number(3.0)));
+        assert_eq!(instance.get_field("r5"), Some(&Value::Number(15.0)));
+    }
+
+    #[test]
+    fn stdlib_basket_works() {
+        let source = r#"
+entity Test {
+    r1: number = 0
+    r2: string = ""
+    r3: number = 0
+    r4: number = 0
+
+    fn main() {
+        b: basket = [3, 1, 2]
+        b.sort()
+        r1 = b[0]
+        r2 = b.concat("-")
+
+        b2: basket = basket.create(3, 5)
+        r3 = b2[2]
+
+        b.insert(0, 10)
+        r4 = b[0]
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+        interpreter.call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        assert_eq!(instance.get_field("r1"), Some(&Value::Number(1.0)));
+        assert_eq!(instance.get_field("r2"), Some(&Value::String("1-2-3".to_string())));
+        assert_eq!(instance.get_field("r3"), Some(&Value::Number(5.0)));
+        assert_eq!(instance.get_field("r4"), Some(&Value::Number(10.0)));
+    }
+
+    #[test]
+    fn stdlib_basket_move_works() {
+        let source = r#"
+entity Test {
+    r1: string = ""
+    r2: string = ""
+
+    fn main() {
+        b: basket = [0, 1, 2, 3]
+        // Copy [1, 2] to start at 3
+        basket.move(b, 1, 2, 3)
+        r1 = b.concat(",")
+
+        b2: basket = [10, 20]
+        // Copy [1, 2] from b to b2 at 1
+        basket.move(b, 1, 2, 1, b2)
+        r2 = b2.concat(",")
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+        interpreter.call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        assert_eq!(instance.get_field("r1"), Some(&Value::String("0,1,2,1,2".to_string())));
+        assert_eq!(instance.get_field("r2"), Some(&Value::String("10,1,2".to_string())));
+    }
+
+    #[test]
+    fn stdlib_string_works() {
+        let source = r#"
+entity Test {
+    r1: number = 0
+    r2: string = ""
+    r3: string = ""
+    r4: string = ""
+
+    fn main() {
+        r1 = string.len("hello")
+        r2 = string.upper("world")
+        r3 = string.reverse("abc")
+        s: basket = string.split("a,b,c", ",")
+        r4 = s.concat("|")
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+        interpreter.call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        assert_eq!(instance.get_field("r1"), Some(&Value::Number(5.0)));
+        assert_eq!(instance.get_field("r2"), Some(&Value::String("WORLD".to_string())));
+        assert_eq!(instance.get_field("r3"), Some(&Value::String("cba".to_string())));
+        assert_eq!(instance.get_field("r4"), Some(&Value::String("a|b|c".to_string())));
+    }
+
+    #[test]
+    fn frozen_basket_mutation_fails() {
+        let source = r#"
+entity Test {
+    fn main() {
+        b: basket = [1, 2, 3]
+        b.freeze()
+        b[0] = 10
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+        let res = interpreter.call(&mut instance, "main", vec![], &mut host);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_lowercase().contains("frozen"));
+    }
+
+    #[test]
+    fn map_read_missing_key_returns_nil() {
+        let source = r#"
+entity Test {
+    r1: bool = false
+    r2: bool = false
+    r3: bool = false
+    r4: bool = false
+    r5: bool = false
+
+    fn main() {
+        const values = {}
+        r1 = (values["missing"] == nil)
+        r2 = (values[123] == nil)
+        r3 = (values["1"] == nil)
+
+        values[1] = "numeric"
+        r4 = (values["1"] == nil)
+        r5 = (values[1] == "numeric")
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+        interpreter.call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        assert_eq!(instance.get_field("r1"), Some(&Value::Bool(true)));
+        assert_eq!(instance.get_field("r2"), Some(&Value::Bool(true)));
+        assert_eq!(instance.get_field("r3"), Some(&Value::Bool(true)));
+        assert_eq!(instance.get_field("r4"), Some(&Value::Bool(true)));
+        assert_eq!(instance.get_field("r5"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn map_deletion_semantics() {
+        let source = r#"
+entity Test {
+    r1: bool = false
+
+    fn main() {
+        const values = {}
+        values["name"] = "test"
+        values["name"] = nil
+        r1 = (values["name"] == nil)
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+        interpreter.call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        assert_eq!(instance.get_field("r1"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn nested_map_read_missing_key() {
+        let source = r#"
+entity Test {
+    r1: bool = false
+
+    fn main() {
+        const outer = {}
+        outer["inner"] = {}
+        r1 = (outer["inner"]["missing"] == nil)
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+        interpreter.call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        assert_eq!(instance.get_field("r1"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn unicode_string_literals_work() {
+        let source = r#"
+entity Test {
+    r1: number = 0
+    r2: number = 0
+    r3: number = 0
+    r4: string = ""
+    r5: string = ""
+
+    fn main() {
+        r1 = string.len("é")
+        r2 = string.len("你好")
+        r3 = string.len("😀")
+        r4 = string.reverse("é")
+
+        s: basket = string.split("é")
+        r5 = s[0]
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+        interpreter.call(&mut instance, "main", vec![], &mut host).unwrap();
+
+        assert_eq!(instance.get_field("r1"), Some(&Value::Number(1.0)));
+        assert_eq!(instance.get_field("r2"), Some(&Value::Number(2.0)));
+        assert_eq!(instance.get_field("r3"), Some(&Value::Number(1.0)));
+        assert_eq!(instance.get_field("r4"), Some(&Value::String("é".to_string())));
+        assert_eq!(instance.get_field("r5"), Some(&Value::String("é".to_string())));
+    }
+
+    #[test]
+    fn wait_inside_called_function_works() {
+        let source = r#"
+entity Test {
+    value: number = 0
+    fn sub() {
+        wait(0.1)
+        value = 1
+    }
+    fn main() {
+        sub()
+        value = 2
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+
+        let mut fiber = interpreter.start_fiber(instance, "main", vec![]).unwrap();
+
+        // 1. Initial run: enters main, calls sub, sub calls wait and yields.
+        let result = interpreter.resume_fiber(&mut fiber, &mut host);
+        assert_eq!(result, FiberResult::Yield(YieldReason::WaitSeconds(0.1)));
+        assert_eq!(fiber.instance().get_field("value"), Some(&Value::Number(0.0)));
+
+        // 2. Resume after wait: sub finishes (sets value=1), returns to main, main sets value=2 and completes.
+        let result = interpreter.resume_fiber(&mut fiber, &mut host);
+        assert_eq!(result, FiberResult::Complete);
+        assert_eq!(fiber.instance().get_field("value"), Some(&Value::Number(2.0)));
+    }
+
+    #[test]
+    fn wait_preserves_locals() {
+        let source = r#"
+entity Test {
+    value: number = 0
+    fn main() {
+        local_val: number = 42
+        wait(0.1)
+        value = local_val
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+        let mut fiber = interpreter.start_fiber(instance, "main", vec![]).unwrap();
+
+        interpreter.resume_fiber(&mut fiber, &mut host);
+        interpreter.resume_fiber(&mut fiber, &mut host);
+
+        assert_eq!(fiber.instance().get_field("value"), Some(&Value::Number(42.0)));
+    }
+
+    #[test]
+    fn wait_inside_loop_preserves_state() {
+        let source = r#"
+entity Test {
+    value: number = 0
+    fn main() {
+        for i in [1, 2, 3] {
+            value += i
+            wait(0.1)
+        }
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+        let mut fiber = interpreter.start_fiber(instance, "main", vec![]).unwrap();
+
+        // Iteration 1
+        interpreter.resume_fiber(&mut fiber, &mut host);
+        assert_eq!(fiber.instance().get_field("value"), Some(&Value::Number(1.0)));
+
+        // Iteration 2
+        interpreter.resume_fiber(&mut fiber, &mut host);
+        assert_eq!(fiber.instance().get_field("value"), Some(&Value::Number(3.0)));
+
+        // Iteration 3
+        interpreter.resume_fiber(&mut fiber, &mut host);
+        assert_eq!(fiber.instance().get_field("value"), Some(&Value::Number(6.0)));
+
+        let res = interpreter.resume_fiber(&mut fiber, &mut host);
+        assert_eq!(res, FiberResult::Complete);
+    }
+
+    #[test]
+    fn nested_calls_with_wait() {
+        let source = r#"
+entity Test {
+    value: number = 0
+    fn inner() {
+        wait(0.1)
+        value += 1
+    }
+    fn middle() {
+        inner()
+        wait(0.1)
+        value += 10
+    }
+    fn main() {
+        middle()
+        value += 100
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+        let mut fiber = interpreter.start_fiber(instance, "main", vec![]).unwrap();
+
+        // Enters main -> middle -> inner -> wait(0.1)
+        interpreter.resume_fiber(&mut fiber, &mut host);
+        assert_eq!(fiber.instance().get_field("value"), Some(&Value::Number(0.0)));
+
+        // Resumes inner: value += 1, returns to middle -> wait(0.1)
+        interpreter.resume_fiber(&mut fiber, &mut host);
+        assert_eq!(fiber.instance().get_field("value"), Some(&Value::Number(1.0)));
+
+        // Resumes middle: value += 10, returns to main: value += 100, complete
+        interpreter.resume_fiber(&mut fiber, &mut host);
+        assert_eq!(fiber.instance().get_field("value"), Some(&Value::Number(111.0)));
+    }
+
+    #[test]
+    fn update_callback_with_wait_logic() {
+        let source = r#"
+entity Test {
+    value: number = 0
+    started: bool = false
+    fn sub() {
+        wait(0.1)
+        value = 1
+    }
+    fn update() {
+        if !started {
+            started = true
+            sub()
+        }
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let instance = interpreter.instantiate_entity("Test", 1, &mut host).unwrap();
+
+        // Simulating the ScriptScene logic:
+        // Frame 1: update() starts
+        let mut fiber = interpreter.start_fiber(instance, "update", vec![]).unwrap();
+        let res = interpreter.resume_fiber(&mut fiber, &mut host);
+        assert_eq!(res, FiberResult::Yield(YieldReason::WaitSeconds(0.1)));
+        assert_eq!(fiber.instance().get_field("started"), Some(&Value::Bool(true)));
+        assert_eq!(fiber.instance().get_field("value"), Some(&Value::Number(0.0)));
+
+        // Frame 2: Scheduler resumes fiber
+        let res = interpreter.resume_fiber(&mut fiber, &mut host);
+        assert_eq!(res, FiberResult::Complete);
+        assert_eq!(fiber.instance().get_field("value"), Some(&Value::Number(1.0)));
     }
 }

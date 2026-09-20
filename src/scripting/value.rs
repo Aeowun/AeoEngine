@@ -76,6 +76,12 @@ impl std::fmt::Display for MapKey {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BasketData {
+    pub elements: Vec<Value>,
+    pub frozen: bool,
+}
+
 /// Values that can exist inside the AeoScript runtime.
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -83,7 +89,7 @@ pub enum Value {
     Bool(bool),
     String(String),
     Nil,
-    Array(Arc<RefCell<Vec<Value>>>),
+    Array(Arc<RefCell<BasketData>>),
     Map(Arc<RefCell<BTreeMap<MapKey, Value>>>),
 
     /// Opaque engine object reference.
@@ -155,7 +161,7 @@ impl Value {
         }
     }
 
-    pub fn as_basket(&self) -> Result<Arc<RefCell<Vec<Value>>>, String> {
+    pub fn as_basket(&self) -> Result<Arc<RefCell<BasketData>>, String> {
         match self {
             Self::Array(value) => Ok(value.clone()),
             other => Err(format!("expected basket, got {}", other.type_name())),
@@ -185,7 +191,7 @@ impl Value {
     }
 
     pub fn array(values: Vec<Value>) -> Self {
-        Self::Array(Arc::new(RefCell::new(values)))
+        Self::Array(Arc::new(RefCell::new(BasketData { elements: values, frozen: false })))
     }
 
     pub fn map(values: BTreeMap<MapKey, Value>) -> Self {
@@ -210,7 +216,7 @@ impl Value {
 
             Self::Array(values) => {
                 let borrowed = values.borrow();
-                let items = borrowed
+                let items = borrowed.elements
                     .iter()
                     .map(Value::display_string)
                     .collect::<Vec<_>>()
@@ -367,7 +373,7 @@ mod tests {
 
         assert_eq!(Value::Nil.type_name(), "nil");
 
-        assert_eq!(Value::Array(Arc::new(RefCell::new(vec![Value::Number(1.0)]))).type_name(), "basket");
+        assert_eq!(Value::array(vec![Value::Number(1.0)]).type_name(), "basket");
 
         assert_eq!(Value::Map(Arc::new(RefCell::new(BTreeMap::new()))).type_name(), "map");
 
@@ -423,11 +429,11 @@ mod tests {
 
     #[test]
     fn arrays_and_maps_display() {
-        let array = Value::Array(Arc::new(RefCell::new(vec![
+        let array = Value::array(vec![
             Value::Number(1.0),
             Value::Bool(true),
             Value::String("x".to_string()),
-        ])));
+        ]);
 
         assert_eq!(array.display_string(), "[1, true, x]");
 

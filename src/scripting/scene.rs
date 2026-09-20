@@ -88,38 +88,21 @@ impl ScriptScene {
         entity_manager: &mut EntityManager,
         delta_time: f64,
     ) -> Result<Self, String> {
-        let mut authored_entities: HashMap<String, WorldCoord> = HashMap::new();
-
-        for (coord, cell) in world.cells.iter() {
-            if !cell.cell_type.is_entity() {
-                continue;
-            }
-
-            if let Some(identity) = &cell.entity_identity {
-                if authored_entities.insert(identity.clone(), *coord).is_some() {
-                    return Err(format!(
-                        "Duplicate authored entity identity found: '{}'",
-                        identity
-                    ));
-                }
-            }
-        }
-
         let mut valid_bindings = Vec::new();
         let mut stale_warnings = Vec::new();
         let mut seen_binding_targets = HashSet::new();
 
         for binding in bindings {
-            if !seen_binding_targets.insert(binding.target_identity.clone()) {
+            if !seen_binding_targets.insert(binding.target_identity) {
                 return Err(format!(
-                    "Multiple script bindings found for target identity '{}'. Each authored entity can only have one binding.",
+                    "Multiple script bindings found for target cell ID '{}'. Each authored cell can only have one binding.",
                     binding.target_identity
                 ));
             }
 
-            if !authored_entities.contains_key(&binding.target_identity) {
+            if world.resolve_cell_id(binding.target_identity).is_none() {
                 stale_warnings.push(format!(
-                    "Stale script binding found: target identity '{}' does not exist in the world as an authored entity.",
+                    "Stale script binding found: target cell ID '{}' does not exist in the world as an authored cell.",
                     binding.target_identity
                 ));
                 continue;
@@ -161,6 +144,14 @@ impl ScriptScene {
 
         // 2. Validate explicit bindings.
         for binding in &valid_bindings {
+            let coord = world.resolve_cell_id(binding.target_identity).expect("binding target existence was verified above");
+            let cell = world.get(coord).expect("cell existence was verified above");
+            let identity = if let Some(ref id) = cell.entity_identity {
+                id.clone()
+            } else {
+                format!("{:?}", cell.cell_type)
+            };
+
             // Normalize binding path
             let normalized_binding_path = binding.script_path.replace("\\", "/");
 
@@ -170,7 +161,7 @@ impl ScriptScene {
 
             let has_entity = program.declarations.iter().any(|decl| {
                 if let Declaration::Entity(entity) = decl {
-                    entity.name == binding.target_identity
+                    entity.name == identity
                 } else {
                     false
                 }
@@ -179,7 +170,7 @@ impl ScriptScene {
             if !has_entity {
                 return Err(format!(
                     "Script '{}' does not contain an entity declaration for '{}'",
-                    binding.script_path, binding.target_identity
+                    binding.script_path, identity
                 ));
             }
         }
@@ -197,15 +188,20 @@ impl ScriptScene {
         let spawn_params: Vec<(String, u64, Option<String>)> = valid_bindings
             .iter()
             .map(|binding| {
-                let coord = authored_entities
-                    .get(&binding.target_identity)
-                    .expect("binding target was validated above");
-                let id = entity_manager.create_entity(&binding.target_identity);
+                let coord = world.resolve_cell_id(binding.target_identity).unwrap();
+                let cell = world.get(coord).unwrap();
+                let identity = if let Some(ref id) = cell.entity_identity {
+                    id.clone()
+                } else {
+                    format!("{:?}", cell.cell_type)
+                };
+
+                let id = entity_manager.create_entity(&identity);
                 entity_manager.set_position(
                     id,
                     Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32),
                 );
-                (binding.target_identity.clone(), id.0, Some(binding.script_path.clone()))
+                (identity, id.0, Some(binding.script_path.clone()))
             })
             .collect();
 
@@ -653,10 +649,10 @@ mod tests {
                             "color" => {
                                 let basket = value.as_basket()?;
                                 let borrowed = basket.borrow();
-                                if borrowed.len() == 3 {
-                                    let r = borrowed[0].as_number()? as f32;
-                                    let g = borrowed[1].as_number()? as f32;
-                                    let b = borrowed[2].as_number()? as f32;
+                                if borrowed.elements.len() == 3 {
+                                    let r = borrowed.elements[0].as_number()? as f32;
+                                    let g = borrowed.elements[1].as_number()? as f32;
+                                    let b = borrowed.elements[2].as_number()? as f32;
                                     self.world.set_cell_color_runtime(coord, glam::Vec3::new(r, g, b));
                                 }
                             }
@@ -708,11 +704,12 @@ mod tests {
         ScriptScene::new(program, entities_to_spawn, host).unwrap()
     }
 
-    fn add_authored_entity(world: &mut World, coord: WorldCoord, cell_type: CellType, identity: &str) {
-        let mut cell = crate::world::Cell::default();
-        cell.cell_type = cell_type;
-        cell.entity_identity = Some(identity.to_string());
-        world.cells.insert(coord, cell);
+    fn add_authored_entity(world: &mut World, coord: WorldCoord, cell_type: CellType, identity: &str) -> u64 {
+        let id = world.set_cell(coord, cell_type);
+        if let Some(cell) = world.get_mut(coord) {
+            cell.entity_identity = Some(identity.to_string());
+        }
+        id
     }
 
     #[test]
@@ -1141,14 +1138,14 @@ entity B { fn on_spawn() { debug.log("B") } }
     fn test_missing_entity_declaration_fails_safely_explicit() {
         let source = "entity Found {}";
         let mut th = test_host();
-        add_authored_entity(&mut th.world, WorldCoord::new(0, 0, 0), CellType::NPC, "Missing");
+        let cell_id = add_authored_entity(&mut th.world, WorldCoord::new(0, 0, 0), CellType::NPC, "Missing");
         let temp_dir = std::env::temp_dir().join("aeo_test_missing_entity_decl");
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
         let script_path = "test.aeo";
         std::fs::write(temp_dir.join("scripts").join(script_path), source).unwrap();
 
-        let bindings = vec![ScriptBinding::new("Missing", format!("scripts/{}", script_path))];
+        let bindings = vec![ScriptBinding::new(cell_id, format!("scripts/{}", script_path))];
         let result = ScriptScene::load_from_bindings(
             &temp_dir,
             &th.world,
@@ -1167,12 +1164,12 @@ entity B { fn on_spawn() { debug.log("B") } }
     #[test]
     fn test_load_from_bindings_missing_script_fails() {
         let mut th = test_host();
-        add_authored_entity(&mut th.world, WorldCoord::new(0, 0, 0), CellType::Player, "Player");
+        let cell_id = add_authored_entity(&mut th.world, WorldCoord::new(0, 0, 0), CellType::Player, "Player");
         let temp_dir = std::env::temp_dir().join("aeo_test_missing");
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
 
-        let bindings = vec![ScriptBinding::new("Player", "nonexistent.aeo")];
+        let bindings = vec![ScriptBinding::new(cell_id, "nonexistent.aeo")];
         let result = ScriptScene::load_from_bindings(
             &temp_dir,
             &th.world,
@@ -1189,14 +1186,14 @@ entity B { fn on_spawn() { debug.log("B") } }
     #[test]
     fn test_load_from_bindings_invalid_script_fails() {
         let mut th = test_host();
-        add_authored_entity(&mut th.world, WorldCoord::new(0, 0, 0), CellType::NPC, "Broken");
+        let cell_id = add_authored_entity(&mut th.world, WorldCoord::new(0, 0, 0), CellType::NPC, "Broken");
         let temp_dir = std::env::temp_dir().join("aeo_test_invalid");
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
 
         let script_path = "broken.aeo";
         std::fs::write(temp_dir.join("scripts").join(script_path), "entity Broken { !!! }").unwrap();
-        let bindings = vec![ScriptBinding::new("Broken", script_path)];
+        let bindings = vec![ScriptBinding::new(cell_id, script_path)];
         let result = ScriptScene::load_from_bindings(
             &temp_dir,
             &th.world,
@@ -1431,11 +1428,11 @@ entity Guard01 {
 "#;
         let mut th = test_host();
         let coord = WorldCoord::new(10, 5, 10);
-        add_authored_entity(&mut th.world, coord, CellType::NPC, "Guard01");
+        let cell_id = add_authored_entity(&mut th.world, coord, CellType::NPC, "Guard01");
 
         let temp_dir = std::env::temp_dir().join("aeo_test_single_authored_entity");
         write_test_script(&temp_dir, "guard.aeo", source);
-        let bindings = vec![ScriptBinding::new("Guard01", "scripts/guard.aeo")];
+        let bindings = vec![ScriptBinding::new(cell_id, "scripts/guard.aeo")];
 
         let mut scene = ScriptScene::load_from_bindings(
             &temp_dir,
@@ -1479,7 +1476,7 @@ entity Player {
 }
 "#;
         let mut th = test_host();
-        add_authored_entity(
+        let cell_id = add_authored_entity(
             &mut th.world,
             WorldCoord::new(10, 5, 20),
             CellType::Player,
@@ -1488,7 +1485,7 @@ entity Player {
 
         let temp_dir = std::env::temp_dir().join("aeo_test_authored_position_transfer");
         write_test_script(&temp_dir, "player.aeo", source);
-        let bindings = vec![ScriptBinding::new("Player", "scripts/player.aeo")];
+        let bindings = vec![ScriptBinding::new(cell_id, "scripts/player.aeo")];
 
         let mut scene = ScriptScene::load_from_bindings(
             &temp_dir,
@@ -1546,13 +1543,13 @@ entity Guard02 {
 }
 "#;
         let mut th = test_host();
-        add_authored_entity(
+        let id1 = add_authored_entity(
             &mut th.world,
             WorldCoord::new(10, 5, 10),
             CellType::NPC,
             "Guard01",
         );
-        add_authored_entity(
+        let id2 = add_authored_entity(
             &mut th.world,
             WorldCoord::new(30, 5, 10),
             CellType::NPC,
@@ -1562,8 +1559,8 @@ entity Guard02 {
         let temp_dir = std::env::temp_dir().join("aeo_test_multiple_instances");
         write_test_script(&temp_dir, "guard.aeo", source);
         let bindings = vec![
-            ScriptBinding::new("Guard01", "scripts/guard.aeo"),
-            ScriptBinding::new("Guard02", "scripts/guard.aeo"),
+            ScriptBinding::new(id1, "scripts/guard.aeo"),
+            ScriptBinding::new(id2, "scripts/guard.aeo"),
         ];
 
         let mut scene = ScriptScene::load_from_bindings(
@@ -1576,15 +1573,15 @@ entity Guard02 {
         .unwrap();
 
         assert_eq!(scene.entities.len(), 2);
-        let id1 = th.entity_manager.lookup_entity("Guard01").unwrap();
-        let id2 = th.entity_manager.lookup_entity("Guard02").unwrap();
-        assert_ne!(id1, id2);
+        let rid1 = th.entity_manager.lookup_entity("Guard01").unwrap();
+        let rid2 = th.entity_manager.lookup_entity("Guard02").unwrap();
+        assert_ne!(rid1, rid2);
         assert_eq!(
-            th.entity_manager.get_position(id1),
+            th.entity_manager.get_position(rid1),
             Some(Vec3::new(10.0, 5.0, 10.0))
         );
         assert_eq!(
-            th.entity_manager.get_position(id2),
+            th.entity_manager.get_position(rid2),
             Some(Vec3::new(30.0, 5.0, 10.0))
         );
 
@@ -1615,13 +1612,13 @@ entity Guard02 {
 }
 "#;
         let mut th = test_host();
-        add_authored_entity(
+        let cell_id1 = add_authored_entity(
             &mut th.world,
             WorldCoord::new(0, 0, 0),
             CellType::NPC,
             "Guard01",
         );
-        add_authored_entity(
+        let _cell_id2 = add_authored_entity(
             &mut th.world,
             WorldCoord::new(1, 1, 1),
             CellType::NPC,
@@ -1630,7 +1627,7 @@ entity Guard02 {
 
         let temp_dir = std::env::temp_dir().join("aeo_test_identity_isolation");
         write_test_script(&temp_dir, "guards.aeo", source);
-        let bindings = vec![ScriptBinding::new("Guard01", "scripts/guards.aeo")];
+        let bindings = vec![ScriptBinding::new(cell_id1, "scripts/guards.aeo")];
 
         let mut scene = ScriptScene::load_from_bindings(
             &temp_dir,
@@ -1693,7 +1690,7 @@ entity Guard02 {
     }
 
     #[test]
-    fn test_non_entity_cells_do_not_participate() {
+    fn test_cells_without_identity_do_not_participate() {
         let mut th = test_host();
         th.world
             .set_cell(WorldCoord::new(0, 0, 0), CellType::Block);
@@ -1738,29 +1735,25 @@ entity Guard02 {
 
         let temp_dir = std::env::temp_dir().join("aeo_test_duplicate_authored_identity");
         write_test_script(&temp_dir, "duplicate.aeo", "entity Duplicate {}");
-        let bindings = vec![ScriptBinding::new("Duplicate", "duplicate.aeo")];
 
+        // This is now fine. Multiple cells can have the same identity.
+        // We just verify we can load without error.
         let result = ScriptScene::load_from_bindings(
             &temp_dir,
             &th.world,
-            &bindings,
+            &[],
             &mut th.entity_manager,
             0.0,
         );
 
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("Duplicate authored entity identity found: 'Duplicate'"));
-        assert!(th.entity_manager.lookup_entity("Duplicate").is_none());
-
+        assert!(result.is_ok());
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
     fn test_duplicate_binding_target_identity() {
         let mut th = test_host();
-        add_authored_entity(
+        let cell_id = add_authored_entity(
             &mut th.world,
             WorldCoord::new(0, 0, 0),
             CellType::NPC,
@@ -1770,8 +1763,8 @@ entity Guard02 {
         let temp_dir = std::env::temp_dir().join("aeo_test_duplicate_binding_target");
         write_test_script(&temp_dir, "guard.aeo", "entity Guard01 {}");
         let bindings = vec![
-            ScriptBinding::new("Guard01", "guard.aeo"),
-            ScriptBinding::new("Guard01", "guard.aeo"),
+            ScriptBinding::new(cell_id, "guard.aeo"),
+            ScriptBinding::new(cell_id, "guard.aeo"),
         ];
 
         let result = ScriptScene::load_from_bindings(
@@ -1785,7 +1778,7 @@ entity Guard02 {
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
-            .contains("Multiple script bindings found for target identity 'Guard01'"));
+            .contains("Multiple script bindings found for target cell ID"));
         assert!(th.entity_manager.lookup_entity("Guard01").is_none());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -1796,7 +1789,7 @@ entity Guard02 {
         let mut th = test_host();
         let temp_dir = std::env::temp_dir().join("aeo_test_stale_binding");
         write_test_script(&temp_dir, "test.aeo", "entity NonExistent {}");
-        let bindings = vec![ScriptBinding::new("NonExistent", "test.aeo")];
+        let bindings = vec![ScriptBinding::new(99999999, "test.aeo")];
 
         let scene = ScriptScene::load_from_bindings(
             &temp_dir,
@@ -1807,7 +1800,7 @@ entity Guard02 {
         ).expect("Stale binding should not prevent scene construction");
 
         assert!(scene.output().iter().any(|r| r.message.contains(
-            "Stale script binding found: target identity 'NonExistent' does not exist in the world as an authored entity."
+            "Stale script binding found: target cell ID '99999999' does not exist in the world as an authored cell."
         )));
         assert!(th.entity_manager.lookup_entity("NonExistent").is_none());
 
@@ -2323,5 +2316,42 @@ entity Test {
         let output = scene.output();
         assert!(output.iter().any(|r| r.message == "m[1] number"));
         assert!(output.iter().any(|r| r.message == "m['1'] string"));
+    }
+
+    #[test]
+    fn test_stale_binding_regression_block_identity() {
+        let mut th = test_host();
+        let coord = WorldCoord::new(1, 1, 1);
+
+        // 1. Setup a Block with an identity.
+        let cell_id = add_authored_entity(&mut th.world, coord, CellType::Block, "AeoScriptIntegration");
+
+        let temp_dir = std::env::temp_dir().join("aeo_test_stale_regression");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
+
+        // 2. Write a script containing the entity declaration.
+        std::fs::write(temp_dir.join("scripts/test.aeo"), "entity AeoScriptIntegration {}").unwrap();
+
+        // 3. Create a binding for that Cell ID.
+        let bindings = vec![ScriptBinding::new(cell_id, "scripts/test.aeo")];
+
+        // 4. Load the scene.
+        let scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &bindings,
+            &mut th.entity_manager,
+            0.0,
+        ).expect("Binding should be valid for Block with identity");
+
+        // 5. Verify NO stale warning was emitted for this cell ID.
+        let output = scene.output();
+        let has_stale_warning = output.iter().any(|r| {
+            r.message.contains("Stale script binding") && r.message.contains(&cell_id.to_string())
+        });
+        assert!(!has_stale_warning, "Should not report stale binding for valid block identity");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

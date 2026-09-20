@@ -13,3 +13,4 @@ pub mod scene;
 pub mod api;
 pub mod binding;
 pub mod log;
+pub mod stdlib;

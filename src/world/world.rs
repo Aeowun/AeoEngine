@@ -38,6 +38,12 @@ pub struct World {
     // Temporary runtime-only overrides for cell state, keyed by Cell ID.
     pub(crate) runtime_state: HashMap<u64, RuntimeCellState>,
 
+    // Tracks which cells have had physics-relevant properties changed at runtime.
+    pub(crate) physics_dirty_cells: std::collections::HashSet<u64>,
+
+    // Optimized lookup for cell coordinates by ID.
+    pub(crate) id_to_coord: HashMap<u64, WorldCoord>,
+
     // The world wide gravity vector used by the physics simulation.
     pub gravity: Vec3,
 
@@ -53,6 +59,8 @@ impl World {
         Self {
             cells: HashMap::new(),
             runtime_state: HashMap::new(),
+            physics_dirty_cells: std::collections::HashSet::new(),
+            id_to_coord: HashMap::new(),
             // We default to Earth standard gravity.
             gravity: Vec3::new(0.0, -9.81, 0.0),
             lighting: LightingSettings::default(),
@@ -69,14 +77,14 @@ impl World {
     }
 
     /// Finds a cell's current coordinate by its unique ID.
-    /// This is a linear scan and should be optimized if it becomes a bottleneck.
+    /// This is an O(1) lookup using the runtime index.
     pub fn resolve_cell_id(&self, id: u64) -> Option<WorldCoord> {
-        for (coord, cell) in &self.cells {
-            if cell.id == id {
-                return Some(*coord);
-            }
-        }
-        None
+        self.id_to_coord.get(&id).cloned()
+    }
+
+    /// Marks a cell as needing physics reconciliation.
+    pub fn mark_physics_dirty(&mut self, cell_id: u64) {
+        self.physics_dirty_cells.insert(cell_id);
     }
 
     /// Returns the effective value of light_enabled for a coordinate,
@@ -168,10 +176,12 @@ impl World {
     /// Sets a runtime-only override for cell solidity.
     pub fn set_cell_solid_runtime(&mut self, coord: WorldCoord, solid: bool) {
         if let Some(cell) = self.cells.get(&coord) {
+            let id = cell.id;
             self.runtime_state
-                .entry(cell.id)
+                .entry(id)
                 .or_default()
                 .solid = Some(solid);
+            self.mark_physics_dirty(id);
         }
     }
 
@@ -191,10 +201,12 @@ impl World {
     /// Sets a runtime-only override for cell anchored state.
     pub fn set_cell_anchored_runtime(&mut self, coord: WorldCoord, anchored: bool) {
         if let Some(cell) = self.cells.get(&coord) {
+            let id = cell.id;
             self.runtime_state
-                .entry(cell.id)
+                .entry(id)
                 .or_default()
                 .anchored = Some(anchored);
+            self.mark_physics_dirty(id);
         }
     }
 
@@ -213,23 +225,32 @@ impl World {
     /// Sets a runtime-only visual offset for a cell.
     pub fn set_visual_offset_runtime(&mut self, coord: WorldCoord, offset: Vec3) {
         if let Some(cell) = self.cells.get(&coord) {
+            let id = cell.id;
             self.runtime_state
-                .entry(cell.id)
+                .entry(id)
                 .or_default()
                 .visual_offset = Some(offset);
+            self.mark_physics_dirty(id);
         }
     }
 
     /// Discards all runtime state modifications.
     pub fn clear_runtime_state(&mut self) {
+        for id in self.runtime_state.keys() {
+            self.physics_dirty_cells.insert(*id);
+        }
         self.runtime_state.clear();
     }
 
-    pub fn set_cell(&mut self, coord: WorldCoord, cell_type: CellType) {
+    pub fn set_cell(&mut self, coord: WorldCoord, cell_type: CellType) -> u64 {
         if cell_type == CellType::Empty {
             if let Some(cell) = self.cells.remove(&coord) {
+                self.id_to_coord.remove(&cell.id);
+                self.mark_physics_dirty(cell.id);
                 self.runtime_state.remove(&cell.id);
+                return cell.id;
             }
+            0
         } else {
             // Default properties for a new cell.
             let mut cell = match cell_type {
@@ -244,7 +265,25 @@ impl World {
             };
 
             cell.id = self.generate_unique_id(coord, cell_type);
+            let id = cell.id;
+            self.id_to_coord.insert(id, coord);
+            self.mark_physics_dirty(id);
             self.cells.insert(coord, cell);
+            id
+        }
+    }
+
+    /// Internal helper to update the ID index when an ID is changed manually (e.g. during loading).
+    pub(crate) fn update_id_mapping(&mut self, old_id: u64, new_id: u64, coord: WorldCoord) {
+        self.id_to_coord.remove(&old_id);
+        self.id_to_coord.insert(new_id, coord);
+    }
+
+    /// Rebuilds the ID to coordinate index. Call this if the cells map is replaced (e.g. undo/redo).
+    pub fn rebuild_id_mapping(&mut self) {
+        self.id_to_coord.clear();
+        for (coord, cell) in &self.cells {
+            self.id_to_coord.insert(cell.id, *coord);
         }
     }
 

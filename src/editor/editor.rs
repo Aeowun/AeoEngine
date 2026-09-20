@@ -494,7 +494,7 @@ impl Editor {
                                 } else {
                                     format!("{:?}", cell.cell_type)
                                 };
-                                let binding_index = world.script_bindings.iter().position(|b| b.target_identity == identity);
+                                let binding_index = world.script_bindings.iter().position(|b| b.target_identity == cell.id);
 
                                 ui.horizontal(|ui| {
                                     ui.label("Current Identity:");
@@ -504,7 +504,22 @@ impl Editor {
                                 ui.horizontal(|ui| {
                                     ui.label("Bound Script:");
                                     if let Some(idx) = binding_index {
-                                        ui.label(RichText::new(&world.script_bindings[idx].script_path).strong());
+                                        let script_path = &world.script_bindings[idx].script_path;
+                                        let label = RichText::new(script_path).strong();
+
+                                        let mut exists = true;
+                                        if let Some(root) = project_path {
+                                            if !root.join(script_path).exists() {
+                                                exists = false;
+                                            }
+                                        }
+
+                                        if !exists {
+                                            ui.label(label.color(egui::Color32::from_rgb(255, 100, 100)));
+                                            ui.label(RichText::new("[missing/stale]").color(egui::Color32::from_rgb(255, 100, 100)).small());
+                                        } else {
+                                            ui.label(label);
+                                        }
                                     } else {
                                         ui.label("None");
                                     }
@@ -512,55 +527,87 @@ impl Editor {
 
                                 ui.add_space(4.0);
 
-                                egui::ComboBox::from_id_source("attach_script_combo")
-                                    .selected_text("Attach Script")
-                                    .show_ui(ui, |ui| {
-                                        let scripts = &self.script_editor.scripts_list;
-                                        if scripts.is_empty() {
-                                            ui.label("No .aeo scripts found.");
-                                        }
-                                        for script_path in scripts {
-                                            let filename = script_path.file_name().unwrap_or_default().to_string_lossy();
-                                            if ui.selectable_label(false, filename.clone()).clicked() {
-                                                let relative_path = if let Some(root) = project_path {
-                                                    script_path.strip_prefix(root).unwrap_or(script_path).to_string_lossy().to_string()
-                                                } else {
-                                                    script_path.to_string_lossy().to_string()
-                                                };
+                                ui.horizontal(|ui| {
+                                    egui::ComboBox::from_id_source("attach_script_combo")
+                                        .selected_text("Attach Script")
+                                        .show_ui(ui, |ui| {
+                                            let scripts = &self.script_editor.scripts_list;
+                                            if scripts.is_empty() {
+                                                ui.label("No .aeo scripts found.");
+                                            }
+                                            for script_path in scripts {
+                                                let filename = script_path.file_name().unwrap_or_default().to_string_lossy();
+                                                if ui.selectable_label(false, filename.clone()).clicked() {
+                                                    let relative_path = if let Some(root) = project_path {
+                                                        script_path.strip_prefix(root).unwrap_or(script_path).to_string_lossy().to_string()
+                                                    } else {
+                                                        script_path.to_string_lossy().to_string()
+                                                    };
 
-                                                let new_binding = crate::scripting::binding::ScriptBinding::new(&identity, relative_path);
+                                                    let new_binding = crate::scripting::binding::ScriptBinding::new(cell.id, relative_path);
 
-                                                if let Some(idx) = binding_index {
-                                                    world.script_bindings[idx] = new_binding;
-                                                } else {
-                                                    world.script_bindings.push(new_binding);
+                                                    let binding_index = world.script_bindings.iter().position(|b| b.target_identity == cell.id);
+                                                    if let Some(idx) = binding_index {
+                                                        world.script_bindings[idx] = new_binding;
+                                                    } else {
+                                                        world.script_bindings.push(new_binding);
+                                                    }
+                                                    self.needs_save = true;
                                                 }
+                                            }
+                                        });
+
+                                    let binding_index = world.script_bindings.iter().position(|b| b.target_identity == cell.id);
+                                    if binding_index.is_some() {
+                                        if ui.button("Remove Script").clicked() {
+                                            if let Some(idx) = world.script_bindings.iter().position(|b| b.target_identity == cell.id) {
+                                                world.script_bindings.remove(idx);
                                                 self.needs_save = true;
                                             }
                                         }
-                                    });
+                                    }
+                                });
                             }
 
                             ui.add_space(8.0);
                             ui.label(RichText::new("All Script Bindings:").small().heading());
-                            for b in &world.script_bindings {
-                                let is_active_identity = world.cells.values().any(|c| {
-                                    if let Some(ref id) = c.entity_identity {
-                                        id == &b.target_identity
+
+                            let mut remove_idx = None;
+                            for (idx, b) in world.script_bindings.iter().enumerate() {
+                                let cell_at_coord = world.resolve_cell_id(b.target_identity)
+                                    .and_then(|coord| world.get(coord));
+
+                                let identity_display = if let Some(cell) = cell_at_coord {
+                                    let name = if let Some(ref id) = cell.entity_identity {
+                                        id.clone()
                                     } else {
-                                        format!("{:?}", c.cell_type) == b.target_identity
+                                        format!("{:?}", cell.cell_type)
+                                    };
+                                    format!("{} [ID {}]", name, b.target_identity)
+                                } else {
+                                    format!("ID {}", b.target_identity)
+                                };
+
+                                ui.horizontal(|ui| {
+                                    if cell_at_coord.is_none() {
+                                        ui.label(RichText::new(format!("⚠️ [STALE] {} -> {}", identity_display, b.script_path))
+                                            .color(egui::Color32::from_rgb(255, 140, 0))
+                                            .small());
+                                    } else {
+                                        ui.label(RichText::new(format!("{} -> {}", identity_display, b.script_path))
+                                            .color(egui::Color32::GRAY)
+                                            .small());
+                                    }
+
+                                    if ui.small_button("").on_hover_text("Remove this authored binding").clicked() {
+                                        remove_idx = Some(idx);
                                     }
                                 });
+                            }
 
-                                if !is_active_identity {
-                                    ui.label(RichText::new(format!("⚠️ [STALE] {} -> {}", b.target_identity, b.script_path))
-                                        .color(egui::Color32::from_rgb(255, 140, 0))
-                                        .small());
-                                } else {
-                                    ui.label(RichText::new(format!("{} -> {}", b.target_identity, b.script_path))
-                                        .color(egui::Color32::GRAY)
-                                        .small());
-                                }
+                            if let Some(idx) = remove_idx {
+                                world.script_bindings.remove(idx);
+                                self.needs_save = true;
                             }
                         });
 
@@ -1040,20 +1087,37 @@ mod tests {
         let mut editor = Editor::new();
 
         let coord = crate::world::WorldCoord::new(1, 1, 1);
-        world.set_cell(coord, crate::world::CellType::Player);
+        let cell_id = world.set_cell(coord, crate::world::CellType::Player);
 
         // Initially no binding
-        let identity = "Player".to_string();
-        let binding = world.script_bindings.iter().find(|b| b.target_identity == identity);
+        let binding = world.script_bindings.iter().find(|b| b.target_identity == cell_id);
         assert!(binding.is_none());
 
         // Add a binding
-        world.script_bindings.push(crate::scripting::binding::ScriptBinding::new("Player", "scripts/test.aeo"));
+        world.script_bindings.push(crate::scripting::binding::ScriptBinding::new(cell_id, "scripts/test.aeo"));
 
         // Lookup again
-        let binding = world.script_bindings.iter().find(|b| b.target_identity == identity);
+        let binding = world.script_bindings.iter().find(|b| b.target_identity == cell_id);
         assert!(binding.is_some());
         assert_eq!(binding.unwrap().script_path, "scripts/test.aeo");
+    }
+
+    #[test]
+    fn test_script_binding_removal() {
+        let mut world = crate::world::World::new();
+        let cell_id = 12345678; // Dummy ID for test
+
+        // 1. Setup binding
+        world.script_bindings.push(crate::scripting::binding::ScriptBinding::new(cell_id, "scripts/nonexistent.aeo"));
+        assert!(world.script_bindings.iter().any(|b| b.target_identity == cell_id));
+
+        // 2. Perform removal (emulating the UI button logic)
+        if let Some(idx) = world.script_bindings.iter().position(|b| b.target_identity == cell_id) {
+            world.script_bindings.remove(idx);
+        }
+
+        // 3. Verify it's gone
+        assert!(!world.script_bindings.iter().any(|b| b.target_identity == cell_id));
     }
 
     #[test]

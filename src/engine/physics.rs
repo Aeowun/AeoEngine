@@ -668,50 +668,25 @@ impl PhysicsWorld {
 
     /// Reconciles the physics simulation state with the World's effective state
     /// (authored data + runtime overrides).
-    pub fn sync_with_world(&mut self, world: &World) {
-        // 1. Update existing dynamic bodies and handle transitions to anchored.
-        let mut i = 0;
-        let mut existing_body_cell_ids = HashSet::new();
-        while i < self.bodies.len() {
-            let cell_id = self.bodies[i].cell_id;
+    pub fn sync_with_world(&mut self, world: &mut World) {
+        // 1. Process dirty cells (Create/Update/Remove static colliders and dynamic bodies).
+        // This is O(number of changes) and handles all static-collider transitions.
+        let dirty_ids: Vec<u64> = world.physics_dirty_cells.drain().collect();
+        for cell_id in dirty_ids {
             if let Some(coord) = world.resolve_cell_id(cell_id) {
-                let anchored = world.is_cell_anchored(coord);
-                let solid = world.is_cell_solid(coord);
-                let visible = world.is_cell_visible(coord);
-                let color = world.get_effective_color(coord);
-
-                if anchored {
-                    // Transition: Dynamic -> Anchored (Static)
-                    let _body = self.bodies.remove(i);
-                    if solid {
-                        let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32) + world.get_visual_offset(coord);
-                        self.static_colliders.push((cell_id, pos));
-                    }
-                    // Since we removed, don't increment i.
+                let cell = world.get(coord).unwrap();
+                if cell.cell_type == CellType::Light {
+                    self.static_colliders.retain(|(id, _)| *id != cell_id);
+                    self.bodies.retain(|b| b.cell_id != cell_id);
                     continue;
-                } else {
-                    // Update dynamic body properties
-                    let body = &mut self.bodies[i];
-                    body.solid = solid;
-                    body.visible = visible;
-                    body.color_rgb = color;
-                    existing_body_cell_ids.insert(cell_id);
                 }
-            } else {
-                // Cell was deleted
-                self.bodies.remove(i);
-                continue;
-            }
-            i += 1;
-        }
 
-        // 2. Sync with runtime deltas to handle new dynamic bodies or static changes.
-        for (&cell_id, _delta) in &world.runtime_state {
-            if let Some(coord) = world.resolve_cell_id(cell_id) {
                 let anchored = world.is_cell_anchored(coord);
                 let solid = world.is_cell_solid(coord);
 
                 if anchored {
+                    // Transition/Reconcile Static
+                    self.bodies.retain(|b| b.cell_id != cell_id);
                     if solid {
                         let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32) + world.get_visual_offset(coord);
                         if let Some(existing) = self.static_colliders.iter_mut().find(|(id, _)| *id == cell_id) {
@@ -723,37 +698,43 @@ impl PhysicsWorld {
                         self.static_colliders.retain(|(id, _)| *id != cell_id);
                     }
                 } else {
-                    // Effective dynamic
+                    // Transition/Reconcile Dynamic
                     self.static_colliders.retain(|(id, _)| *id != cell_id);
-
-                    if !existing_body_cell_ids.contains(&cell_id) {
-                        // Create body for cell that was previously anchored
-                        if let Some(cell) = world.get(coord) {
+                    if solid {
+                        if let Some(body) = self.bodies.iter_mut().find(|b| b.cell_id == cell_id) {
+                            body.solid = true;
+                            body.visible = world.is_cell_visible(coord);
+                            body.color_rgb = world.get_effective_color(coord);
+                        } else {
                             let id = self.id_gen.next();
                             let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32);
                             let mut body = PhysicsBody::new(id, cell_id, pos, Vec3::ONE);
                             body.cell_type = cell.cell_type;
                             body.visible = world.is_cell_visible(coord);
-                            body.solid = solid;
+                            body.solid = true;
                             body.anchored = false;
                             body.texture = cell.texture.clone();
                             body.color_rgb = world.get_effective_color(coord);
                             self.bodies.push(body);
-                            existing_body_cell_ids.insert(cell_id);
                         }
+                    } else {
+                        self.bodies.retain(|b| b.cell_id != cell_id);
                     }
                 }
+            } else {
+                // Cell was deleted
+                self.static_colliders.retain(|(id, _)| *id != cell_id);
+                self.bodies.retain(|b| b.cell_id != cell_id);
             }
         }
 
-        // 3. Clean up static colliders for coordinates that no longer exist or changed.
-        self.static_colliders.retain(|(cell_id, _)| {
-            if let Some(coord) = world.resolve_cell_id(*cell_id) {
-                world.is_cell_anchored(coord) && world.is_cell_solid(coord)
-            } else {
-                false
+        // 2. Sync non-collision properties for existing dynamic bodies (O(bodies)).
+        for body in &mut self.bodies {
+            if let Some(coord) = world.resolve_cell_id(body.cell_id) {
+                body.visible = world.is_cell_visible(coord);
+                body.color_rgb = world.get_effective_color(coord);
             }
-        });
+        }
     }
 }
 
@@ -1087,7 +1068,9 @@ mod tests {
     fn test_physics_arbitrary_gravity_contact() {
         let mut p_world = PhysicsWorld::new();
         p_world.add_static_collider(0, Vec3::ZERO);
-        let body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(0.1, 0.0, 0.0), Vec3::ONE);
+        // Body starts far enough left that after 0.1s of gravity it still overlaps X less than Y/Z.
+        // -0.15 + 0.1 = -0.05. Overlap X = 0.95, Y = 1.0, Z = 1.0.
+        let body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(-0.15, 0.0, 0.0), Vec3::ONE);
         let gravity = Vec3::new(10.0, 0.0, 0.0);
         p_world.bodies.push(body);
         p_world.apply_gravity(gravity, 0.1);
@@ -1406,5 +1389,133 @@ mod tests {
         assert_eq!(p_world.bodies.len(), 1);
         assert_eq!(p_world.bodies[0].color_rgb, original_color);
         assert_eq!(p_world.bodies[0].visible, true);
+    }
+
+    #[test]
+    fn test_sync_no_dirty_no_scan() {
+        let mut world = World::new();
+        let mut p_world = PhysicsWorld::new();
+        world.set_cell(WorldCoord::new(0, 0, 0), CellType::Block);
+        p_world.register_from_world(&world);
+
+        // Drain any initial dirty marks from registration.
+        world.physics_dirty_cells.clear();
+
+        let initial_count = p_world.static_colliders.len();
+        p_world.sync_with_world(&mut world);
+
+        assert_eq!(p_world.static_colliders.len(), initial_count);
+        // Since dirty set is empty, it shouldn't have changed anything.
+    }
+
+    #[test]
+    fn test_sync_offset_movement() {
+        let mut world = World::new();
+        let mut p_world = PhysicsWorld::new();
+        let coord = WorldCoord::new(10, 10, 10);
+        world.set_cell(coord, CellType::Block);
+        p_world.register_from_world(&world);
+
+        // Move via runtime offset
+        world.set_visual_offset_runtime(coord, Vec3::new(0.0, 5.0, 0.0));
+        p_world.sync_with_world(&mut world);
+
+        let (_, pos) = p_world.static_colliders[0];
+        assert_eq!(pos, Vec3::new(10.0, 15.0, 10.0));
+    }
+
+    #[test]
+    fn test_sync_offset_reset() {
+        let mut world = World::new();
+        let mut p_world = PhysicsWorld::new();
+        let coord = WorldCoord::new(0, 0, 0);
+        world.set_cell(coord, CellType::Block);
+        world.set_visual_offset_runtime(coord, Vec3::new(0.0, 10.0, 0.0));
+        p_world.register_from_world(&world);
+
+        // Clear runtime state
+        world.clear_runtime_state();
+        p_world.sync_with_world(&mut world);
+
+        let (_, pos) = p_world.static_colliders[0];
+        assert_eq!(pos, Vec3::ZERO);
+    }
+
+    #[test]
+    fn test_sync_solid_toggle() {
+        let mut world = World::new();
+        let mut p_world = PhysicsWorld::new();
+        let coord = WorldCoord::new(0, 0, 0);
+        world.set_cell(coord, CellType::Block);
+        p_world.register_from_world(&world);
+        assert_eq!(p_world.static_colliders.len(), 1);
+
+        // Toggle solid off
+        world.set_cell_solid_runtime(coord, false);
+        p_world.sync_with_world(&mut world);
+        assert_eq!(p_world.static_colliders.len(), 0);
+
+        // Toggle solid back on
+        world.set_cell_solid_runtime(coord, true);
+        p_world.sync_with_world(&mut world);
+        assert_eq!(p_world.static_colliders.len(), 1);
+    }
+
+    #[test]
+    fn test_sync_anchored_toggle() {
+        let mut world = World::new();
+        let mut p_world = PhysicsWorld::new();
+        let coord = WorldCoord::new(0, 0, 0);
+        world.set_cell(coord, CellType::Block);
+        p_world.register_from_world(&world);
+        assert_eq!(p_world.static_colliders.len(), 1);
+        assert_eq!(p_world.bodies.len(), 0);
+
+        // Toggle anchored off (becomes dynamic)
+        world.set_cell_anchored_runtime(coord, false);
+        p_world.sync_with_world(&mut world);
+        assert_eq!(p_world.static_colliders.len(), 0);
+        assert_eq!(p_world.bodies.len(), 1);
+
+        // Toggle anchored back on (becomes static)
+        world.set_cell_anchored_runtime(coord, true);
+        p_world.sync_with_world(&mut world);
+        assert_eq!(p_world.static_colliders.len(), 1);
+        assert_eq!(p_world.bodies.len(), 0);
+    }
+
+    #[test]
+    fn test_sync_multiple_mutations() {
+        let mut world = World::new();
+        let mut p_world = PhysicsWorld::new();
+        let coord = WorldCoord::new(0, 0, 0);
+        world.set_cell(coord, CellType::Block);
+        p_world.register_from_world(&world);
+
+        // Multiple offsets before sync
+        world.set_visual_offset_runtime(coord, Vec3::new(0.0, 1.0, 0.0));
+        world.set_visual_offset_runtime(coord, Vec3::new(0.0, 2.0, 0.0));
+        world.set_visual_offset_runtime(coord, Vec3::new(0.0, 3.0, 0.0));
+
+        p_world.sync_with_world(&mut world);
+        assert_eq!(p_world.static_colliders[0].1, Vec3::new(0.0, 3.0, 0.0));
+    }
+
+    #[test]
+    fn test_sync_deleted_cell() {
+        let mut world = World::new();
+        let mut p_world = PhysicsWorld::new();
+        let coord = WorldCoord::new(0, 0, 0);
+        world.set_cell(coord, CellType::Block);
+        let cell_id = world.get(coord).unwrap().id;
+        p_world.register_from_world(&world);
+        assert_eq!(p_world.static_colliders.len(), 1);
+
+        // Mark dirty then delete
+        world.mark_physics_dirty(cell_id);
+        world.set_cell(coord, CellType::Empty);
+
+        p_world.sync_with_world(&mut world);
+        assert_eq!(p_world.static_colliders.len(), 0);
     }
 }

@@ -1,166 +1,91 @@
-# AeoScript
+# AeoScript Language Overview
 
-AeoEngine's gameplay scripting language.
-
-**File extension:** `.aeo`
-
-**Current status:** First implementation (V1)
+AeoScript is AeoEngine's high-performance gameplay scripting language, designed for character logic, physical interactions, and world events.
 
 ---
 
-AeoScript is used for gameplay logic such as character behavior, physics interactions, and world events.
-
-## Execution
-AeoScript runs inside AeoEngine's VM. Every script has an instruction budget per frame to prevent a single script from hanging the engine.
-
-## Types
-Type annotations are optional. Values can be explicitly typed or inferred.
-
-## Objects
-Properties use `.`, while method calls use `:`.
-
-## Runtime State
-Changes made by scripts are kept separately from the authored project data.
-
----
-
-# 1. Syntax Example
-
-```aeoscript
-entity Door {
-    open: bool = false
-
-    fn interact(player: Entity) {
-        open = !open
-        debug.log("Door toggled by: " + player.name)
-    }
-}
-```
-
----
-
-# 2. Values and Types
+# 1. Values and Types
 
 ### Basic Types
 * `number`: 64-bit floating point.
 * `bool`: `true` or `false`.
-* `string`: UTF-8 text. Supports concatenation using `+`.
-* `nil`: The absence of a value.
+* `string`: UTF-8 Unicode text. Supports `+` for concatenation.
+* `nil`: Represents the absence of a value.
 
-### Engine Types
-* `Entity`: A handle to a live engine object (Player, NPC).
-* `Cell`: A handle to authored world content (Block, Light).
-* `Basket`: A 0-indexed collection (Array).
+### Engine Handles
+Handles are opaque references to engine-managed objects. They are safe; using a stale handle (e.g., to a deleted block) will not crash but will produce a runtime error.
+* `Cell`: A reference to authored world data (e.g., a Block or Light).
+* `Entity`: A reference to a live runtime object (e.g., a Player or NPC).
 
-### Optional Types
-Types followed by `?` can contain a value or `nil`.
+### Basket (Arrays)
+A `Basket` is a zero-indexed collection of values. Baskets use **reference semantics**:
+* Assigning a basket to a new variable creates an **alias** to the same shared collection.
+* Mutation through one alias is visible to all others.
+* Use `basket.clone(b)` to create a distinct shallow copy.
+* Use `basket.freeze(b)` to prevent further mutation.
+
+---
+
+# 2. Variables and Constants
+
+* **Mutation**: Variables are mutable by default.
+* **`const`**: Prevents **reassignment** of a variable.
+  * For Baskets, `const` prevents assigning a *different* basket to the variable, but the *elements* of the basket can still be modified unless it is frozen.
+
 ```aeoscript
-target: Entity? = nil
+const ids = [1, 2]
+ids[0] = 99      // VALID (mutating elements)
+ids = [3, 4]     // ERROR (reassigning a const)
 ```
 
 ---
 
-# 3. Variables and Operators
+# 3. Unique Cell ID vs Identity
 
-Variables are mutable by default. Use `const` for values that cannot be reassigned.
-```aeoscript
-const MAX_SPEED = 10
-current_speed = 5
-current_speed += 2
-```
+AeoEngine distinguishes between the **Unique Identity** and the **Game Logic Name** of authored objects.
 
-### String Concatenation
-The `+` operator performs string concatenation if either operand is a string. The non-string operand is converted to its string representation.
-```aeoscript
-debug.log("Lights found: " + lights.len())
-```
+### Unique Cell ID (`id`)
+Every Cell (Block, Light, etc.) is assigned a permanent, unique 8-digit numeric ID upon creation.
+* **Binding**: Script bindings target this unique ID. If you have five blocks named "Wall", you can attach a different script to each one because they have unique IDs.
+* **Stability**: The ID never changes, even if the cell is moved or renamed.
 
----
-
-# 4. Functions
-
-Functions use `fn`:
-```aeoscript
-fn heal(amount: number) {
-    health += amount
-}
-
-fn is_alive(): bool {
-    return health > 0
-}
-```
+### Entity Identity (`name`)
+This is the human-readable string (e.g., "Ghost", "Door") assigned in the editor.
+* **Not Unique**: Multiple Cells can share the same Identity.
+* **Search**: `find("Ghost")` returns a Basket containing all Cells or Entities sharing that Identity.
 
 ---
 
-# 5. Control Flow
+# 4. Functions and Events
 
-Conditionals:
-```aeoscript
-if health <= 0 {
-    die()
-} else {
-    keep_fighting()
-}
-```
+* **Functions**: Declared with `fn` inside an `entity` block.
+* **Event Handlers**: Declared with `on` at the top level to respond to global engine events.
 
-Loops:
 ```aeoscript
-while timer > 0 {
-    timer -= 1
+entity Player {
+    health: number = 100
+
+    fn take_damage(amount: number) {
+        health = math.max(0, health - amount)
+    }
 }
 
-for item in collection {
-    item:action()
+on PlayerSpawned(player: Entity) {
+    debug.log("A new player has arrived!")
 }
 ```
 
 ---
 
-# 6. Unique Cell ID
+# 5. Built-in Namespaces
 
-The engine assigns every cell (Block, Light, etc.) a unique 8-digit ID upon creation.
-
-* **Stability**: The ID remains the same if the cell moves.
-* **Safety**: Once an ID is issued, the engine never reuses it, even if the cell is deleted.
-* **Scripting**: Script handles use this ID to find cells. If a cell is deleted, its handle becomes invalid and will not resolve to a new cell.
-
-Exposed as: `cell.id` (read-only).
+Standard functions are organized into namespaces:
+* **`math`**: Deterministic math (sin, cos, sqrt, clamp, lerp, etc.).
+* **`basket`**: Collection management (insert, remove, sort, move, etc.).
+* **`string`**: Unicode-aware text manipulation (len, reverse, lower, upper, split).
 
 ---
 
-# 7. Runtime Changes
+# 6. Runtime Overrides
 
-AeoScript cannot directly modify the saved world data. Changes made while the game is running are stored as temporary overrides:
-
-1. The project contains the authored world.
-2. Scripts create temporary changes (color, visibility, etc).
-3. The engine uses those changes while the game is running.
-4. The changes are discarded when the game stops.
-
-Saving during Play mode does not save these runtime changes.
-
----
-
-# 8. Built-in Functions
-
-* `print(value)`: Prints to the terminal.
-* `debug.log(value)`: Prints to the terminal with SCRIPT severity.
-* `getAllCellsOfClass(class)`: Returns a Basket of Cell handles for a type (e.g. "Light").
-* `find(query)`: Returns a Basket of handles matching a name or identity.
-* `wait(seconds)`: Pauses script execution for a specified duration.
-
----
-
-# 9. The Terminal (Print Output)
-
-The **PRINT OUTPUT** panel displays all runtime diagnostics.
-
-* **Colors**: Errors are Red, Warnings are Yellow.
-* **Context**: Messages include the script path and the specific event or function name.
-* **Selection**: Supports standard mouse selection, `Ctrl+A`, and `Ctrl+C`.
-
----
-
-## Implementation Notes
-
-AeoScript is parsed into an AST and executed by an interpreter in Rust. It uses persistent fibers to support cooperative multi-tasking (like `wait()` loops) without blocking the engine's main thread.
+AeoScript operates on a "Runtime Override" model. When a script modifies a property (like `cell.color`), it creates a temporary change that exists only until the game stops. 

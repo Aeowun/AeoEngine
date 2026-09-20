@@ -212,6 +212,7 @@ impl App {
                                             .redo_stack
                                             .push(self.world.cells.clone());
                                         self.world.cells = prev;
+                                        self.world.rebuild_id_mapping();
                                     }
                                 }
                             }
@@ -224,6 +225,7 @@ impl App {
                                             .undo_stack
                                             .push(self.world.cells.clone());
                                         self.world.cells = next;
+                                        self.world.rebuild_id_mapping();
                                     }
                                 }
                             }
@@ -234,7 +236,7 @@ impl App {
                                 {
                                     self.editor.history.push(self.world.cells.clone());
                                     for coord in &self.editor.selected_coords {
-                                        self.world.cells.remove(coord);
+                                        self.world.set_cell(*coord, CellType::Empty);
                                     }
                                     self.editor.selected_coords.clear();
                                     self.editor.selected_coord = None;
@@ -1368,24 +1370,24 @@ impl<'a> crate::scripting::api::EngineHost for ScriptHostBridge<'a> {
                         "color" => {
                             let basket = value.as_basket()?;
                             let borrowed = basket.borrow();
-                            if borrowed.len() != 3 {
+                            if borrowed.elements.len() != 3 {
                                 return Err("color must be a basket of 3 numbers [r, g, b]".to_string());
                             }
-                            let r = borrowed[0].as_number()? as f32;
-                            let g = borrowed[1].as_number()? as f32;
-                            let b = borrowed[2].as_number()? as f32;
+                            let r = borrowed.elements[0].as_number()? as f32;
+                            let g = borrowed.elements[1].as_number()? as f32;
+                            let b = borrowed.elements[2].as_number()? as f32;
                             self.world.set_cell_color_runtime(coord, glam::Vec3::new(r, g, b));
                             return Ok(());
                         }
                         "offset" => {
                             let basket = value.as_basket()?;
                             let borrowed = basket.borrow();
-                            if borrowed.len() != 3 {
+                            if borrowed.elements.len() != 3 {
                                 return Err("offset must be a basket of 3 numbers [x, y, z]".to_string());
                             }
-                            let x = borrowed[0].as_number()? as f32;
-                            let y = borrowed[1].as_number()? as f32;
-                            let z = borrowed[2].as_number()? as f32;
+                            let x = borrowed.elements[0].as_number()? as f32;
+                            let y = borrowed.elements[1].as_number()? as f32;
+                            let z = borrowed.elements[2].as_number()? as f32;
                             self.world.set_visual_offset_runtime(coord, glam::Vec3::new(x, y, z));
                             return Ok(());
                         }

@@ -1,24 +1,24 @@
-on PlayerSpawned(player) {
-    debug.log("LIGHT TEST: START")
-
-    const lights = getAllCellsOfClass("Light")
-    debug.log("LIGHT TEST: FOUND " + lights.len())
-
-    if lights.len() == 0 {
-        debug.log("LIGHT TEST: NO LIGHTS")
-        return
-    }
-
-    const light = lights[0]
-    debug.log("LIGHT TEST: FIRST LIGHT FOUND")
-
-    while true {
-        light.set_enabled(true)
-        debug.log("LIGHT TEST: ON")
-        wait(1)
-
-        light.set_enabled(false)
-        debug.log("LIGHT TEST: OFF")
-        wait(1)
-    }
-}
+//on PlayerSpawned(player) {
+//    debug.log("LIGHT TEST: START")
+//
+//    const lights = getAllCellsOfClass("Light")
+//    debug.log("LIGHT TEST: FOUND " + lights.len())
+//
+//    if lights.len() == 0 {
+//        debug.log("LIGHT TEST: NO LIGHTS")
+//        return
+//    }
+//
+//    const light = lights[0]
+//    debug.log("LIGHT TEST: FIRST LIGHT FOUND")
+//
+//    while true {
+//        light.set_enabled(true)
+//        debug.log("LIGHT TEST: ON")
+//        wait(1)
+//
+//        light.set_enabled(false)
+//        debug.log("LIGHT TEST: OFF")
+//        wait(1)
+//    }
+//}

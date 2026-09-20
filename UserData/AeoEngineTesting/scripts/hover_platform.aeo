@@ -1,21 +1,24 @@
-on PlayerSpawned(player) {
-    const platforms = find("Platform")
+//on PlayerSpawned(player) {
+//const platforms = find("Platform")
 
-    if platforms.len() == 0 {
-        return
-    }
+//if platforms.len() == 0 {
+//    return
+//}
 
-    const p = platforms[0]
+//while true {
+//    debug.log("PLATFORMS: RISING")
+//
+//    for p in platforms {
+//        p.offset = [0, 2, 0]
+//    }
 
-    while true {
-        // Move 2 units Up visually
-        debug.log("PLATFORM: RISING")
-        p.offset = [0, 2, 0] // [X, Y, Z] relative offset
-        wait(3.0)
+//    wait(3.0)
 
-        // Return to original position
-        debug.log("PLATFORM: LOWERING")
-        p.offset = [0, 0, 0]
-        wait(3.0)
-    }
-}
+//    debug.log("PLATFORMS: LOWERING")
+
+//    for p in platforms {
+//        p.offset = [0, 0, 0]
+//    }
+
+//    wait(3.0)
+//}}

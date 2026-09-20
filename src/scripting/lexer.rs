@@ -421,8 +421,16 @@ impl<'a> Lexer<'a> {
                 }
 
                 _ => {
-                    value.push(byte as char);
-                    self.advance();
+                    let chunk_start = self.position;
+                    while let Some(b) = self.peek() {
+                        if b == b'"' || b == b'\\' || b == b'\n' {
+                            break;
+                        }
+                        self.advance();
+                    }
+                    let chunk = std::str::from_utf8(&self.source[chunk_start..self.position])
+                        .map_err(|_| LexerError::new("Invalid UTF-8 in string literal.", self.line, self.column))?;
+                    value.push_str(chunk);
                 }
             }
         }

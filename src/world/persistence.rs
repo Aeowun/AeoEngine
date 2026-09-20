@@ -195,6 +195,7 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
     let reader = BufReader::new(file);
 
     let mut legacy_cells = Vec::new();
+    let mut legacy_bindings = Vec::new();
 
     for line in reader.lines() {
         let line = line?;
@@ -240,10 +241,14 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
 
         if parts[0] == "SCRIPT_BINDING" && parts.len() >= 3 {
-            world.script_bindings.push(ScriptBinding::new(
-                parts[1].to_string(),
-                parts[2].to_string(),
-            ));
+            let target_str = parts[1];
+            let script_path = parts[2].to_string();
+
+            if let Ok(id) = target_str.parse::<u64>() {
+                world.script_bindings.push(ScriptBinding::new(id, script_path));
+            } else {
+                legacy_bindings.push((target_str.to_string(), script_path));
+            }
             continue;
         }
 
@@ -277,100 +282,34 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                 };
                 let is_legacy = id_val == 0;
 
-                if block_type == "BLOCK" {
-                    world.set_cell(coord, CellType::Block);
-                    if is_legacy {
-                        legacy_cells.push(coord);
-                    }
-                    if let Some(cell) = world.get_mut(coord) {
-                        if !is_legacy {
-                            cell.id = id_val;
-                        }
-                        parse_block_properties(cell, &parts, offset);
-                        if parts.len() >= offset + 12 {
-                            let identity = parts[offset + 11];
-                            if identity != "None" {
-                                cell.entity_identity = Some(identity.to_string());
-                            }
-                        }
-                    }
+                let old_id = if block_type == "BLOCK" {
+                    world.set_cell(coord, CellType::Block)
                 } else if block_type == "FX_BLOCK" {
-                    world.set_cell(coord, CellType::FxBlock);
-                    if is_legacy {
-                        legacy_cells.push(coord);
-                    }
-                    if let Some(cell) = world.get_mut(coord) {
-                        if !is_legacy {
-                            cell.id = id_val;
-                        }
-                        parse_block_properties(cell, &parts, offset);
-                        if parts.len() >= offset + 12 {
-                            let identity = parts[offset + 11];
-                            if identity != "None" {
-                                cell.entity_identity = Some(identity.to_string());
-                            }
-                        }
-                    }
+                    world.set_cell(coord, CellType::FxBlock)
                 } else if block_type == "SPAWN_POINT" {
-                    world.set_cell(coord, CellType::SpawnPoint);
-                    if is_legacy {
-                        legacy_cells.push(coord);
-                    }
-                    if let Some(cell) = world.get_mut(coord) {
-                        if !is_legacy {
-                            cell.id = id_val;
-                        }
-                        parse_block_properties(cell, &parts, offset);
-                        if parts.len() >= offset + 12 {
-                            let identity = parts[offset + 11];
-                            if identity != "None" {
-                                cell.entity_identity = Some(identity.to_string());
-                            }
-                        }
-                    }
+                    world.set_cell(coord, CellType::SpawnPoint)
                 } else if block_type == "PLAYER" {
-                    world.set_cell(coord, CellType::Player);
-                    if is_legacy {
-                        legacy_cells.push(coord);
-                    }
-                    if let Some(cell) = world.get_mut(coord) {
-                        if !is_legacy {
-                            cell.id = id_val;
-                        }
-                        parse_block_properties(cell, &parts, offset);
-                        if parts.len() >= offset + 12 {
-                            let identity = parts[offset + 11];
-                            if identity != "None" {
-                                cell.entity_identity = Some(identity.to_string());
-                            }
-                        }
-                    }
+                    world.set_cell(coord, CellType::Player)
                 } else if block_type == "NPC" {
-                    world.set_cell(coord, CellType::NPC);
-                    if is_legacy {
-                        legacy_cells.push(coord);
-                    }
-                    if let Some(cell) = world.get_mut(coord) {
-                        if !is_legacy {
-                            cell.id = id_val;
-                        }
-                        parse_block_properties(cell, &parts, offset);
-                        if parts.len() >= offset + 12 {
-                            let identity = parts[offset + 11];
-                            if identity != "None" {
-                                cell.entity_identity = Some(identity.to_string());
-                            }
-                        }
-                    }
+                    world.set_cell(coord, CellType::NPC)
                 } else if block_type == "LIGHT" {
-                    world.set_cell(coord, CellType::Light);
-                    if is_legacy {
-                        legacy_cells.push(coord);
+                    world.set_cell(coord, CellType::Light)
+                } else {
+                    0
+                };
+
+                if is_legacy {
+                    legacy_cells.push(coord);
+                } else {
+                    world.update_id_mapping(old_id, id_val, coord);
+                }
+
+                if let Some(cell) = world.get_mut(coord) {
+                    if !is_legacy {
+                        cell.id = id_val;
                     }
-                    if let Some(cell) = world.get_mut(coord) {
-                        if !is_legacy {
-                            cell.id = id_val;
-                        }
+
+                    if block_type == "LIGHT" {
                         let r = parts[offset + 4].parse::<f32>().unwrap_or(1.0);
                         let g = parts[offset + 5].parse::<f32>().unwrap_or(1.0);
                         let b = parts[offset + 6].parse::<f32>().unwrap_or(1.0);
@@ -387,17 +326,47 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                                 cell.entity_identity = Some(identity.to_string());
                             }
                         }
+                    } else {
+                        parse_block_properties(cell, &parts, offset);
+                        if parts.len() >= offset + 12 {
+                            let identity = parts[offset + 11];
+                            if identity != "None" {
+                                cell.entity_identity = Some(identity.to_string());
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    // Migration: Assign IDs to legacy cells.
+    // Migration: Assign IDs to legacy cells and rebuild index.
     for coord in legacy_cells {
-        let new_id = world.generate_unique_id(coord, world.get(coord).unwrap().cell_type);
+        let cell_type = world.get(coord).unwrap().cell_type;
+        let new_id = world.generate_unique_id(coord, cell_type);
         if let Some(cell) = world.get_mut(coord) {
             cell.id = new_id;
+        }
+    }
+    world.rebuild_id_mapping();
+
+    // Migration: Resolve legacy script bindings.
+    for (name, script_path) in legacy_bindings {
+        let mut matches = Vec::new();
+        for cell in world.cells.values() {
+            if let Some(ref identity) = cell.entity_identity {
+                if identity == &name {
+                    matches.push(cell.id);
+                }
+            }
+        }
+
+        if matches.len() == 1 {
+            world.script_bindings.push(ScriptBinding::new(matches[0], script_path));
+        } else if matches.is_empty() {
+            println!("Stale legacy script binding found for identity '{}'", name);
+        } else {
+            eprintln!("Migration ambiguity: multiple cells found for legacy script binding identity '{}'.", name);
         }
     }
 
@@ -612,7 +581,7 @@ mod tests {
     #[test]
     fn test_one_binding_persistence() {
         let mut world = World::new();
-        world.script_bindings.push(ScriptBinding::new("Player", "scripts/player.aeo"));
+        world.script_bindings.push(ScriptBinding::new(12345678, "scripts/player.aeo"));
 
         let path = Path::new("test_one_binding.dat");
         save_world(&world, path).unwrap();
@@ -621,7 +590,7 @@ mod tests {
         load_world(&mut loaded_world, path).unwrap();
 
         assert_eq!(loaded_world.script_bindings.len(), 1);
-        assert_eq!(loaded_world.script_bindings[0].target_identity, "Player");
+        assert_eq!(loaded_world.script_bindings[0].target_identity, 12345678);
         assert_eq!(loaded_world.script_bindings[0].script_path, "scripts/player.aeo");
         fs::remove_file(path).ok();
     }
@@ -629,9 +598,9 @@ mod tests {
     #[test]
     fn test_multiple_bindings_persistence() {
         let mut world = World::new();
-        world.script_bindings.push(ScriptBinding::new("Player", "scripts/player.aeo"));
-        world.script_bindings.push(ScriptBinding::new("Door", "scripts/door.aeo"));
-        world.script_bindings.push(ScriptBinding::new("Enemy", "scripts/enemy.aeo"));
+        world.script_bindings.push(ScriptBinding::new(10000001, "scripts/player.aeo"));
+        world.script_bindings.push(ScriptBinding::new(10000002, "scripts/door.aeo"));
+        world.script_bindings.push(ScriptBinding::new(10000003, "scripts/enemy.aeo"));
 
         let path = Path::new("test_multi_bindings.dat");
         save_world(&world, path).unwrap();
@@ -640,9 +609,36 @@ mod tests {
         load_world(&mut loaded_world, path).unwrap();
 
         assert_eq!(loaded_world.script_bindings.len(), 3);
-        assert_eq!(loaded_world.script_bindings[0].target_identity, "Player");
-        assert_eq!(loaded_world.script_bindings[1].target_identity, "Door");
-        assert_eq!(loaded_world.script_bindings[2].target_identity, "Enemy");
+        assert_eq!(loaded_world.script_bindings[0].target_identity, 10000001);
+        assert_eq!(loaded_world.script_bindings[1].target_identity, 10000002);
+        assert_eq!(loaded_world.script_bindings[2].target_identity, 10000003);
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_legacy_binding_migration() {
+        let mut world = World::new();
+        let coord = WorldCoord::new(1, 1, 1);
+        // We use a fixed ID to ensure it matches the file content we'll write.
+        let cell_id = 55555555;
+
+        let path = Path::new("test_legacy_migration.dat");
+        {
+            let mut file = File::create(path).unwrap();
+            writeln!(file, "GRAVITY 0 -9.81 0").unwrap();
+            writeln!(file, "LIGHTING true true 0.5 -1.0 0.5 1 1 1 1 0.2").unwrap();
+            writeln!(file, "SCRIPT_BINDING PlayerOne scripts/player.aeo").unwrap();
+            // Format: PLAYER <id> <x> <y> <z> <visible> <solid> <anchored> <texture> <r> <g> <b> <identity>
+            writeln!(file, "PLAYER {} 1 1 1 true true false Block_tx 0.5 0.5 0.5 PlayerOne", cell_id).unwrap();
+        }
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        assert_eq!(loaded_world.script_bindings.len(), 1);
+        assert_eq!(loaded_world.script_bindings[0].target_identity, cell_id);
+        assert_eq!(loaded_world.script_bindings[0].script_path, "scripts/player.aeo");
+
         fs::remove_file(path).ok();
     }
 
@@ -650,8 +646,8 @@ mod tests {
     fn test_existing_data_and_bindings_persistence() {
         let mut world = World::new();
         let coord = WorldCoord::new(1, 2, 3);
-        world.set_cell(coord, CellType::Block);
-        world.script_bindings.push(ScriptBinding::new("Box", "scripts/box.aeo"));
+        let cell_id = world.set_cell(coord, CellType::Block);
+        world.script_bindings.push(ScriptBinding::new(cell_id, "scripts/box.aeo"));
 
         let path = Path::new("test_mixed_data.dat");
         save_world(&world, path).unwrap();
@@ -661,7 +657,7 @@ mod tests {
 
         assert!(loaded_world.get(coord).is_some());
         assert_eq!(loaded_world.script_bindings.len(), 1);
-        assert_eq!(loaded_world.script_bindings[0].target_identity, "Box");
+        assert_eq!(loaded_world.script_bindings[0].target_identity, cell_id);
         fs::remove_file(path).ok();
     }
 
@@ -718,10 +714,13 @@ mod tests {
 
         // 1. Stability across coordinate change (not derived from coords)
         let new_coord = WorldCoord::new(40, 50, 60);
-        let mut cell = world.cells.remove(&coord).unwrap();
-        world.cells.insert(new_coord, cell.clone());
+        let cell_id = world.get(coord).unwrap().id;
+        let cell = world.cells.remove(&coord).unwrap();
+        world.cells.insert(new_coord, cell);
+        world.rebuild_id_mapping();
 
         assert_eq!(world.get(new_coord).unwrap().entity_identity, Some("SpecificGuard".to_string()));
+        assert_eq!(world.resolve_cell_id(cell_id), Some(new_coord));
 
         // 2. Stability across entity-type transition (Player <-> NPC)
         if let Some(cell) = world.get_mut(new_coord) {
