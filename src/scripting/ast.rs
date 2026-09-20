@@ -4,6 +4,7 @@ use super::source::SourceSpan;
 pub struct Program {
     pub span: SourceSpan,
     pub declarations: Vec<Declaration>,
+    pub statements: Vec<Statement>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

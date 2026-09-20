@@ -283,15 +283,21 @@ Deterministic mathematical operations including:
 * `sin`
 * `cos`
 * `tan`
+* `random`
 * `clamp`
 * `lerp`
 * `deg_to_rad`
 * `rad_to_deg`
 
+`math.random()` returns a number in the range `[0.0, 1.0)`.
+
+`math.random(min, max)` returns an integer in the inclusive range `[min, max]`.
+
 Example:
 
 ```aeoscript
 const speed = math.clamp(velocity, 0, 10)
+const roll = math.random(1, 6)
 ```
 
 ### `basket`
@@ -333,9 +339,14 @@ String operations work with Unicode scalar values rather than treating UTF-8 byt
 
 AeoScript operates on a **runtime override** model.
 
-When a script modifies a runtime property of a Cell, the change affects the running game without modifying the authored World data.
+AeoEngine separates **Authored State** (persisted project data) from **Runtime State** (temporary data used during Play mode).
 
-Examples include:
+* **EDITOR MODE**: Operations edit authored World state directly.
+* **PLAY MODE**: Operations edit runtime state only.
+
+When a script modifies a runtime property or attribute of a Cell, the change affects the running game without modifying the authored World data.
+
+### Properties
 
 ```aeoscript
 cell.visible = false
@@ -344,6 +355,18 @@ cell.anchored = true
 cell.color = [1, 0, 0]
 cell.offset = [0, 2, 0]
 ```
+
+### Attributes
+
+```aeoscript
+cell.attributes["testBool"] = false
+cell.attributes["testNum"] = 42
+cell.attributes["Test"] = "runtime"
+```
+
+AeoScript attribute writes create temporary overrides. Reads return the effective value (the override if it exists, otherwise the authored baseline).
+
+Assigning `nil` to a runtime attribute removes the override and restores the authored value.
 
 These changes are temporary runtime state.
 
@@ -448,7 +471,41 @@ The runtime may derive objects and state from the authored World, but it must no
 
 ---
 
-# 14. Current Language Direction
+# 14. Program Structure and Execution
+
+An AeoScript program consists of declarations and top-level executable statements.
+
+### Top-Level Statements
+
+Executable statements at the top level of a script execute exactly once, in source order, when the world loads.
+
+```aeoscript
+debug.log("System initializing...")
+
+const version = 1.0
+
+if version > 0 {
+    debug.log("Startup successful.")
+}
+```
+
+Top-level statements run within a "Global" script instance for that file. They support yielding using `wait()`.
+
+### Declarations
+
+Declarations define items that can be used later but do not execute immediately.
+
+* **Functions (`fn`)**: Declarations only. The body executes only when called.
+* **Events (`on`)**: Registrations only. The body executes only when the event is dispatched.
+* **Entities (`entity`)**: Declarations only. The entity's fields and lifecycle functions are used only when the script is bound to a World object.
+
+### Unattached Lifecycle Warnings
+
+If an `entity` declaration contains lifecycle hooks (`on_spawn`, `on_ready`, `update`, `on_destroy`) but no script binding exists for that entity in that script, the engine emits a script warning. This helps identify scripts that are incorrectly bound or entity names that do not match the world data.
+
+---
+
+# 15. Current Language Direction
 
 AeoScript is intended to remain:
 

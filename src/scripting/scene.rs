@@ -183,6 +183,7 @@ impl ScriptScene {
         let combined_program = Program {
             span: SourceSpan::new(0, 0),
             declarations: all_declarations,
+            statements: Vec::new(),
         };
 
         let spawn_params: Vec<(String, u64, Option<String>)> = valid_bindings
@@ -236,6 +237,47 @@ impl ScriptScene {
             scene.runtime.add_event_handlers(path.clone(), program);
         }
 
+        // Spawn top-level fibers for each script.
+        for (path, program) in &loaded_scripts {
+            if let Err(e) = scene.runtime.spawn_top_level_custom(path.clone(), &program.statements) {
+                scene.runtime.interpreter_mut().log_error(format!("Failed to spawn top-level fiber for {}: {}", path, e));
+            }
+        }
+
+        // Lifecycle hook warnings for unattached entities.
+        let bound_entities: HashSet<(String, String)> = valid_bindings
+            .iter()
+            .map(|binding| {
+                let coord = world.resolve_cell_id(binding.target_identity).unwrap();
+                let cell = world.get(coord).unwrap();
+                let identity = cell.entity_identity.clone().unwrap_or_else(|| format!("{:?}", cell.cell_type));
+                (binding.script_path.clone(), identity)
+            })
+            .collect();
+
+        for (path, program) in &loaded_scripts {
+            for decl in &program.declarations {
+                if let Declaration::Entity(entity) = decl {
+                    let hooks: Vec<&str> = entity.members.iter().filter_map(|m| {
+                        if let EntityMember::Function(f) = m {
+                            if matches!(f.name.as_str(), "on_spawn" | "on_ready" | "update" | "on_destroy") {
+                                return Some(f.name.as_str());
+                            }
+                        }
+                        None
+                    }).collect();
+
+                    if !hooks.is_empty() && !bound_entities.contains(&(path.clone(), entity.name.clone())) {
+                        let warning = format!(
+                            "Script '{}' declares lifecycle hooks for entity '{}', but no script binding exists for that entity. Hooks: {}",
+                            path, entity.name, hooks.join(", ")
+                        );
+                        scene.runtime.interpreter_mut().log_warning(warning);
+                    }
+                }
+            }
+        }
+
         // Log stale bindings as warnings
         for warning in stale_warnings {
             scene.runtime.interpreter_mut().log_warning(warning);
@@ -249,6 +291,7 @@ impl ScriptScene {
         entities_to_spawn: Vec<(String, u64, Option<String>)>,
         host: &mut HostContext,
     ) -> Result<Self, String> {
+        let has_top_level = !program.statements.is_empty();
         let mut runtime = ScriptRuntime::new(program);
         let mut entities = Vec::with_capacity(entities_to_spawn.len());
 
@@ -259,6 +302,12 @@ impl ScriptScene {
                 .map_err(|e| format!("Failed to instantiate script entity '{}': {}", name, e))?;
             instance.script_path = script_path.clone();
             entities.push(ScriptEntity::new(instance, script_path));
+        }
+
+        // Spawn top-level fiber if there are any statements in the program.
+        if has_top_level {
+            let statements = runtime.interpreter().program().statements.clone();
+            runtime.spawn_top_level_custom("UNKNOWN".to_string(), &statements)?;
         }
 
         Ok(Self {
@@ -631,13 +680,13 @@ mod tests {
                                 }
                                 "attributes" => {
                                     let mut map = BTreeMap::new();
-                                    for (key, attr) in &cell.attributes {
+                                    for (key, attr) in self.world.get_effective_attributes(coord) {
                                         let val = match attr {
-                                            AttributeValue::Number(n) => Value::Number(*n),
-                                            AttributeValue::Bool(b) => Value::Bool(*b),
-                                            AttributeValue::String(s) => Value::String(s.clone()),
+                                            AttributeValue::Number(n) => Value::Number(n),
+                                            AttributeValue::Bool(b) => Value::Bool(b),
+                                            AttributeValue::String(s) => Value::String(s),
                                         };
-                                        map.insert(MapKey::String(key.clone()), val);
+                                        map.insert(MapKey::String(key), val);
                                     }
                                     return Ok(Some(Value::map(map)));
                                 }
@@ -705,6 +754,32 @@ mod tests {
 
         fn call_method(&mut self, _kind: crate::scripting::value::HandleKind, _id: u64, _name: &str, _args: &[crate::scripting::value::Value]) -> Result<Option<crate::scripting::value::Value>, String> {
             Ok(None)
+        }
+
+        fn set_attribute(&mut self, id: u64, key: String, value: crate::scripting::value::Value) -> Result<(), String> {
+            if let Some(coord) = self.world.resolve_cell_id(id) {
+                use crate::world::cell::AttributeValue;
+                use crate::scripting::value::Value;
+                let attr_val = match value {
+                    Value::Number(n) => AttributeValue::Number(n),
+                    Value::Bool(b) => AttributeValue::Bool(b),
+                    Value::String(s) => AttributeValue::String(s),
+                    _ => return Err(format!("Cell attributes only support Number, Bool, or String. Got {}", value.type_name())),
+                };
+                self.world.set_attribute_runtime(coord, key, attr_val);
+                Ok(())
+            } else {
+                Err("invalid cell handle for attribute assignment".to_string())
+            }
+        }
+
+        fn remove_attribute(&mut self, id: u64, key: &str) -> Result<(), String> {
+            if let Some(coord) = self.world.resolve_cell_id(id) {
+                self.world.remove_attribute_runtime(coord, key);
+                Ok(())
+            } else {
+                Err("invalid cell handle for attribute removal".to_string())
+            }
         }
     }
 
@@ -2614,5 +2689,212 @@ entity Test {
         assert!(output.iter().any(|r| r.message == "50"));
         assert!(output.iter().any(|r| r.message == "easy"));
         assert!(output.iter().any(|r| r.message == "false"));
+    }
+
+    #[test]
+    fn test_top_level_scene_execution() {
+        let source = r#"
+debug.log("global startup")
+"#;
+        let mut th = test_host();
+        let temp_dir = std::env::temp_dir().join("aeo_test_top_level");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
+        std::fs::write(temp_dir.join("scripts/startup.aeo"), source).unwrap();
+
+        let mut scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &[],
+            &mut th.entity_manager,
+            0.0,
+        ).unwrap();
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        assert!(scene.output().iter().any(|r| r.message == "global startup"));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_unattached_lifecycle_warning() {
+        let source = r#"
+entity Unattached {
+    fn on_ready() {
+        debug.log("ready")
+    }
+    fn update(dt: number) {}
+}
+"#;
+        let mut th = test_host();
+        let temp_dir = std::env::temp_dir().join("aeo_test_unattached_warning");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(temp_dir.join("scripts")).unwrap();
+        std::fs::write(temp_dir.join("scripts/unattached.aeo"), source).unwrap();
+
+        let mut scene = ScriptScene::load_from_bindings(
+            &temp_dir,
+            &th.world,
+            &[],
+            &mut th.entity_manager,
+            0.0,
+        ).unwrap();
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.severity == crate::scripting::log::LogSeverity::Warning && r.message.contains("no script binding exists")));
+        assert!(!output.iter().any(|r| r.message == "ready"));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_authored_attribute_preservation_regression() {
+        use crate::world::cell::AttributeValue;
+        let source = r#"
+entity Test {
+    fn on_spawn() {
+        const c = find("Test")[0]
+        c.attributes["testBool"] = false
+        c.attributes["testNum"] = 42
+        c.attributes["Test"] = "runtime"
+
+        debug.log("runtime_bool", c.attributes["testBool"])
+        debug.log("runtime_num", c.attributes["testNum"])
+        debug.log("runtime_str", c.attributes["Test"])
+    }
+}
+"#;
+        let mut th = test_host();
+        let coord = WorldCoord::new(0, 0, 0);
+        add_authored_entity(&mut th.world, coord, CellType::Block, "Test");
+
+        if let Some(cell) = th.world.get_mut(coord) {
+            cell.attributes.insert("testBool".to_string(), AttributeValue::Bool(true));
+            cell.attributes.insert("testNum".to_string(), AttributeValue::Number(10.0));
+            cell.attributes.insert("Test".to_string(), AttributeValue::String("original".to_string()));
+        }
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "runtime_bool false"));
+        assert!(output.iter().any(|r| r.message == "runtime_num 42"));
+        assert!(output.iter().any(|r| r.message == "runtime_str runtime"));
+
+        // Verify AUTHORED state in Cell is untouched
+        let cell_id = th.world.get(coord).unwrap().id;
+        {
+            let cell = th.world.get(coord).unwrap();
+            assert_eq!(cell.attributes.get("testBool"), Some(&AttributeValue::Bool(true)));
+            assert_eq!(cell.attributes.get("testNum"), Some(&AttributeValue::Number(10.0)));
+            assert_eq!(cell.attributes.get("Test"), Some(&AttributeValue::String("original".to_string())));
+        }
+
+        // Clear runtime state
+        th.world.clear_runtime_state();
+
+        // Effective read should now be authored values again for all types
+        let mut bridge = crate::scripting::host::ScriptHostBridge { entity_manager: &mut th.entity_manager, world: &mut th.world };
+        let effective = bridge.get_property(crate::scripting::value::HandleKind::Cell, cell_id, "attributes").unwrap().unwrap();
+        let map = effective.as_map().unwrap();
+        let borrowed = map.borrow();
+        assert_eq!(borrowed.get(&crate::scripting::value::MapKey::String("testBool".to_string())), Some(&Value::Bool(true)));
+        assert_eq!(borrowed.get(&crate::scripting::value::MapKey::String("testNum".to_string())), Some(&Value::Number(10.0)));
+        assert_eq!(borrowed.get(&crate::scripting::value::MapKey::String("Test".to_string())), Some(&Value::String("original".to_string())));
+    }
+
+    #[test]
+    fn test_math_random_api() {
+        let source = r#"
+debug.log("r0", math.random())
+debug.log("r1", math.random(1, 1))
+debug.log("r3", math.random(1, 3))
+"#;
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse().unwrap();
+        let mut scene = ScriptScene::new(program, vec![], &mut host).unwrap();
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+
+        // math.random() in [0, 1)
+        let r0_str = output.iter().find(|r| r.message.starts_with("r0")).unwrap().message.split_whitespace().last().unwrap();
+        let r0: f64 = r0_str.parse().unwrap();
+        assert!(r0 >= 0.0 && r0 < 1.0);
+
+        // math.random(1, 1) -> 1
+        assert!(output.iter().any(|r| r.message == "r1 1"));
+
+        // math.random(1, 3) -> 1, 2, or 3
+        let r3_str = output.iter().find(|r| r.message.starts_with("r3")).unwrap().message.split_whitespace().last().unwrap();
+        let r3: f64 = r3_str.parse().unwrap();
+        assert!(r3 == 1.0 || r3 == 2.0 || r3 == 3.0);
+    }
+
+    #[test]
+    fn test_attribute_random_integration() {
+        let source = r#"
+const tests = find("Test")
+const winner_idx = math.random(0, tests.len() - 1)
+const winner_cell = tests[winner_idx]
+
+for test in tests {
+    test.attributes["winner"] = false
+}
+
+winner_cell.attributes["winner"] = true
+debug.log("winner_id", winner_cell.id)
+"#;
+        let mut th = test_host();
+        let c0 = WorldCoord::new(0, 0, 0);
+        let c1 = WorldCoord::new(1, 1, 1);
+        let c2 = WorldCoord::new(2, 2, 2);
+        let id0 = add_authored_entity(&mut th.world, c0, CellType::Block, "Test");
+        let id1 = add_authored_entity(&mut th.world, c1, CellType::Block, "Test");
+        let id2 = add_authored_entity(&mut th.world, c2, CellType::Block, "Test");
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse().unwrap();
+        let mut scene = ScriptScene::new(program, vec![], &mut host).unwrap();
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+        let winner_id_str = output.iter().find(|r| r.message.starts_with("winner_id")).unwrap().message.split_whitespace().last().unwrap();
+        let winner_id: u64 = winner_id_str.parse::<f64>().unwrap() as u64;
+
+        let ids = [id0, id1, id2];
+        let mut true_count = 0;
+        for &id in &ids {
+            let coord = th.world.resolve_cell_id(id).unwrap();
+            let effective_attr = th.world.get_effective_attribute(coord, "winner").unwrap();
+            use crate::world::cell::AttributeValue;
+
+            // Verify effective behavior
+            if id == winner_id {
+                assert_eq!(effective_attr, AttributeValue::Bool(true));
+                true_count += 1;
+            } else {
+                assert_eq!(effective_attr, AttributeValue::Bool(false));
+            }
+
+            // Verify AUTHORED state remains EMPTY (the key was only added at runtime)
+            let cell = th.world.get(coord).unwrap();
+            assert!(!cell.attributes.contains_key("winner"), "Authored attributes must not be modified by runtime writes");
+        }
+        assert_eq!(true_count, 1);
     }
 }

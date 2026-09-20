@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::ast::{Declaration, EventDecl, Program};
+use super::ast::{Declaration, EventDecl, Program, Statement};
 use super::execution::{
     FiberResult,
     ScriptScheduler,
@@ -120,6 +120,42 @@ impl ScriptRuntime {
         let task_id = self.scheduler.spawn();
         self.fibers.insert(task_id, fiber);
         Ok(task_id)
+    }
+
+    pub fn spawn_top_level(
+        &mut self,
+        script_path: String,
+    ) -> Result<Option<ScriptTaskId>, String> {
+        let statements = self.interpreter.program().statements.clone();
+        if statements.is_empty() {
+            return Ok(None);
+        }
+
+        let mut instance = ScriptInstance::new_empty();
+        instance.script_path = Some(script_path);
+
+        let fiber = self.interpreter.start_top_level_fiber(instance, &statements)?;
+        let task_id = self.scheduler.spawn();
+        self.fibers.insert(task_id, fiber);
+        Ok(Some(task_id))
+    }
+
+    pub fn spawn_top_level_custom(
+        &mut self,
+        script_path: String,
+        statements: &[Statement],
+    ) -> Result<Option<ScriptTaskId>, String> {
+        if statements.is_empty() {
+            return Ok(None);
+        }
+
+        let mut instance = ScriptInstance::new_empty();
+        instance.script_path = Some(script_path);
+
+        let fiber = self.interpreter.start_top_level_fiber(instance, statements)?;
+        let task_id = self.scheduler.spawn();
+        self.fibers.insert(task_id, fiber);
+        Ok(Some(task_id))
     }
 
     pub fn interpreter(&self) -> &Interpreter {

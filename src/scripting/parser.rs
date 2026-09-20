@@ -33,20 +33,40 @@ impl Parser {
 
     pub fn parse(mut self) -> Result<Program, ParserError> {
         let mut declarations = Vec::new();
+        let mut statements = Vec::new();
 
         self.skip_newlines();
 
         while !self.is_at_end() {
-            declarations.push(self.parse_declaration()?);
+            match self.peek_kind() {
+                TokenKind::Entity | TokenKind::Fn | TokenKind::Import | TokenKind::On => {
+                    declarations.push(self.parse_declaration()?);
+                }
+                _ => {
+                    statements.push(self.parse_statement()?);
+                }
+            }
             self.skip_newlines();
         }
 
-        let span = match (declarations.first(), declarations.last()) {
-            (Some(first), Some(last)) => SourceSpan::new(first.span().start, last.span().end),
-            _ => self.peek().span,
-        };
+        let mut start = self.tokens.first().map(|t| t.span.start).unwrap_or(0);
+        let mut end = self.tokens.last().map(|t| t.span.end).unwrap_or(0);
 
-        Ok(Program { span, declarations })
+        if let Some(first) = declarations.first() {
+            start = start.min(first.span().start);
+            end = end.max(declarations.last().unwrap().span().end);
+        }
+
+        if let Some(first) = statements.first() {
+            start = start.min(first.span.start);
+            end = end.max(statements.last().unwrap().span.end);
+        }
+
+        Ok(Program {
+            span: SourceSpan::new(start, end),
+            declarations,
+            statements,
+        })
     }
 
     fn parse_declaration(&mut self) -> Result<Declaration, ParserError> {
@@ -1486,5 +1506,42 @@ entity LightBlinker {
         };
 
         assert_eq!(function.body.statements.len(), 2);
+    }
+
+    #[test]
+    fn test_top_level_statements() {
+        let source = r#"
+debug.log("hello")
+const x = 10
+if x > 0 {
+    debug.log("positive")
+}
+"#;
+        let program = parse(source);
+        assert_eq!(program.statements.len(), 3);
+        assert_eq!(program.declarations.len(), 0);
+
+        match &program.statements[0].kind {
+            StatementKind::Expression(expr) => {
+                // debug.log("hello") parses as Member { object: Identifier("debug"), name: "log" }
+                // followed by a Call if it's debug.log("hello").
+                // Actually debug.log is Member. Then ( ... ) is Call.
+                assert!(matches!(expr.kind, ExpressionKind::Call { .. }));
+            }
+            _ => panic!("expected expression statement"),
+        }
+    }
+
+    #[test]
+    fn test_mixed_top_level() {
+        let source = r#"
+debug.log("start")
+fn helper() {}
+debug.log("end")
+entity Test {}
+"#;
+        let program = parse(source);
+        assert_eq!(program.statements.len(), 2);
+        assert_eq!(program.declarations.len(), 2);
     }
 }

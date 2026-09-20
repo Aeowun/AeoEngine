@@ -151,13 +151,13 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                         }
                         "attributes" => {
                             let mut map = BTreeMap::new();
-                            for (key, attr) in &cell.attributes {
+                            for (key, attr) in self.world.get_effective_attributes(coord) {
                                 let val = match attr {
-                                    AttributeValue::Number(n) => Value::Number(*n),
-                                    AttributeValue::Bool(b) => Value::Bool(*b),
-                                    AttributeValue::String(s) => Value::String(s.clone()),
+                                    AttributeValue::Number(n) => Value::Number(n),
+                                    AttributeValue::Bool(b) => Value::Bool(b),
+                                    AttributeValue::String(s) => Value::String(s),
                                 };
-                                map.insert(MapKey::String(key.clone()), val);
+                                map.insert(MapKey::String(key), val);
                             }
                             return Ok(Some(Value::map(map)));
                         }
@@ -245,6 +245,30 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
     fn call_method(&mut self, _kind: HandleKind, _id: u64, _name: &str, _args: &[Value]) -> Result<Option<Value>, String> {
         Ok(None)
     }
+
+    fn set_attribute(&mut self, id: u64, key: String, value: Value) -> Result<(), String> {
+        if let Some(coord) = self.world.resolve_cell_id(id) {
+            let attr_val = match value {
+                Value::Number(n) => AttributeValue::Number(n),
+                Value::Bool(b) => AttributeValue::Bool(b),
+                Value::String(s) => AttributeValue::String(s),
+                _ => return Err(format!("Cell attributes only support Number, Bool, or String. Got {}", value.type_name())),
+            };
+            self.world.set_attribute_runtime(coord, key, attr_val);
+            Ok(())
+        } else {
+            Err("invalid cell handle for attribute assignment".to_string())
+        }
+    }
+
+    fn remove_attribute(&mut self, id: u64, key: &str) -> Result<(), String> {
+        if let Some(coord) = self.world.resolve_cell_id(id) {
+            self.world.remove_attribute_runtime(coord, key);
+            Ok(())
+        } else {
+            Err("invalid cell handle for attribute removal".to_string())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -284,5 +308,47 @@ mod tests {
         assert_eq!(map.get(&MapKey::String("health".to_string())), Some(&Value::Number(100.0)));
         assert_eq!(map.get(&MapKey::String("is_boss".to_string())), Some(&Value::Bool(false)));
         assert_eq!(map.get(&MapKey::String("tag".to_string())), Some(&Value::String("enemy".to_string())));
+    }
+
+    #[test]
+    fn test_script_host_bridge_runtime_attribute_override() {
+        let mut world = World::new();
+        let mut entity_manager = EntityManager::new();
+
+        let coord = WorldCoord::new(0, 0, 0);
+        let cell_id = world.set_cell(coord, CellType::Block);
+
+        if let Some(cell) = world.get_mut(coord) {
+            cell.attributes.insert("test".to_string(), AttributeValue::String("authored".to_string()));
+        }
+
+        let mut bridge = ScriptHostBridge {
+            entity_manager: &mut entity_manager,
+            world: &mut world,
+        };
+
+        // 1. Initial read should be authored value
+        let attrs = bridge.get_property(HandleKind::Cell, cell_id, "attributes").unwrap().unwrap();
+        let map_arc = attrs.as_map().unwrap();
+        assert_eq!(map_arc.borrow().get(&MapKey::String("test".to_string())), Some(&Value::String("authored".to_string())));
+
+        // 2. Runtime write
+        bridge.set_attribute(cell_id, "test".to_string(), Value::String("runtime".to_string())).unwrap();
+
+        // 3. Effective read should be runtime value
+        let attrs = bridge.get_property(HandleKind::Cell, cell_id, "attributes").unwrap().unwrap();
+        let map_arc = attrs.as_map().unwrap();
+        assert_eq!(map_arc.borrow().get(&MapKey::String("test".to_string())), Some(&Value::String("runtime".to_string())));
+
+        // 4. Verify authored value in World is UNCHANGED
+        assert_eq!(bridge.world.get(coord).unwrap().attributes.get("test"), Some(&AttributeValue::String("authored".to_string())));
+
+        // 5. Runtime removal
+        bridge.remove_attribute(cell_id, "test").unwrap();
+
+        // 6. Effective read should fall back to authored value
+        let attrs = bridge.get_property(HandleKind::Cell, cell_id, "attributes").unwrap().unwrap();
+        let map_arc = attrs.as_map().unwrap();
+        assert_eq!(map_arc.borrow().get(&MapKey::String("test".to_string())), Some(&Value::String("authored".to_string())));
     }
 }

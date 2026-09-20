@@ -582,6 +582,29 @@ impl Interpreter {
         })
     }
 
+    pub fn start_top_level_fiber(
+        &mut self,
+        instance: ScriptInstance,
+        statements: &[Statement],
+    ) -> Result<ScriptFiber, String> {
+        let compiled = Arc::new(compile_top_level(statements));
+
+        Ok(ScriptFiber {
+            script_path: instance.script_path.clone(),
+            entity_name: instance.entity_name().to_string(),
+            instance,
+            stack: vec![CallFrame {
+                function: compiled,
+                pc: 0,
+                scopes: vec![Scope::new()],
+                for_states: Vec::new(),
+                function_name: "top-level".to_string(),
+            }],
+            finished: false,
+            result: None,
+        })
+    }
+
     pub fn resume_fiber(&mut self, fiber: &mut ScriptFiber, host: &mut HostContext) -> FiberResult {
         if fiber.finished {
             return FiberResult::Failed(
@@ -1425,8 +1448,39 @@ impl Interpreter {
                 }
             }
 
-            ExpressionKind::Index { object, index } => {
-                let object_value = self.eval_expression(instance, scopes, object, host)?;
+            ExpressionKind::Index { object: target_object, index } => {
+                // Check if this is cell.attributes["key"] = value
+                if let ExpressionKind::Member { object: handle_expr, name } = &target_object.kind {
+                    if name == "attributes" {
+                        let handle_value = self.eval_expression(instance, scopes, handle_expr, host)?;
+                        if let Value::Handle { kind, id } = handle_value {
+                            if kind == HandleKind::Cell || kind == HandleKind::Light {
+                                let key_value = self.eval_expression(instance, scopes, index, host)?;
+                                let key = key_value.as_string()?;
+
+                                let value_to_assign = if operator == AssignmentOperator::Assign {
+                                    right
+                                } else {
+                                    // Resolve current effective value for compound assignment
+                                    let current = host.engine.get_property(kind, id, "attributes")?
+                                        .ok_or_else(|| "could not read attributes".to_string())?;
+                                    let map_arc = current.as_map()?;
+                                    let left = map_arc.borrow().get(&MapKey::String(key.to_string())).cloned().unwrap_or(Value::Nil);
+                                    self.apply_assignment(operator, left, right)?
+                                };
+
+                                if matches!(value_to_assign, Value::Nil) {
+                                    host.engine.remove_attribute(id, key)?;
+                                } else {
+                                    host.engine.set_attribute(id, key.to_string(), value_to_assign)?;
+                                }
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+
+                let object_value = self.eval_expression(instance, scopes, target_object, host)?;
                 let index_value = self.eval_expression(instance, scopes, index, host)?;
 
                 let value = if operator == AssignmentOperator::Assign {
@@ -2203,6 +2257,21 @@ fn compile_event(event: &EventDecl) -> CompiledFunction {
     };
 
     compiler.compile_block(&event.body);
+
+    CompiledFunction {
+        instructions: compiler.instructions,
+    }
+}
+
+/// Compiles top-level statements into a resumable execution plan.
+fn compile_top_level(statements: &[Statement]) -> CompiledFunction {
+    let mut compiler = FunctionCompiler {
+        instructions: Vec::new(),
+    };
+
+    for statement in statements {
+        compiler.compile_statement(statement);
+    }
 
     CompiledFunction {
         instructions: compiler.instructions,
@@ -3626,6 +3695,9 @@ entity Test {
             }
             fn set_property(&mut self, _: HandleKind, _: u64, _: &str, _: Value) -> Result<(), String> { Ok(()) }
             fn call_method(&mut self, _: HandleKind, _: u64, _: &str, _: &[Value]) -> Result<Option<Value>, String> { Ok(None) }
+
+            fn set_attribute(&mut self, _: u64, _: String, _: Value) -> Result<(), String> { Ok(()) }
+            fn remove_attribute(&mut self, _: u64, _: &str) -> Result<(), String> { Ok(()) }
         }
 
         let mut ph = ParentHost { em: test_host() };
@@ -4097,5 +4169,100 @@ entity Test {
         let res = interpreter.resume_fiber(&mut fiber, &mut host);
         assert_eq!(res, FiberResult::Complete);
         assert_eq!(fiber.instance().get_field("value"), Some(&Value::Number(1.0)));
+    }
+
+    #[test]
+    fn test_top_level_execution() {
+        let source = r#"
+debug.log("one")
+debug.log("two")
+"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse().unwrap();
+        let mut interpreter = Interpreter::new(program.clone());
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut em };
+
+        let instance = ScriptInstance::new_empty();
+        let mut fiber = interpreter.start_top_level_fiber(instance, &program.statements).unwrap();
+        let res = interpreter.resume_fiber(&mut fiber, &mut host);
+
+        assert_eq!(res, FiberResult::Complete);
+        assert_eq!(interpreter.output()[0].message, "one");
+        assert_eq!(interpreter.output()[1].message, "two");
+    }
+
+    #[test]
+    fn test_top_level_wait() {
+        let source = r#"
+debug.log("before")
+wait(0.1)
+debug.log("after")
+"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse().unwrap();
+        let mut interpreter = Interpreter::new(program.clone());
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut em };
+
+        let instance = ScriptInstance::new_empty();
+        let mut fiber = interpreter.start_top_level_fiber(instance, &program.statements).unwrap();
+
+        // 1. First run: debug.log("before") and wait(0.1)
+        let res = interpreter.resume_fiber(&mut fiber, &mut host);
+        assert_eq!(res, FiberResult::Yield(YieldReason::WaitSeconds(0.1)));
+        assert_eq!(interpreter.output().len(), 1);
+        assert_eq!(interpreter.output()[0].message, "before");
+
+        // 2. Second run: debug.log("after")
+        let res = interpreter.resume_fiber(&mut fiber, &mut host);
+        assert_eq!(res, FiberResult::Complete);
+        assert_eq!(interpreter.output().len(), 2);
+        assert_eq!(interpreter.output()[1].message, "after");
+    }
+
+    #[test]
+    fn test_top_level_error() {
+        let source = r#"
+light.set_enabled(false)
+"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse().unwrap();
+        let mut interpreter = Interpreter::new(program.clone());
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut em };
+
+        let instance = ScriptInstance::new_empty();
+        let mut fiber = interpreter.start_top_level_fiber(instance, &program.statements).unwrap();
+        let res = interpreter.resume_fiber(&mut fiber, &mut host);
+
+        match res {
+            FiberResult::Failed(msg) => {
+                assert!(msg.contains("unknown variable 'light'"));
+            }
+            _ => panic!("Expected FiberResult::Failed"),
+        }
+    }
+
+    #[test]
+    fn test_functions_not_executed_automatically() {
+        let source = r#"
+fn helper() {
+    debug.log("helper")
+}
+debug.log("top")
+"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse().unwrap();
+        let mut interpreter = Interpreter::new(program.clone());
+        let mut em = test_host();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut em };
+
+        let instance = ScriptInstance::new_empty();
+        let mut fiber = interpreter.start_top_level_fiber(instance, &program.statements).unwrap();
+        interpreter.resume_fiber(&mut fiber, &mut host);
+
+        assert_eq!(interpreter.output().len(), 1);
+        assert_eq!(interpreter.output()[0].message, "top");
     }
 }

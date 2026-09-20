@@ -1,14 +1,16 @@
-fn on_ready() {
-	debug.log("Test script started for: Attributes")
-    const tests = find("Test")
+debug.log("Test randomiser starting")
 
-    for test in tests {
-        if test.attributes["testBool"] == true {
-            debug.log(test.attributes["Test"])
-            break
-        }
-    }
+const tests = find("Test")
+const winner = math.random(0, tests.len() - 1)
+
+for test in tests {
+    test.attributes["testBool"] = false
 }
-on PlayerSpawned(player) {
-	debug.log("If you are reading this and dont see: Test script started for:... that means on_ready is not fiering.")
-}
+
+tests[winner].attributes["testBool"] = true
+
+debug.log(
+    "This block is the winner:",
+    tests[winner].attributes["testNum"],
+    tests[winner].attributes["Test"]
+)

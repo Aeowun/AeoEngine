@@ -25,6 +25,9 @@ pub trait EngineHost {
     fn get_property(&self, kind: HandleKind, id: u64, name: &str) -> Result<Option<Value>, String>;
     fn set_property(&mut self, kind: HandleKind, id: u64, name: &str, value: Value) -> Result<(), String>;
     fn call_method(&mut self, kind: HandleKind, id: u64, name: &str, args: &[Value]) -> Result<Option<Value>, String>;
+
+    fn set_attribute(&mut self, id: u64, key: String, value: Value) -> Result<(), String>;
+    fn remove_attribute(&mut self, id: u64, key: &str) -> Result<(), String>;
 }
 
 /// A simple implementation of EngineHost that just wraps an EntityManager.
@@ -82,6 +85,14 @@ impl EngineHost for EntityManager {
 
     fn call_method(&mut self, _kind: HandleKind, _id: u64, _name: &str, _args: &[Value]) -> Result<Option<Value>, String> {
         Ok(None)
+    }
+
+    fn set_attribute(&mut self, _id: u64, _key: String, _value: Value) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn remove_attribute(&mut self, _id: u64, _key: &str) -> Result<(), String> {
+        Ok(())
     }
 }
 

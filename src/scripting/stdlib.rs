@@ -62,6 +62,22 @@ pub fn call_stdlib_function(
                     if args.len() != 1 { return Err("math.tan expects exactly 1 argument".to_string()); }
                     Value::Number(args[0].as_number()?.tan())
                 }
+                "random" => {
+                    use rand::Rng;
+                    let mut rng = rand::thread_rng();
+                    if args.is_empty() {
+                        Value::Number(rng.r#gen::<f64>())
+                    } else if args.len() == 2 {
+                        let min = args[0].as_number()? as i64;
+                        let max = args[1].as_number()? as i64;
+                        if min > max {
+                            return Err("math.random min cannot be greater than max".to_string());
+                        }
+                        Value::Number(rng.gen_range(min..=max) as f64)
+                    } else {
+                        return Err("math.random expects 0 or 2 arguments".to_string());
+                    }
+                }
                 "clamp" => {
                     if args.len() != 3 { return Err("math.clamp expects exactly 3 arguments".to_string()); }
                     let val = args[0].as_number()?;
@@ -317,5 +333,62 @@ pub fn call_stdlib_function(
             return Ok(Some(res));
         }
         _ => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scripting::api::HostContext;
+    use crate::scripting::interpreter::{Interpreter, ScriptInstance};
+    use crate::scripting::value::Scope;
+    use crate::engine::entity::EntityManager;
+    use crate::scripting::ast::Program;
+    use crate::scripting::source::SourceSpan;
+
+    fn setup() -> (Interpreter, ScriptInstance, Vec<Scope>, EntityManager) {
+        let program = Program { span: SourceSpan::new(0, 0), declarations: vec![], statements: vec![] };
+        let interpreter = Interpreter::new(program);
+        let instance = ScriptInstance::new_empty();
+        let scopes = vec![Scope::new()];
+        let em = EntityManager::new();
+        (interpreter, instance, scopes, em)
+    }
+
+    #[test]
+    fn test_math_random_no_args() {
+        let (mut interpreter, mut instance, mut scopes, mut em) = setup();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut em };
+
+        let res = call_stdlib_function(&mut interpreter, &mut instance, &mut scopes, "math", "random", &[], &mut host).unwrap().unwrap();
+        let val = res.as_number().unwrap();
+        assert!(val >= 0.0 && val < 1.0);
+    }
+
+    #[test]
+    fn test_math_random_range() {
+        let (mut interpreter, mut instance, mut scopes, mut em) = setup();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut em };
+
+        // [1, 1] -> 1
+        let res = call_stdlib_function(&mut interpreter, &mut instance, &mut scopes, "math", "random", &[Value::Number(1.0), Value::Number(1.0)], &mut host).unwrap().unwrap();
+        assert_eq!(res.as_number().unwrap(), 1.0);
+
+        // [1, 3] -> 1, 2, or 3
+        for _ in 0..100 {
+            let res = call_stdlib_function(&mut interpreter, &mut instance, &mut scopes, "math", "random", &[Value::Number(1.0), Value::Number(3.0)], &mut host).unwrap().unwrap();
+            let val = res.as_number().unwrap();
+            assert!(val == 1.0 || val == 2.0 || val == 3.0);
+        }
+    }
+
+    #[test]
+    fn test_math_random_invalid_range() {
+        let (mut interpreter, mut instance, mut scopes, mut em) = setup();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut em };
+
+        let res = call_stdlib_function(&mut interpreter, &mut instance, &mut scopes, "math", "random", &[Value::Number(10.0), Value::Number(1.0)], &mut host);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("min cannot be greater than max"));
     }
 }

@@ -234,6 +234,47 @@ impl World {
         }
     }
 
+    pub fn get_effective_attributes(&self, coord: WorldCoord) -> std::collections::BTreeMap<String, super::cell::AttributeValue> {
+        let mut result = std::collections::BTreeMap::new();
+        if let Some(cell) = self.cells.get(&coord) {
+            result.extend(cell.attributes.clone());
+            if let Some(rs) = self.runtime_state.get(&cell.id) {
+                result.extend(rs.attribute_overrides.clone());
+            }
+        }
+        result
+    }
+
+    pub fn get_effective_attribute(&self, coord: WorldCoord, key: &str) -> Option<super::cell::AttributeValue> {
+        if let Some(cell) = self.cells.get(&coord) {
+            if let Some(rs) = self.runtime_state.get(&cell.id) {
+                if let Some(val) = rs.attribute_overrides.get(key) {
+                    return Some(val.clone());
+                }
+            }
+            return cell.attributes.get(key).cloned();
+        }
+        None
+    }
+
+    pub fn set_attribute_runtime(&mut self, coord: WorldCoord, key: String, value: super::cell::AttributeValue) {
+        if let Some(cell) = self.cells.get(&coord) {
+            self.runtime_state
+                .entry(cell.id)
+                .or_default()
+                .attribute_overrides
+                .insert(key, value);
+        }
+    }
+
+    pub fn remove_attribute_runtime(&mut self, coord: WorldCoord, key: &str) {
+        if let Some(cell) = self.cells.get(&coord) {
+            if let Some(rs) = self.runtime_state.get_mut(&cell.id) {
+                rs.attribute_overrides.remove(key);
+            }
+        }
+    }
+
     /// Discards all runtime state modifications.
     pub fn clear_runtime_state(&mut self) {
         for id in self.runtime_state.keys() {

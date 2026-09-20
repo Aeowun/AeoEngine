@@ -353,8 +353,52 @@ Version `0.6.6` finalized the script lifecycle and ensured state continuity betw
 
 ### Added
 
-* (Work in progress)
+* AeoScript authored Cell Attributes with persistent `Number`, `Bool`, and `String` values.
+* AeoScript access to authored Cell attributes through `cell.attributes["key"]`.
+* Regression coverage for independent Cell attribute access through AeoScript handles.
+* Dedicated AeoScript host bridge module at `src/scripting/host.rs`.
+* Separation of the concrete AeoEngine scripting host implementation from application coordination.
+* AeoScript top-level executable statements.
+* Top-level script statements execute once in source order when the world loads.
+* Each script file receives its own top-level execution fiber and `Global` script instance.
+* Top-level statements support cooperative `wait()` using the existing fiber scheduler.
+* Runtime error reporting for failures during top-level execution.
+* Warnings for entity lifecycle declarations that have no matching script binding.
+* Regression coverage for top-level execution, top-level yielding, top-level runtime errors, and unattached lifecycle warnings.
+
+### Changed
+
+* `src/engine/app.rs` now acts as the application coordinator for scripting rather than containing the concrete `ScriptHostBridge` implementation.
+* `EngineHost` remains the scripting-side host contract while `ScriptHostBridge` provides the concrete AeoEngine implementation.
+* AeoScript programs now distinguish executable top-level statements from declarations such as functions, events, and entities.
+* Unattached scripts can execute top-level code while continuing to provide global event handlers.
+* Entity lifecycle functions remain attachment-driven and now produce warnings when declared without a matching binding.
 
 ### Notes
 
-Version `0.7.0` begins the next major development phase, working outside in
+Version `0.7.0` expanded AeoScript from a primarily declaration- and event-driven system into a general-purpose script execution model with authored Cell metadata, a dedicated engine host boundary, and ordered top-level execution.
+
+Verification: `cargo check` passed and the full test suite passed with **303 tests, 0 failures**.
+
+---
+
+## 0.7.1
+
+### Added
+
+* Runtime Cell Attributes: AeoScript can now mutate Cell attributes during Play mode.
+* Runtime Attribute Overrides: Script writes to attributes are stored as temporary overrides in `RuntimeCellState` and do not modify authored World data.
+* Effective Attribute Resolution: Attribute reads return the runtime override if it exists, falling back to the authored baseline.
+* Attribute Reset Semantics: Assigning `nil` to a runtime attribute removes the override and restores the authored value.
+* `math.random()`: Generates a random Number in the range [0.0, 1.0).
+* `math.random(min, max)`: Generates a random integer-valued Number in the inclusive range [min, max].
+* Regression coverage for runtime attribute preservation, authored state protection, and `math.random` behavior.
+
+### Changed
+
+* `ScriptHostBridge::get_property` for "attributes" now returns the effective merged attribute map.
+* `Interpreter::assign_target` now intercepts attribute-index assignments to route them to the engine's runtime state.
+
+### Notes
+
+Version `0.7.1` introduces temporary runtime data for Cells and randomized selection for AeoScript, while maintaining the absolute invariant that Play-mode execution never modifies authored project data.
