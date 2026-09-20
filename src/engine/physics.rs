@@ -624,8 +624,8 @@ impl PhysicsWorld {
         self.bodies.clear(); self.static_colliders.clear();
         self.id_gen = PhysicsIdGenerator::new();
         self.step_count = 0;
-        for coord in world.active_blocks() {
-            if let Some(cell) = world.get(coord) {
+        for coord in world.active_effective_blocks() {
+            if let Some(cell) = world.get_effective_cell(coord) {
                 if cell.cell_type == CellType::Light {
                     continue;
                 }
@@ -674,52 +674,57 @@ impl PhysicsWorld {
         let dirty_ids: Vec<u64> = world.physics_dirty_cells.drain().collect();
         for cell_id in dirty_ids {
             if let Some(coord) = world.resolve_cell_id(cell_id) {
-                let cell = world.get(coord).unwrap();
-                if cell.cell_type == CellType::Light {
-                    self.static_colliders.retain(|(id, _)| *id != cell_id);
-                    self.bodies.retain(|b| b.cell_id != cell_id);
-                    continue;
-                }
+                if let Some(cell) = world.get_effective_cell_by_id(cell_id) {
+                    if cell.cell_type == CellType::Light {
+                        self.static_colliders.retain(|(id, _)| *id != cell_id);
+                        self.bodies.retain(|b| b.cell_id != cell_id);
+                        continue;
+                    }
 
-                let anchored = world.is_cell_anchored(coord);
-                let solid = world.is_cell_solid(coord);
+                    let anchored = world.is_cell_anchored(coord);
+                    let solid = world.is_cell_solid(coord);
 
-                if anchored {
-                    // Transition/Reconcile Static
-                    self.bodies.retain(|b| b.cell_id != cell_id);
-                    if solid {
-                        let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32) + world.get_visual_offset(coord);
-                        if let Some(existing) = self.static_colliders.iter_mut().find(|(id, _)| *id == cell_id) {
-                            existing.1 = pos;
+                    if anchored {
+                        // Transition/Reconcile Static
+                        self.bodies.retain(|b| b.cell_id != cell_id);
+                        if solid {
+                            let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32) + world.get_visual_offset(coord);
+                            if let Some(existing) = self.static_colliders.iter_mut().find(|(id, _)| *id == cell_id) {
+                                existing.1 = pos;
+                            } else {
+                                self.static_colliders.push((cell_id, pos));
+                            }
                         } else {
-                            self.static_colliders.push((cell_id, pos));
+                            self.static_colliders.retain(|(id, _)| *id != cell_id);
                         }
                     } else {
+                        // Transition/Reconcile Dynamic
                         self.static_colliders.retain(|(id, _)| *id != cell_id);
+                        if solid {
+                            if let Some(body) = self.bodies.iter_mut().find(|b| b.cell_id == cell_id) {
+                                body.solid = true;
+                                body.visible = world.is_cell_visible(coord);
+                                body.color_rgb = world.get_effective_color(coord);
+                            } else {
+                                let id = self.id_gen.next();
+                                let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32);
+                                let mut body = PhysicsBody::new(id, cell_id, pos, Vec3::ONE);
+                                body.cell_type = cell.cell_type;
+                                body.visible = world.is_cell_visible(coord);
+                                body.solid = true;
+                                body.anchored = false;
+                                body.texture = cell.texture.clone();
+                                body.color_rgb = world.get_effective_color(coord);
+                                self.bodies.push(body);
+                            }
+                        } else {
+                            self.bodies.retain(|b| b.cell_id != cell_id);
+                        }
                     }
                 } else {
-                    // Transition/Reconcile Dynamic
+                     // ID no longer resolves to a cell (e.g. Empty or removed runtime cell)
                     self.static_colliders.retain(|(id, _)| *id != cell_id);
-                    if solid {
-                        if let Some(body) = self.bodies.iter_mut().find(|b| b.cell_id == cell_id) {
-                            body.solid = true;
-                            body.visible = world.is_cell_visible(coord);
-                            body.color_rgb = world.get_effective_color(coord);
-                        } else {
-                            let id = self.id_gen.next();
-                            let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32);
-                            let mut body = PhysicsBody::new(id, cell_id, pos, Vec3::ONE);
-                            body.cell_type = cell.cell_type;
-                            body.visible = world.is_cell_visible(coord);
-                            body.solid = true;
-                            body.anchored = false;
-                            body.texture = cell.texture.clone();
-                            body.color_rgb = world.get_effective_color(coord);
-                            self.bodies.push(body);
-                        }
-                    } else {
-                        self.bodies.retain(|b| b.cell_id != cell_id);
-                    }
+                    self.bodies.retain(|b| b.cell_id != cell_id);
                 }
             } else {
                 // Cell was deleted

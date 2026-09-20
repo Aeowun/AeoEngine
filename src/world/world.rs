@@ -44,6 +44,13 @@ pub struct World {
     // Optimized lookup for cell coordinates by ID.
     pub(crate) id_to_coord: HashMap<u64, WorldCoord>,
 
+    // Storage for cells created at runtime via cell.new()
+    pub(crate) runtime_cells: HashMap<u64, Cell>,
+    // ID -> Coord index for runtime cells
+    pub(crate) runtime_id_to_coord: HashMap<u64, WorldCoord>,
+    // Coord -> ID index for runtime cells (spatial index)
+    pub(crate) coord_to_runtime_id: HashMap<WorldCoord, u64>,
+
     // The world wide gravity vector used by the physics simulation.
     pub gravity: Vec3,
 
@@ -61,6 +68,9 @@ impl World {
             runtime_state: HashMap::new(),
             physics_dirty_cells: std::collections::HashSet::new(),
             id_to_coord: HashMap::new(),
+            runtime_cells: HashMap::new(),
+            runtime_id_to_coord: HashMap::new(),
+            coord_to_runtime_id: HashMap::new(),
             // We default to Earth standard gravity.
             gravity: Vec3::new(0.0, -9.81, 0.0),
             lighting: LightingSettings::default(),
@@ -79,7 +89,15 @@ impl World {
     /// Finds a cell's current coordinate by its unique ID.
     /// This is an O(1) lookup using the runtime index.
     pub fn resolve_cell_id(&self, id: u64) -> Option<WorldCoord> {
-        self.id_to_coord.get(&id).cloned()
+        if let Some(coord) = self.id_to_coord.get(&id) {
+            if let Some(rs) = self.runtime_state.get(&id) {
+                if rs.is_deleted {
+                    return None;
+                }
+            }
+            return Some(*coord);
+        }
+        self.runtime_id_to_coord.get(&id).cloned()
     }
 
     /// Marks a cell as needing physics reconciliation.
@@ -90,7 +108,7 @@ impl World {
     /// Returns the effective value of light_enabled for a coordinate,
     /// accounting for any runtime overrides.
     pub fn is_light_enabled(&self, coord: WorldCoord) -> bool {
-        if let Some(cell) = self.cells.get(&coord) {
+        if let Some(cell) = self.get_effective_cell(coord) {
             if let Some(rs) = self.runtime_state.get(&cell.id) {
                 if let Some(enabled) = rs.light_enabled {
                     return enabled;
@@ -104,9 +122,10 @@ impl World {
     /// Sets a runtime-only override for light_enabled.
     /// This does not modify the authored Cell data.
     pub fn set_light_enabled_runtime(&mut self, coord: WorldCoord, enabled: bool) {
-        if let Some(cell) = self.cells.get(&coord) {
+        let id = self.get_effective_cell(coord).map(|c| c.id);
+        if let Some(id) = id {
             self.runtime_state
-                .entry(cell.id)
+                .entry(id)
                 .or_default()
                 .light_enabled = Some(enabled);
         }
@@ -115,7 +134,7 @@ impl World {
     /// Returns the effective value of visible for a coordinate,
     /// accounting for any runtime overrides.
     pub fn is_cell_visible(&self, coord: WorldCoord) -> bool {
-        if let Some(cell) = self.cells.get(&coord) {
+        if let Some(cell) = self.get_effective_cell(coord) {
             if let Some(rs) = self.runtime_state.get(&cell.id) {
                 if let Some(visible) = rs.visible {
                     return visible;
@@ -129,9 +148,10 @@ impl World {
     /// Sets a runtime-only override for cell visibility.
     /// This does not modify the authored Cell data.
     pub fn set_cell_visible_runtime(&mut self, coord: WorldCoord, visible: bool) {
-        if let Some(cell) = self.cells.get(&coord) {
+        let id = self.get_effective_cell(coord).map(|c| c.id);
+        if let Some(id) = id {
             self.runtime_state
-                .entry(cell.id)
+                .entry(id)
                 .or_default()
                 .visible = Some(visible);
         }
@@ -139,7 +159,7 @@ impl World {
 
     /// Returns the effective color of a cell, accounting for runtime overrides.
     pub fn get_effective_color(&self, coord: WorldCoord) -> Vec3 {
-        if let Some(cell) = self.cells.get(&coord) {
+        if let Some(cell) = self.get_effective_cell(coord) {
             if let Some(rs) = self.runtime_state.get(&cell.id) {
                 if let Some(color) = rs.color_rgb {
                     return color;
@@ -152,9 +172,10 @@ impl World {
 
     /// Sets a runtime-only override for cell color.
     pub fn set_cell_color_runtime(&mut self, coord: WorldCoord, color: Vec3) {
-        if let Some(cell) = self.cells.get(&coord) {
+        let id = self.get_effective_cell(coord).map(|c| c.id);
+        if let Some(id) = id {
             self.runtime_state
-                .entry(cell.id)
+                .entry(id)
                 .or_default()
                 .color_rgb = Some(color);
         }
@@ -162,7 +183,7 @@ impl World {
 
     /// Returns whether a cell is effectively solid.
     pub fn is_cell_solid(&self, coord: WorldCoord) -> bool {
-        if let Some(cell) = self.cells.get(&coord) {
+        if let Some(cell) = self.get_effective_cell(coord) {
             if let Some(rs) = self.runtime_state.get(&cell.id) {
                 if let Some(solid) = rs.solid {
                     return solid;
@@ -175,8 +196,8 @@ impl World {
 
     /// Sets a runtime-only override for cell solidity.
     pub fn set_cell_solid_runtime(&mut self, coord: WorldCoord, solid: bool) {
-        if let Some(cell) = self.cells.get(&coord) {
-            let id = cell.id;
+        let id = self.get_effective_cell(coord).map(|c| c.id);
+        if let Some(id) = id {
             self.runtime_state
                 .entry(id)
                 .or_default()
@@ -187,7 +208,7 @@ impl World {
 
     /// Returns whether a cell is effectively anchored.
     pub fn is_cell_anchored(&self, coord: WorldCoord) -> bool {
-        if let Some(cell) = self.cells.get(&coord) {
+        if let Some(cell) = self.get_effective_cell(coord) {
             if let Some(rs) = self.runtime_state.get(&cell.id) {
                 if let Some(anchored) = rs.anchored {
                     return anchored;
@@ -200,8 +221,8 @@ impl World {
 
     /// Sets a runtime-only override for cell anchored state.
     pub fn set_cell_anchored_runtime(&mut self, coord: WorldCoord, anchored: bool) {
-        if let Some(cell) = self.cells.get(&coord) {
-            let id = cell.id;
+        let id = self.get_effective_cell(coord).map(|c| c.id);
+        if let Some(id) = id {
             self.runtime_state
                 .entry(id)
                 .or_default()
@@ -212,7 +233,7 @@ impl World {
 
     /// Returns the effective visual offset of a cell.
     pub fn get_visual_offset(&self, coord: WorldCoord) -> Vec3 {
-        if let Some(cell) = self.cells.get(&coord) {
+        if let Some(cell) = self.get_effective_cell(coord) {
             if let Some(rs) = self.runtime_state.get(&cell.id) {
                 if let Some(offset) = rs.visual_offset {
                     return offset;
@@ -224,8 +245,8 @@ impl World {
 
     /// Sets a runtime-only visual offset for a cell.
     pub fn set_visual_offset_runtime(&mut self, coord: WorldCoord, offset: Vec3) {
-        if let Some(cell) = self.cells.get(&coord) {
-            let id = cell.id;
+        let id = self.get_effective_cell(coord).map(|c| c.id);
+        if let Some(id) = id {
             self.runtime_state
                 .entry(id)
                 .or_default()
@@ -246,7 +267,7 @@ impl World {
     }
 
     pub fn get_effective_attribute(&self, coord: WorldCoord, key: &str) -> Option<super::cell::AttributeValue> {
-        if let Some(cell) = self.cells.get(&coord) {
+        if let Some(cell) = self.get_effective_cell(coord) {
             if let Some(rs) = self.runtime_state.get(&cell.id) {
                 if let Some(val) = rs.attribute_overrides.get(key) {
                     return Some(val.clone());
@@ -257,10 +278,135 @@ impl World {
         None
     }
 
-    pub fn set_attribute_runtime(&mut self, coord: WorldCoord, key: String, value: super::cell::AttributeValue) {
+    pub fn get_effective_cell(&self, coord: WorldCoord) -> Option<&Cell> {
+        if let Some(id) = self.coord_to_runtime_id.get(&coord) {
+            return self.runtime_cells.get(id);
+        }
         if let Some(cell) = self.cells.get(&coord) {
+            if let Some(rs) = self.runtime_state.get(&cell.id) {
+                if rs.is_deleted {
+                    return None;
+                }
+            }
+            return Some(cell);
+        }
+        None
+    }
+
+    pub fn get_effective_cell_by_id(&self, id: u64) -> Option<&Cell> {
+        if let Some(cell) = self.runtime_cells.get(&id) {
+            return Some(cell);
+        }
+        if let Some(coord) = self.id_to_coord.get(&id) {
+            if let Some(rs) = self.runtime_state.get(&id) {
+                if rs.is_deleted {
+                    return None;
+                }
+            }
+            return self.cells.get(coord);
+        }
+        None
+    }
+
+    pub fn active_effective_blocks(&self) -> Vec<WorldCoord> {
+        let mut coords: std::collections::HashSet<WorldCoord> = std::collections::HashSet::new();
+        for (coord, cell) in &self.cells {
+            if let Some(rs) = self.runtime_state.get(&cell.id) {
+                if rs.is_deleted {
+                    continue;
+                }
+            }
+            coords.insert(*coord);
+        }
+        coords.extend(self.runtime_id_to_coord.values().cloned());
+        coords.into_iter().collect()
+    }
+
+    pub fn create_runtime_cell(&mut self, cell_type: CellType) -> u64 {
+        let mut cell = match cell_type {
+            CellType::Block => Cell::new_block(),
+            CellType::Light => Cell::new_light(),
+            CellType::SpawnPoint => Cell::new_spawn_point(),
+            _ => {
+                let mut c = Cell::default();
+                c.cell_type = cell_type;
+                c
+            }
+        };
+
+        let id = self.generate_runtime_unique_id();
+        cell.id = id;
+
+        self.runtime_cells.insert(id, cell);
+        self.mark_physics_dirty(id);
+        id
+    }
+
+    pub fn move_runtime_cell(&mut self, id: u64, new_coord: WorldCoord) -> Result<(), String> {
+        if !self.runtime_cells.contains_key(&id) {
+            return Err("Not a runtime cell".to_string());
+        }
+
+        if let Some(old_coord) = self.runtime_id_to_coord.remove(&id) {
+            self.coord_to_runtime_id.remove(&old_coord);
+            self.mark_physics_dirty(id); // Dirty old position
+        }
+
+        self.runtime_id_to_coord.insert(id, new_coord);
+        self.coord_to_runtime_id.insert(new_coord, id);
+        self.mark_physics_dirty(id); // Dirty new position
+
+        Ok(())
+    }
+
+    pub fn delete_cell_runtime(&mut self, id: u64) {
+        if self.runtime_cells.contains_key(&id) {
+            if let Some(coord) = self.runtime_id_to_coord.remove(&id) {
+                self.coord_to_runtime_id.remove(&coord);
+                self.mark_physics_dirty(id);
+            }
+            self.runtime_cells.remove(&id);
+            self.runtime_state.remove(&id);
+        } else if self.id_to_coord.contains_key(&id) {
+            self.runtime_state.entry(id).or_default().is_deleted = true;
+            self.mark_physics_dirty(id);
+        }
+    }
+
+    pub(crate) fn generate_runtime_unique_id(&self) -> u64 {
+        use chrono::Local;
+        use std::hash::{Hash, Hasher};
+
+        let mut retry_count = 0;
+
+        loop {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+
+            let timestamp = Local::now()
+                .format("%Y:%m:%d:%S:%f")
+                .to_string();
+
+            timestamp.hash(&mut hasher);
+            retry_count.hash(&mut hasher);
+
+            let hash = hasher.finish();
+
+            // Map to 9 digit range: 100,000,000 to 999,999,999.
+            let id = 100_000_000 + (hash % 900_000_000);
+
+            if !self.runtime_cells.contains_key(&id) && !self.cells.values().any(|cell| cell.id == id) {
+                return id;
+            }
+
+            retry_count += 1;
+        }
+    }
+
+    pub fn set_attribute_runtime(&mut self, coord: WorldCoord, key: String, value: super::cell::AttributeValue) {
+        let id = self.get_effective_cell(coord).map(|c| c.id);
+        if let Some(id) = id {
             self.runtime_state
-                .entry(cell.id)
+                .entry(id)
                 .or_default()
                 .attribute_overrides
                 .insert(key, value);
@@ -268,8 +414,9 @@ impl World {
     }
 
     pub fn remove_attribute_runtime(&mut self, coord: WorldCoord, key: &str) {
-        if let Some(cell) = self.cells.get(&coord) {
-            if let Some(rs) = self.runtime_state.get_mut(&cell.id) {
+        let id = self.get_effective_cell(coord).map(|c| c.id);
+        if let Some(id) = id {
+            if let Some(rs) = self.runtime_state.get_mut(&id) {
                 rs.attribute_overrides.remove(key);
             }
         }
@@ -280,7 +427,13 @@ impl World {
         for id in self.runtime_state.keys() {
             self.physics_dirty_cells.insert(*id);
         }
+        for id in self.runtime_cells.keys() {
+            self.physics_dirty_cells.insert(*id);
+        }
         self.runtime_state.clear();
+        self.runtime_cells.clear();
+        self.runtime_id_to_coord.clear();
+        self.coord_to_runtime_id.clear();
     }
 
     pub fn set_cell(&mut self, coord: WorldCoord, cell_type: CellType) -> u64 {

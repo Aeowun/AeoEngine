@@ -28,6 +28,10 @@ pub trait EngineHost {
 
     fn set_attribute(&mut self, id: u64, key: String, value: Value) -> Result<(), String>;
     fn remove_attribute(&mut self, id: u64, key: &str) -> Result<(), String>;
+
+    fn create_runtime_cell(&mut self, cell_type: &str) -> Result<(HandleKind, u64), String>;
+    fn move_runtime_cell(&mut self, id: u64, x: i32, y: i32, z: i32) -> Result<(), String>;
+    fn delete_cell(&mut self, id: u64) -> Result<(), String>;
 }
 
 /// A simple implementation of EngineHost that just wraps an EntityManager.
@@ -93,6 +97,18 @@ impl EngineHost for EntityManager {
 
     fn remove_attribute(&mut self, _id: u64, _key: &str) -> Result<(), String> {
         Ok(())
+    }
+
+    fn create_runtime_cell(&mut self, _cell_type: &str) -> Result<(HandleKind, u64), String> {
+        Err("Runtime cell creation not supported in this host".to_string())
+    }
+
+    fn move_runtime_cell(&mut self, _id: u64, _x: i32, _y: i32, _z: i32) -> Result<(), String> {
+        Err("Runtime cell movement not supported in this host".to_string())
+    }
+
+    fn delete_cell(&mut self, _id: u64) -> Result<(), String> {
+        Err("Cell deletion not supported in this host".to_string())
     }
 }
 

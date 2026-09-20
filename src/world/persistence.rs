@@ -975,4 +975,52 @@ mod tests {
 
         fs::remove_file(path).ok();
     }
+
+    #[test]
+    fn test_persistence_firewall_regression() {
+        // 1. Create an authored Cell.
+        let mut world = World::new();
+        let auth_coord = WorldCoord::new(1, 1, 1);
+        let auth_id = world.set_cell(auth_coord, CellType::Block);
+
+        // 2. Create a runtime Cell through the runtime API.
+        let runtime_id = world.create_runtime_cell(CellType::Block);
+        let runtime_coord = WorldCoord::new(2, 2, 2);
+        world.move_runtime_cell(runtime_id, runtime_coord).unwrap();
+
+        // 3. Change the runtime Cell's properties.
+        if let Some(cell) = world.runtime_cells.get_mut(&runtime_id) {
+            cell.color_rgb = Vec3::new(1.0, 0.0, 0.0);
+            cell.attributes.insert("temp".to_string(), AttributeValue::Bool(true));
+        }
+
+        // 4. Call save_world(...).
+        let path = Path::new("test_persistence_firewall.dat");
+        save_world(&world, path).unwrap();
+
+        // 5. Read the saved file.
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        // 6. Verify the runtime Cell does NOT appear.
+        assert!(loaded_world.resolve_cell_id(runtime_id).is_none());
+        assert!(loaded_world.get(runtime_coord).is_none());
+
+        // 7. Verify the authored Cell still appears normally.
+        assert!(loaded_world.resolve_cell_id(auth_id).is_some());
+        assert!(loaded_world.get(auth_coord).is_some());
+
+        // 8. Clear runtime state.
+        world.clear_runtime_state();
+
+        // 9. Verify the runtime Cell is gone.
+        assert!(world.runtime_cells.is_empty());
+        assert!(world.resolve_cell_id(runtime_id).is_none());
+
+        // 10. Verify the authored Cell remains unchanged.
+        assert!(world.get(auth_coord).is_some());
+        assert_eq!(world.get(auth_coord).unwrap().id, auth_id);
+
+        fs::remove_file(path).ok();
+    }
 }

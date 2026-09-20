@@ -268,6 +268,36 @@ The suspended function resumes after the `wait()` rather than restarting from th
 
 AeoScript provides standard-library functionality through namespaces.
 
+### `cell`
+
+Engine object creation:
+
+* `new(type)`
+* `delete(handle)`
+
+`cell.new(type)` creates a new **Play-mode/runtime-only Cell** of the specified type. Runtime cells are not part of the authored World data, are not persisted to disk, and are discarded when Play mode stops or runtime state is cleared.
+
+`cell.delete(handle)` removes a Cell from the current Play-time world. If the target is an authored World Cell, it is marked as deleted for the duration of the Play session but its authored data is preserved. If the target is a runtime-created Cell, it is destroyed. In both cases, the Cell becomes effective again or is removed entirely when Play stops.
+
+Supported types:
+
+* `"Block"`
+* `"FxBlock"`
+* `"Player"`
+* `"NPC"`
+* `"Light"`
+* `"SpawnPoint"`
+
+Returns a `Cell` or `Light` handle.
+
+Example:
+
+```aeoscript
+const block = cell.new("Block")
+block.position = [10, 5, 10]
+block.color = [0, 1, 0]
+```
+
 ### `math`
 
 Deterministic mathematical operations including:
@@ -368,7 +398,20 @@ AeoScript attribute writes create temporary overrides. Reads return the effectiv
 
 Assigning `nil` to a runtime attribute removes the override and restores the authored value.
 
-These changes are temporary runtime state.
+### Mutable Runtime Properties
+
+Runtime-created Cells (`cell.new()`) support the following mutable properties:
+
+* `position`: `[x, y, z]` (Relocates the cell in the grid)
+* `visible`: `bool`
+* `enabled`: `bool` (For Lights)
+* `solid`: `bool`
+* `anchored`: `bool`
+* `color`: `[r, g, b]`
+* `offset`: `[x, y, z]`
+* `name`: `string`
+
+All changes to these properties are temporary runtime state.
 
 When Play mode ends:
 

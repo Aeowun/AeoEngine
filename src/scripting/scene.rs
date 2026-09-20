@@ -647,51 +647,117 @@ mod tests {
 
             match kind {
                 HandleKind::Cell | HandleKind::Light => {
-                    if let Some(coord) = self.world.resolve_cell_id(id) {
-                        if let Some(cell) = self.world.get(coord) {
-                            match name {
-                                "id" => return Ok(Some(Value::Number(cell.id as f64))),
-                                "name" => return Ok(Some(Value::String(cell.entity_identity.clone().unwrap_or_else(|| "Cell".to_string())))),
-                                "cellType" => return Ok(Some(Value::String(format!("{:?}", cell.cell_type)))),
-                                "position" => return Ok(Some(Value::array(vec![
-                                    Value::Number(coord.x as f64),
-                                    Value::Number(coord.y as f64),
-                                    Value::Number(coord.z as f64),
-                                ]))),
-                                "visible" => return Ok(Some(Value::Bool(self.world.is_cell_visible(coord)))),
-                                "enabled" => return Ok(Some(Value::Bool(self.world.is_light_enabled(coord)))),
-                                "solid" => return Ok(Some(Value::Bool(self.world.is_cell_solid(coord)))),
-                                "anchored" => return Ok(Some(Value::Bool(self.world.is_cell_anchored(coord)))),
-                                "color" => {
-                                    let color = self.world.get_effective_color(coord);
+                    if let Some(cell) = self.world.get_effective_cell_by_id(id) {
+                        match name {
+                            "id" => return Ok(Some(Value::Number(cell.id as f64))),
+                            "name" => return Ok(Some(Value::String(cell.entity_identity.clone().unwrap_or_else(|| "Cell".to_string())))),
+                            "cellType" => return Ok(Some(Value::String(format!("{:?}", cell.cell_type)))),
+                            "position" => {
+                                if let Some(coord) = self.world.resolve_cell_id(id) {
                                     return Ok(Some(Value::array(vec![
-                                        Value::Number(color.x as f64),
-                                        Value::Number(color.y as f64),
-                                        Value::Number(color.z as f64),
+                                        Value::Number(coord.x as f64),
+                                        Value::Number(coord.y as f64),
+                                        Value::Number(coord.z as f64),
                                     ])));
+                                } else {
+                                    return Ok(Some(Value::Nil));
                                 }
-                                "offset" => {
-                                    let offset = self.world.get_visual_offset(coord);
-                                    return Ok(Some(Value::array(vec![
-                                        Value::Number(offset.x as f64),
-                                        Value::Number(offset.y as f64),
-                                        Value::Number(offset.z as f64),
-                                    ])));
-                                }
-                                "attributes" => {
-                                    let mut map = BTreeMap::new();
-                                    for (key, attr) in self.world.get_effective_attributes(coord) {
-                                        let val = match attr {
-                                            AttributeValue::Number(n) => Value::Number(n),
-                                            AttributeValue::Bool(b) => Value::Bool(b),
-                                            AttributeValue::String(s) => Value::String(s),
-                                        };
-                                        map.insert(MapKey::String(key), val);
-                                    }
-                                    return Ok(Some(Value::map(map)));
-                                }
-                                _ => {}
                             }
+                            "visible" => {
+                                if let Some(coord) = self.world.resolve_cell_id(id) {
+                                    return Ok(Some(Value::Bool(self.world.is_cell_visible(coord))));
+                                } else {
+                                    if let Some(rs) = self.world.runtime_state.get(&id) {
+                                        if let Some(v) = rs.visible { return Ok(Some(Value::Bool(v))); }
+                                    }
+                                    return Ok(Some(Value::Bool(cell.visible)));
+                                }
+                            }
+                            "enabled" => {
+                                 if let Some(coord) = self.world.resolve_cell_id(id) {
+                                    return Ok(Some(Value::Bool(self.world.is_light_enabled(coord))));
+                                } else {
+                                    if let Some(rs) = self.world.runtime_state.get(&id) {
+                                        if let Some(v) = rs.light_enabled { return Ok(Some(Value::Bool(v))); }
+                                    }
+                                    return Ok(Some(Value::Bool(cell.light_enabled)));
+                                }
+                            }
+                            "solid" => {
+                                if let Some(coord) = self.world.resolve_cell_id(id) {
+                                    return Ok(Some(Value::Bool(self.world.is_cell_solid(coord))));
+                                } else {
+                                    if let Some(rs) = self.world.runtime_state.get(&id) {
+                                        if let Some(v) = rs.solid { return Ok(Some(Value::Bool(v))); }
+                                    }
+                                    return Ok(Some(Value::Bool(cell.solid)));
+                                }
+                            }
+                            "anchored" => {
+                                if let Some(coord) = self.world.resolve_cell_id(id) {
+                                    return Ok(Some(Value::Bool(self.world.is_cell_anchored(coord))));
+                                } else {
+                                    if let Some(rs) = self.world.runtime_state.get(&id) {
+                                        if let Some(v) = rs.anchored { return Ok(Some(Value::Bool(v))); }
+                                    }
+                                    return Ok(Some(Value::Bool(cell.anchored)));
+                                }
+                            }
+                            "color" => {
+                                let color = if let Some(coord) = self.world.resolve_cell_id(id) {
+                                    self.world.get_effective_color(coord)
+                                } else {
+                                    if let Some(rs) = self.world.runtime_state.get(&id) {
+                                        if let Some(v) = rs.color_rgb { v } else { cell.color_rgb }
+                                    } else {
+                                        cell.color_rgb
+                                    }
+                                };
+                                return Ok(Some(Value::array(vec![
+                                    Value::Number(color.x as f64),
+                                    Value::Number(color.y as f64),
+                                    Value::Number(color.z as f64),
+                                ])));
+                            }
+                            "offset" => {
+                                let offset = if let Some(coord) = self.world.resolve_cell_id(id) {
+                                    self.world.get_visual_offset(coord)
+                                } else {
+                                    if let Some(rs) = self.world.runtime_state.get(&id) {
+                                        rs.visual_offset.unwrap_or(Vec3::ZERO)
+                                    } else {
+                                        Vec3::ZERO
+                                    }
+                                };
+                                return Ok(Some(Value::array(vec![
+                                    Value::Number(offset.x as f64),
+                                    Value::Number(offset.y as f64),
+                                    Value::Number(offset.z as f64),
+                                ])));
+                            }
+                            "attributes" => {
+                                let mut map = BTreeMap::new();
+                                for (key, attr) in &cell.attributes {
+                                    let val = match attr {
+                                        AttributeValue::Number(n) => Value::Number(*n),
+                                        AttributeValue::Bool(b) => Value::Bool(*b),
+                                        AttributeValue::String(s) => Value::String(s.clone()),
+                                    };
+                                    map.insert(MapKey::String(key.clone()), val);
+                                }
+                                if let Some(rs) = self.world.runtime_state.get(&id) {
+                                    for (key, attr) in &rs.attribute_overrides {
+                                        let val = match attr {
+                                            AttributeValue::Number(n) => Value::Number(*n),
+                                            AttributeValue::Bool(b) => Value::Bool(*b),
+                                            AttributeValue::String(s) => Value::String(s.clone()),
+                                        };
+                                        map.insert(MapKey::String(key.clone()), val);
+                                    }
+                                }
+                                return Ok(Some(Value::map(map)));
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -713,21 +779,53 @@ mod tests {
 
         fn set_property(&mut self, kind: crate::scripting::value::HandleKind, id: u64, name: &str, value: crate::scripting::value::Value) -> Result<(), String> {
             use crate::scripting::value::HandleKind;
-            match kind {
-                HandleKind::Cell | HandleKind::Light => {
-                    if let Some(coord) = self.world.resolve_cell_id(id) {
+            if let Some(cell) = self.world.get_effective_cell_by_id(id) {
+                match kind {
+                    HandleKind::Cell | HandleKind::Light => {
                         match name {
+                            "position" => {
+                                let basket = value.as_basket()?;
+                                let borrowed = basket.borrow();
+                                if borrowed.elements.len() != 3 {
+                                    return Err("position must be a basket of 3 numbers [x, y, z]".to_string());
+                                }
+                                let x = borrowed.elements[0].as_number()? as i32;
+                                let y = borrowed.elements[1].as_number()? as i32;
+                                let z = borrowed.elements[2].as_number()? as i32;
+                                return self.move_runtime_cell(id, x, y, z);
+                            }
+                            "name" => {
+                                let name = value.as_string()?;
+                                if let Some(cell) = self.world.runtime_cells.get_mut(&id) {
+                                    cell.entity_identity = Some(name.to_string());
+                                } else {
+                                    return Err("Cannot change name of an authored cell at runtime".to_string());
+                                }
+                                return Ok(());
+                            }
                             "visible" => {
                                 let visible = value.as_bool()?;
-                                self.world.set_cell_visible_runtime(coord, visible);
+                                if let Some(coord) = self.world.resolve_cell_id(id) {
+                                    self.world.set_cell_visible_runtime(coord, visible);
+                                } else {
+                                    self.world.runtime_state.entry(id).or_default().visible = Some(visible);
+                                }
                             }
                             "solid" => {
                                 let solid = value.as_bool()?;
-                                self.world.set_cell_solid_runtime(coord, solid);
+                                if let Some(coord) = self.world.resolve_cell_id(id) {
+                                    self.world.set_cell_solid_runtime(coord, solid);
+                                } else {
+                                    self.world.runtime_state.entry(id).or_default().solid = Some(solid);
+                                }
                             }
                             "anchored" => {
                                 let anchored = value.as_bool()?;
-                                self.world.set_cell_anchored_runtime(coord, anchored);
+                                if let Some(coord) = self.world.resolve_cell_id(id) {
+                                    self.world.set_cell_anchored_runtime(coord, anchored);
+                                } else {
+                                    self.world.runtime_state.entry(id).or_default().anchored = Some(anchored);
+                                }
                             }
                             "color" => {
                                 let basket = value.as_basket()?;
@@ -736,18 +834,27 @@ mod tests {
                                     let r = borrowed.elements[0].as_number()? as f32;
                                     let g = borrowed.elements[1].as_number()? as f32;
                                     let b = borrowed.elements[2].as_number()? as f32;
-                                    self.world.set_cell_color_runtime(coord, glam::Vec3::new(r, g, b));
+                                    let color = glam::Vec3::new(r, g, b);
+                                    if let Some(coord) = self.world.resolve_cell_id(id) {
+                                        self.world.set_cell_color_runtime(coord, color);
+                                    } else {
+                                        self.world.runtime_state.entry(id).or_default().color_rgb = Some(color);
+                                    }
                                 }
                             }
                             "enabled" => {
                                 let enabled = value.as_bool()?;
-                                self.world.set_light_enabled_runtime(coord, enabled);
+                                if let Some(coord) = self.world.resolve_cell_id(id) {
+                                    self.world.set_light_enabled_runtime(coord, enabled);
+                                } else {
+                                    self.world.runtime_state.entry(id).or_default().light_enabled = Some(enabled);
+                                }
                             }
                             _ => {}
                         }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
             Ok(())
         }
@@ -757,7 +864,7 @@ mod tests {
         }
 
         fn set_attribute(&mut self, id: u64, key: String, value: crate::scripting::value::Value) -> Result<(), String> {
-            if let Some(coord) = self.world.resolve_cell_id(id) {
+            if self.world.get_effective_cell_by_id(id).is_some() {
                 use crate::world::cell::AttributeValue;
                 use crate::scripting::value::Value;
                 let attr_val = match value {
@@ -766,7 +873,7 @@ mod tests {
                     Value::String(s) => AttributeValue::String(s),
                     _ => return Err(format!("Cell attributes only support Number, Bool, or String. Got {}", value.type_name())),
                 };
-                self.world.set_attribute_runtime(coord, key, attr_val);
+                self.world.runtime_state.entry(id).or_default().attribute_overrides.insert(key, attr_val);
                 Ok(())
             } else {
                 Err("invalid cell handle for attribute assignment".to_string())
@@ -774,12 +881,45 @@ mod tests {
         }
 
         fn remove_attribute(&mut self, id: u64, key: &str) -> Result<(), String> {
-            if let Some(coord) = self.world.resolve_cell_id(id) {
-                self.world.remove_attribute_runtime(coord, key);
+            if self.world.get_effective_cell_by_id(id).is_some() {
+                if let Some(rs) = self.world.runtime_state.get_mut(&id) {
+                    rs.attribute_overrides.remove(key);
+                }
                 Ok(())
             } else {
                 Err("invalid cell handle for attribute removal".to_string())
             }
+        }
+
+        fn create_runtime_cell(&mut self, cell_type: &str) -> Result<(crate::scripting::value::HandleKind, u64), String> {
+            let ct = match cell_type {
+                "Block" => crate::world::CellType::Block,
+                "FxBlock" => crate::world::CellType::FxBlock,
+                "Player" => crate::world::CellType::Player,
+                "NPC" => crate::world::CellType::NPC,
+                "Light" => crate::world::CellType::Light,
+                "SpawnPoint" => crate::world::CellType::SpawnPoint,
+                "Empty" => return Err("Cannot create Empty cell".to_string()),
+                _ => return Err(format!("Unknown cell type: {}", cell_type)),
+            };
+
+            let id = self.world.create_runtime_cell(ct);
+            let kind = if ct == crate::world::CellType::Light {
+                crate::scripting::value::HandleKind::Light
+            } else {
+                crate::scripting::value::HandleKind::Cell
+            };
+
+            Ok((kind, id))
+        }
+
+        fn move_runtime_cell(&mut self, id: u64, x: i32, y: i32, z: i32) -> Result<(), String> {
+            self.world.move_runtime_cell(id, crate::world::WorldCoord::new(x, y, z))
+        }
+
+        fn delete_cell(&mut self, id: u64) -> Result<(), String> {
+            self.world.delete_cell_runtime(id);
+            Ok(())
         }
     }
 
@@ -2896,5 +3036,199 @@ debug.log("winner_id", winner_cell.id)
             assert!(!cell.attributes.contains_key("winner"), "Authored attributes must not be modified by runtime writes");
         }
         assert_eq!(true_count, 1);
+    }
+
+    #[test]
+    fn test_runtime_cell_creation_basic() {
+        let source = r#"
+const block = cell.new("Block")
+block.position = [4, 5, 6]
+block.color = [1, 0, 0]
+block.visible = true
+block.solid = true
+block.anchored = true
+block.attributes["owner"] = "Alpha"
+block.name = "RuntimeBlock"
+debug.log("created_id", block.id)
+"#;
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse().unwrap();
+        let mut scene = ScriptScene::new(program, vec![], &mut host).unwrap();
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+        let id_str = output.iter().find(|r| r.message.starts_with("created_id")).unwrap().message.split_whitespace().last().unwrap();
+        let runtime_id: u64 = id_str.parse::<f64>().unwrap() as u64;
+
+        // Verify in World
+        assert!(th.world.runtime_cells.contains_key(&runtime_id));
+        let coord = WorldCoord::new(4, 5, 6);
+        assert_eq!(th.world.runtime_id_to_coord.get(&runtime_id), Some(&coord));
+
+        assert_eq!(th.world.get_effective_color(coord), Vec3::new(1.0, 0.0, 0.0));
+
+        let cell = th.world.runtime_cells.get(&runtime_id).unwrap();
+        assert_eq!(cell.entity_identity, Some("RuntimeBlock".to_string()));
+
+        assert_eq!(th.world.get_effective_attribute(coord, "owner"), Some(crate::world::cell::AttributeValue::String("Alpha".to_string())));
+        assert!(th.world.is_cell_visible(coord));
+        assert!(th.world.is_cell_solid(coord));
+        assert!(th.world.is_cell_anchored(coord));
+
+        // Verify authored world is EMPTY
+        assert!(th.world.cells.is_empty());
+    }
+
+    #[test]
+    fn test_runtime_cell_types() {
+        let cases = [
+            ("Block", crate::scripting::value::HandleKind::Cell),
+            ("FxBlock", crate::scripting::value::HandleKind::Cell),
+            ("Player", crate::scripting::value::HandleKind::Cell),
+            ("NPC", crate::scripting::value::HandleKind::Cell),
+            ("Light", crate::scripting::value::HandleKind::Light),
+            ("SpawnPoint", crate::scripting::value::HandleKind::Cell),
+        ];
+
+        for (type_name, _) in cases {
+            let mut th = test_host();
+            let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+
+            let source = format!("const c = cell.new(\"{}\")\ndebug.log(\"kind\", c.id)", type_name);
+            let tokens = Lexer::new(&source).tokenize().unwrap();
+            let program = Parser::new(tokens).parse().unwrap();
+            let mut scene = ScriptScene::new(program, vec![], &mut host).unwrap();
+            scene.start(&mut host).unwrap();
+            scene.update(0.0, &mut host).unwrap();
+
+            let id_str = scene.output().iter().find(|r| r.message.starts_with("kind")).unwrap().message.split_whitespace().last().unwrap();
+            let id: u64 = id_str.parse::<f64>().unwrap() as u64;
+            let cell = th.world.runtime_cells.get(&id).expect(type_name);
+            assert_eq!(format!("{:?}", cell.cell_type), type_name);
+        }
+
+        // Empty should fail
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let source = "cell.new(\"Empty\")";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse().unwrap();
+        let mut scene = ScriptScene::new(program, vec![], &mut host).unwrap();
+        scene.start(&mut host).unwrap();
+        let res = scene.update(0.0, &mut host);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("Cannot create Empty cell"));
+    }
+
+    #[test]
+    fn test_runtime_reset_creation() {
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let source = "const c = cell.new(\"Block\")\nc.position = [1, 2, 3]";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse().unwrap();
+        let mut scene = ScriptScene::new(program, vec![], &mut host).unwrap();
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        assert!(!th.world.runtime_cells.is_empty());
+
+        th.world.clear_runtime_state();
+        assert!(th.world.runtime_cells.is_empty());
+        assert!(th.world.runtime_id_to_coord.is_empty());
+        assert!(th.world.coord_to_runtime_id.is_empty());
+    }
+
+    #[test]
+    fn test_runtime_cell_deletion_authored() {
+        use crate::world::cell::AttributeValue;
+        let source = r#"
+const green = find("Green")[0]
+cell.delete(green)
+debug.log("deleted")
+"#;
+        let mut th = test_host();
+        let coord = WorldCoord::new(-5, 18, 1);
+        let cell_id = add_authored_entity(&mut th.world, coord, CellType::Block, "Green");
+
+        if let Some(cell) = th.world.get_mut(coord) {
+            cell.attributes.insert("test".to_string(), AttributeValue::Bool(true));
+        }
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse().unwrap();
+        let mut scene = ScriptScene::new(program, vec![], &mut host).unwrap();
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        assert!(scene.output().iter().any(|r| r.message == "deleted"));
+
+        // Verify effective world: gone
+        assert!(th.world.resolve_cell_id(cell_id).is_none());
+        assert!(th.world.get_effective_cell(coord).is_none());
+        assert!(!th.world.active_effective_blocks().contains(&coord));
+
+        // Verify authored world: still there
+        assert!(th.world.cells.contains_key(&coord));
+        let auth_cell = th.world.get(coord).unwrap();
+        assert_eq!(auth_cell.entity_identity, Some("Green".to_string()));
+        assert_eq!(auth_cell.attributes.get("test"), Some(&AttributeValue::Bool(true)));
+
+        // Stop Play (clear runtime state)
+        th.world.clear_runtime_state();
+
+        // Verify effective world: restored
+        assert_eq!(th.world.resolve_cell_id(cell_id), Some(coord));
+        assert!(th.world.get_effective_cell(coord).is_some());
+    }
+
+    #[test]
+    fn test_runtime_cell_deletion_runtime_created() {
+        let source = r#"
+const block = cell.new("Block")
+debug.log("created_id", block.id)
+cell.delete(block)
+debug.log("deleted")
+"#;
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse().unwrap();
+        let mut scene = ScriptScene::new(program, vec![], &mut host).unwrap();
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        let output = scene.output();
+        let id_str = output.iter().find(|r| r.message.starts_with("created_id")).unwrap().message.split_whitespace().last().unwrap();
+        let runtime_id: u64 = id_str.parse::<f64>().unwrap() as u64;
+
+        assert!(output.iter().any(|r| r.message == "deleted"));
+
+        // Verify gone from everywhere
+        assert!(!th.world.runtime_cells.contains_key(&runtime_id));
+        assert!(th.world.resolve_cell_id(runtime_id).is_none());
+    }
+
+    #[test]
+    fn test_runtime_cell_deletion_repeated() {
+        let source = r#"
+const block = cell.new("Block")
+cell.delete(block)
+cell.delete(block)
+debug.log("ok")
+"#;
+        let mut th = test_host();
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse().unwrap();
+        let mut scene = ScriptScene::new(program, vec![], &mut host).unwrap();
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        assert!(scene.output().iter().any(|r| r.message == "ok"));
     }
 }

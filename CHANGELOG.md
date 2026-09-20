@@ -392,13 +392,18 @@ Verification: `cargo check` passed and the full test suite passed with **303 tes
 * Attribute Reset Semantics: Assigning `nil` to a runtime attribute removes the override and restores the authored value.
 * `math.random()`: Generates a random Number in the range [0.0, 1.0).
 * `math.random(min, max)`: Generates a random integer-valued Number in the inclusive range [min, max].
-* Regression coverage for runtime attribute preservation, authored state protection, and `math.random` behavior.
+* `cell.new(type)`: Creates a runtime-only Cell that exists only during the Play session and is never persisted.
+* Mutable Cell Position: Runtime-created Cells can be relocated in the grid using the `position` property.
+* `cell.delete(handle)`: Removes a Cell from the active Play-time world. Authored Cells are preserved and return upon stopping Play, while runtime Cells are destroyed.
+* Expanded mutable Cell properties for runtime-only instances including `name`, `visible`, `solid`, `anchored`, and `color`.
+* Regression coverage for runtime cell creation, authored-state preservation, and `math.random` behavior.
 
 ### Changed
 
 * `ScriptHostBridge::get_property` for "attributes" now returns the effective merged attribute map.
 * `Interpreter::assign_target` now intercepts attribute-index assignments to route them to the engine's runtime state.
+* World rendering and physics now use the "effective" view of the world, combining authored and runtime-created Cells.
 
 ### Notes
 
-Version `0.7.1` introduces temporary runtime data for Cells and randomized selection for AeoScript, while maintaining the absolute invariant that Play-mode execution never modifies authored project data.
+Version `0.7.1` introduces temporary runtime data and dynamic object creation for AeoScript, while maintaining the absolute invariant that Play-mode execution never modifies authored project data.

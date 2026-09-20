@@ -107,6 +107,28 @@ pub fn call_stdlib_function(
             };
             return Ok(Some(res));
         }
+        "cell" => {
+            let res = match method_name {
+                "new" => {
+                    if args.len() != 1 {
+                        return Err("cell.new expects exactly 1 argument (cell_type)".to_string());
+                    }
+                    let cell_type = args[0].as_string()?;
+                    let (kind, id) = _host.engine.create_runtime_cell(cell_type)?;
+                    Value::Handle { kind, id }
+                }
+                "delete" => {
+                    if args.len() != 1 {
+                        return Err("cell.delete expects exactly 1 argument (handle)".to_string());
+                    }
+                    let (_, id) = args[0].as_handle()?;
+                    _host.engine.delete_cell(id)?;
+                    Value::Nil
+                }
+                _ => return Ok(None),
+            };
+            return Ok(Some(res));
+        }
         "basket" => {
             let res = match method_name {
                 "insert" => {

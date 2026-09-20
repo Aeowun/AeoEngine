@@ -436,8 +436,8 @@ impl Renderer {
 
             gl::BindVertexArray(self.block_vao);
 
-            for coord in world.active_blocks() {
-                if let Some(cell) = world.get(coord) {
+            for coord in world.active_effective_blocks() {
+                if let Some(cell) = world.get_effective_cell(coord) {
                     let renderable_cell =
                         cell.cell_type == CellType::Block || cell.cell_type == CellType::SpawnPoint;
 
@@ -641,8 +641,8 @@ impl Renderer {
 
             let mut point_lights = Vec::new();
 
-            for coord in world.active_blocks() {
-                if let Some(cell) = world.get(coord) {
+            for coord in world.active_effective_blocks() {
+                if let Some(cell) = world.get_effective_cell(coord) {
                     if cell.cell_type == CellType::Light && world.is_light_enabled(coord) {
                         point_lights.push((coord, cell));
 
@@ -700,8 +700,8 @@ impl Renderer {
             let cam_right = Vec3::new(view.col(0).x, view.col(1).x, view.col(2).x);
             let cam_up = Vec3::new(view.col(0).y, view.col(1).y, view.col(2).y);
 
-            for coord in world.active_blocks() {
-                if let Some(cell) = world.get(coord) {
+            for coord in world.active_effective_blocks() {
+                if let Some(cell) = world.get_effective_cell(coord) {
                     // Editor-only bulb visualization centered inside the light cell
                     if cell.cell_type == CellType::Light && editor.mode == EditorMode::Editor {
                         gl::BindVertexArray(self.billboard_vao);

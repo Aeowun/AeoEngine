@@ -1687,7 +1687,7 @@ impl Interpreter {
                         self.log_values(&arg_values);
                         return Ok(Value::Nil);
                     }
-                    if object_name == "math" || object_name == "basket" || object_name == "string" {
+                    if object_name == "math" || object_name == "basket" || object_name == "string" || object_name == "cell" {
                         let arg_values = self.eval_arguments(instance, scopes, arguments, host)?;
                         if let Some(res) = super::stdlib::call_stdlib_function(self, instance, scopes, object_name, method, &arg_values, host)? {
                             return Ok(res);
@@ -1892,7 +1892,7 @@ impl Interpreter {
                         return Ok(Value::Number(host.delta_time));
                     }
 
-                    if object_name == "math" || object_name == "basket" || object_name == "string" {
+                    if object_name == "math" || object_name == "basket" || object_name == "string" || object_name == "cell" {
                         let values = self.eval_arguments(instance, scopes, arguments, host)?;
                         if let Some(res) = super::stdlib::call_stdlib_function(self, instance, scopes, object_name, name, &values, host)? {
                             return Ok(res);
@@ -2144,7 +2144,7 @@ impl Interpreter {
         scopes: &[Scope],
         name: &str,
     ) -> Result<Value, String> {
-        if name == "math" || name == "basket" || name == "string" {
+        if name == "math" || name == "basket" || name == "string" || name == "cell" {
             return Ok(Value::String(name.to_string()));
         }
         for scope in scopes.iter().rev() {
@@ -3698,6 +3698,10 @@ entity Test {
 
             fn set_attribute(&mut self, _: u64, _: String, _: Value) -> Result<(), String> { Ok(()) }
             fn remove_attribute(&mut self, _: u64, _: &str) -> Result<(), String> { Ok(()) }
+
+            fn create_runtime_cell(&mut self, _: &str) -> Result<(HandleKind, u64), String> { Err("Unsupported".to_string()) }
+            fn move_runtime_cell(&mut self, _: u64, _: i32, _: i32, _: i32) -> Result<(), String> { Err("Unsupported".to_string()) }
+            fn delete_cell(&mut self, _: u64) -> Result<(), String> { Ok(()) }
         }
 
         let mut ph = ParentHost { em: test_host() };

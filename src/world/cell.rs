@@ -65,6 +65,7 @@ pub struct RuntimeCellState {
     pub anchored: Option<bool>,
     pub visual_offset: Option<Vec3>,
     pub attribute_overrides: BTreeMap<String, AttributeValue>,
+    pub is_deleted: bool,
 }
 
 impl Default for Cell {

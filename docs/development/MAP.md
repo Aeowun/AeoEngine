@@ -58,7 +58,9 @@ Use this section first.
 | AeoScript values/handles | `src/scripting/value.rs` | `HandleKind` lines 4-23; `Value` lines 79-95 |
 | AeoScript host API | `src/scripting/api.rs` | `EngineHost` lines 4-24 |
 | Script bindings | `src/scripting/binding.rs` | `ScriptBinding` lines 8-13 |
-| AeoScript standard library | `src/scripting/stdlib.rs` | dispatch starts line 7; `math.random` |
+| AeoScript standard library | `src/scripting/stdlib.rs` | dispatch starts line 7; `math.random`; `cell.new`; `cell.delete` |
+| World authored grid | `src/world/world.rs` | `World.cells` map |
+| World runtime storage | `src/world/world.rs` | `World.runtime_cells`, `runtime_state.is_deleted` and indices |
 | Script scene/lifecycle integration | `src/scripting/scene.rs` | `ScriptScene` and scene/runtime orchestration |
 | AeoScript syntax tree | `src/scripting/ast.rs` | `Program`, declarations, statements, expressions |
 | AeoScript parser | `src/scripting/parser.rs` | parser implementation |
