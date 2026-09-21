@@ -1,0 +1,14 @@
+entity doorScript {
+
+    fn on_spawn() {
+    }
+
+    fn on_ready() {
+    }
+
+    fn update(dt: number) {
+    }
+
+    fn on_destroy() {
+    }
+}

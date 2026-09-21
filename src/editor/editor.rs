@@ -1103,6 +1103,24 @@ impl Editor {
                                 .range(0.0..=1.0),
                         );
                     });
+
+                    ui.separator();
+                    ui.checkbox(&mut world.sky.enabled, "Sky Enabled");
+                    ui.horizontal(|ui| {
+                        ui.label("Sky:");
+                        let mut current_preset = world.sky.preset.clone();
+                        egui::ComboBox::from_id_source("sky_preset_combo")
+                            .selected_text(&current_preset)
+                            .show_ui(ui, |ui| {
+                                for option in &["Temperate", "Tropical", "Desert", "Snowy", "Mars"] {
+                                    ui.selectable_value(&mut current_preset, option.to_string(), *option);
+                                }
+                            });
+                        if current_preset != world.sky.preset {
+                            world.sky.preset = current_preset;
+                            world.sky.update_preset_textures();
+                        }
+                    });
                 });
 
             // --- PHYSICS ---
