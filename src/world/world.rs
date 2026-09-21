@@ -29,37 +29,6 @@ impl Default for LightingSettings {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct SkySettings {
-    pub enabled: bool,
-    pub preset: String,
-    pub texture: String,
-}
-
-impl Default for SkySettings {
-    fn default() -> Self {
-        let mut s = Self {
-            enabled: true,
-            preset: "Temperate".to_string(),
-            texture: String::new(),
-        };
-        s.update_preset_textures();
-        s
-    }
-}
-
-impl SkySettings {
-    pub fn update_preset_textures(&mut self) {
-        self.texture = match self.preset.as_str() {
-            "Tropical" => "Cubemap_Tropical_01-512x512.png",
-            "Desert" => "Cubemap_Desert_01-512x512.png",
-            "Snowy" => "Cubemap_Snowy_01-512x512.png",
-            "Mars" => "Cubemap_Mars_01-512x512.png",
-            _ => "Cubemap_Temperate_01-512x512.png",
-        }.to_string();
-    }
-}
-
 #[derive(Clone)]
 pub struct World {
     // Authored grid data. We use a HashMap because the world is unbounded
@@ -88,9 +57,6 @@ pub struct World {
     // Authoritative scene lighting settings.
     pub lighting: LightingSettings,
 
-    // Authoritative scene sky settings.
-    pub sky: SkySettings,
-
     /// Authored script bindings for entities in this world.
     pub script_bindings: Vec<ScriptBinding>,
 
@@ -111,7 +77,6 @@ impl World {
             // We default to Earth standard gravity.
             gravity: Vec3::new(0.0, -9.81, 0.0),
             lighting: LightingSettings::default(),
-            sky: SkySettings::default(),
             script_bindings: Vec::new(),
             disabled_scripts: Vec::new(),
         }

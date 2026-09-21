@@ -1,10 +1,8 @@
 pub mod camera;
 pub mod mesh;
 pub mod shader;
-pub mod sky;
 
 use glam::{Mat4, Vec3};
-use image::GenericImageView;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::CString;
@@ -72,10 +70,7 @@ pub struct Renderer {
     shadow_depth_tex: u32,
 
     textures: RefCell<HashMap<String, u32>>,
-    cubemaps: RefCell<HashMap<String, u32>>,
     fallback_tex: u32,
-
-    sky_renderer: sky::SkyRenderer,
 
     width: f32,
     height: f32,
@@ -252,10 +247,7 @@ impl Renderer {
                 shadow_depth_tex,
 
                 textures: RefCell::new(textures),
-                cubemaps: RefCell::new(HashMap::new()),
                 fallback_tex,
-
-                sky_renderer: sky::SkyRenderer::new(),
 
                 width: width.max(1.0),
                 height: height.max(1.0),
@@ -290,50 +282,20 @@ impl Renderer {
         }
 
         // Try to load it if not found (identifier is treated as filename)
-        if !identifier.is_empty() {
-            let paths_to_try = vec![
-                format!(".assets/textures/{}", identifier),
-                format!(".assets/textures/{}.png", identifier),
-                format!(".assets/skybox/{}", identifier),
-                format!(".assets/skybox/{}.png", identifier),
-            ];
+        let path = format!(".assets/textures/{}", identifier);
+        // Also try with .png extension if missing
+        let paths_to_try = vec![path.clone(), format!("{}.png", path)];
 
-            for p in paths_to_try {
-                if std::path::Path::new(&p).exists() {
-                    if let Some(tex) = load_texture_from_file(&p) {
-                        map.insert(identifier.to_string(), tex);
-                        return tex;
-                    }
+        for p in paths_to_try {
+            if std::path::Path::new(&p).exists() {
+                if let Some(tex) = load_texture_from_file(&p) {
+                    map.insert(identifier.to_string(), tex);
+                    return tex;
                 }
             }
         }
 
         self.fallback_tex
-    }
-
-    pub fn get_cubemap(&self, identifier: &str) -> u32 {
-        let mut map = self.cubemaps.borrow_mut();
-        if let Some(&tex) = map.get(identifier) {
-            return tex;
-        }
-
-        if !identifier.is_empty() {
-            let paths_to_try = vec![
-                format!(".assets/skybox/{}", identifier),
-                format!(".assets/skybox/{}.png", identifier),
-            ];
-
-            for p in paths_to_try {
-                if std::path::Path::new(&p).exists() {
-                    if let Some(tex) = load_cubemap_from_file(&p) {
-                        map.insert(identifier.to_string(), tex);
-                        return tex;
-                    }
-                }
-            }
-        }
-
-        0 // Fail safely
     }
 
     pub fn width(&self) -> f32 {
@@ -521,9 +483,6 @@ impl Renderer {
             gl::ClearColor(0.0, 0.0, 0.0, 1.0);
 
             gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-
-            // Render sky environment layer behind all world geometry
-            self.sky_renderer.render(self, world, camera_pos, view_projection);
 
             gl::UseProgram(self.grid_program);
 
@@ -1482,76 +1441,6 @@ fn load_texture_from_file(path: &str) -> Option<u32> {
         }
     }
 }
-
-fn load_cubemap_from_file(path: &str) -> Option<u32> {
-    match image::open(path) {
-        Ok(img) => {
-            let (w, h) = img.dimensions();
-            // Assets are 2048x1536, which is 4:3 (Horizontal Cross layout)
-            if w != h * 4 / 3 {
-                eprintln!("Invalid cubemap dimensions for cross layout: {}x{}. Expected 4:3 ratio.", w, h);
-                return None;
-            }
-            let face_size = h / 3;
-
-            // Convert to RGBA8 for consistent format
-            let rgba_img = img.to_rgba8();
-
-            let mut tex = 0;
-            unsafe {
-                gl::GenTextures(1, &mut tex);
-                gl::BindTexture(gl::TEXTURE_CUBE_MAP, tex);
-            }
-
-            // AeoEngine skybox assets use a horizontal cross layout.
-            // The X arms are opposite the default OpenGL cross convention:
-            // PNG left arm maps to +X, PNG right arm maps to -X.
-            let faces = [
-                (0, 1, gl::TEXTURE_CUBE_MAP_POSITIVE_X), // Left image -> Right face
-                (2, 1, gl::TEXTURE_CUBE_MAP_NEGATIVE_X), // Right image -> Left face
-                (1, 0, gl::TEXTURE_CUBE_MAP_POSITIVE_Y), // Top
-                (1, 2, gl::TEXTURE_CUBE_MAP_NEGATIVE_Y), // Bottom
-                (3, 1, gl::TEXTURE_CUBE_MAP_POSITIVE_Z), // Back
-                (1, 1, gl::TEXTURE_CUBE_MAP_NEGATIVE_Z), // Front
-            ];
-
-            for (col, row, target) in faces {
-                let x = col * face_size;
-                let y = row * face_size;
-                let face_data = rgba_img.view(x, y, face_size, face_size).to_image();
-
-                unsafe {
-                    gl::TexImage2D(
-                        target,
-                        0,
-                        gl::RGBA as i32,
-                        face_size as i32,
-                        face_size as i32,
-                        0,
-                        gl::RGBA,
-                        gl::UNSIGNED_BYTE,
-                        face_data.as_raw().as_ptr() as *const _,
-                    );
-                }
-            }
-
-            unsafe {
-                gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-                gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-                gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
-                gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
-                gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as i32);
-                gl::BindTexture(gl::TEXTURE_CUBE_MAP, 0);
-            }
-            Some(tex)
-        }
-        Err(e) => {
-            eprintln!("Failed to load cubemap {}: {:?}", path, e);
-            None
-        }
-    }
-}
-
 
 
 const GRID_VERTEX_SHADER: &str = r#"

@@ -39,14 +39,6 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
         world.lighting.ambient_intensity
     )?;
 
-    // Save global sky settings.
-    writeln!(
-        file,
-        "SKY {} {}",
-        world.sky.enabled,
-        if world.sky.texture.is_empty() { "None" } else { &world.sky.texture }
-    )?;
-
     for binding in &world.script_bindings {
         writeln!(
             file,
@@ -211,7 +203,6 @@ fn parse_block_properties(cell: &mut Cell, parts: &[&str], offset: usize) {
 /// save format used by the engine.
 pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
     *world = World::new();
-    let mut has_sky_line = false;
 
     if !path.exists() {
         return Ok(());
@@ -262,29 +253,6 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
             }
             world.lighting.global_light_intensity = parts[9].parse::<f32>().unwrap_or(1.0);
             world.lighting.ambient_intensity = parts[10].parse::<f32>().unwrap_or(0.2);
-            continue;
-        }
-
-        if parts[0] == "SKY" && parts.len() >= 2 {
-            has_sky_line = true;
-            world.sky.enabled = parts[1].parse::<bool>().unwrap_or(false);
-            if parts.len() >= 3 {
-                let tex = parts[2];
-                world.sky.texture = if tex == "None" { String::new() } else { tex.to_string() };
-            }
-
-            // Infer preset from texture name
-            if world.sky.texture.contains("Tropical") {
-                world.sky.preset = "Tropical".to_string();
-            } else if world.sky.texture.contains("Desert") {
-                world.sky.preset = "Desert".to_string();
-            } else if world.sky.texture.contains("Snowy") {
-                world.sky.preset = "Snowy".to_string();
-            } else if world.sky.texture.contains("Mars") {
-                world.sky.preset = "Mars".to_string();
-            } else {
-                world.sky.preset = "Temperate".to_string();
-            }
             continue;
         }
 
@@ -449,10 +417,6 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
         } else {
             eprintln!("Migration ambiguity: multiple cells found for legacy script binding identity '{}'.", name);
         }
-    }
-
-    if !has_sky_line {
-        world.sky.enabled = false;
     }
 
     Ok(())
