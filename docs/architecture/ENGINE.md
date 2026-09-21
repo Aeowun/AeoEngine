@@ -40,7 +40,7 @@ The Editor can operate in two modes:
 * Editor mode
 * Play mode
 
-Home provides project management. Editor mode is used to author persistent World data. Play mode runs the authored World through the runtime systems.
+Home provides project management, templates, and learning resources. Editor mode is used to author persistent World data. Play mode runs the authored World through the runtime systems.
 
 ---
 

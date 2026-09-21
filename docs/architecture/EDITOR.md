@@ -12,6 +12,7 @@ The editor uses a docked workspace centered around the World viewport.
 
 The major editor regions include:
 
+* Home screen (Project management, Templates, Learning).
 * World hierarchy.
 * Main 3D editor viewport.
 * Properties and navigation panels.
@@ -105,6 +106,7 @@ Depending on the selected Cell, the panel can expose:
 * Offset-related authored data.
 * Light properties.
 * Texture information.
+* Cell attributes (game-defined data).
 * Script binding controls.
 
 When editing a runtime value during Play, the runtime override system is responsible for preserving the authored World boundary.

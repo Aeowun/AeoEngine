@@ -21,7 +21,7 @@ From the project root:
 cargo run
 ~~~
 
-AeoEngine starts in its project/home workflow or opens the active project depending on the current application state.
+AeoEngine starts in its Home screen, where you can manage projects, use world templates, and access learning resources.
 
 ---
 

@@ -32,10 +32,6 @@ use self::shader::create_program;
 /// pixels. Picking and UI code must convert into the same viewport geometry
 /// before using mouse coordinates.
 pub struct Renderer {
-    home_program: u32,
-    home_vao: u32,
-    home_vbo: u32,
-
     grid_program: u32,
 
     grid_vao_xz: u32,
@@ -98,11 +94,7 @@ impl Renderer {
             gl::LineWidth(1.0);
         }
 
-        let home_program = create_program(HOME_VERTEX_SHADER, HOME_FRAGMENT_SHADER);
-
         let grid_program = create_program(GRID_VERTEX_SHADER, GRID_FRAGMENT_SHADER);
-
-        let (home_vao, home_vbo) = create_home_logo();
 
         let (grid_vao_xz, grid_vbo_xz, grid_count_xz) = create_grid_plane_vao(GridPlane::Xz);
 
@@ -217,10 +209,6 @@ impl Renderer {
             }
 
             let mut this = Self {
-                home_program,
-                home_vao,
-                home_vbo,
-
                 grid_program,
 
                 grid_vao_xz,
@@ -320,21 +308,15 @@ impl Renderer {
 
     pub fn render_home(&self) {
         unsafe {
+            gl::Viewport(0, 0, self.width as i32, self.height as i32);
+            gl::Disable(gl::SCISSOR_TEST);
             gl::Disable(gl::DEPTH_TEST);
+            gl::DepthMask(gl::TRUE);
 
-            gl::ClearColor(0.05, 0.05, 0.05, 1.0);
+            // Use 'void' color #010102
+            gl::ClearColor(1.0 / 255.0, 1.0 / 255.0, 2.0 / 255.0, 1.0);
 
-            gl::Clear(gl::COLOR_BUFFER_BIT);
-
-            gl::UseProgram(self.home_program);
-
-            gl::BindVertexArray(self.home_vao);
-
-            gl::DrawArrays(gl::TRIANGLES, 0, 18);
-
-            gl::BindVertexArray(0);
-
-            gl::Enable(gl::DEPTH_TEST);
+            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
         }
     }
 
@@ -1117,12 +1099,6 @@ impl Renderer {
 impl Drop for Renderer {
     fn drop(&mut self) {
         unsafe {
-            gl::DeleteProgram(self.home_program);
-
-            gl::DeleteVertexArrays(1, &self.home_vao);
-
-            gl::DeleteBuffers(1, &self.home_vbo);
-
             gl::DeleteProgram(self.grid_program);
 
             gl::DeleteProgram(self.shadow_program);
@@ -1430,18 +1406,6 @@ fn create_billboard_vao() -> (u32, u32) {
     (vao, vbo)
 }
 
-fn create_home_logo() -> (u32, u32) {
-    let vertices: [f32; 90] = [
-        -0.55, -0.65, 1.0, 0.1, 0.1, -0.32, 0.65, 1.0, 0.1, 0.1, 0.05, -0.65, 1.0, 0.1, 0.1, -0.32,
-        0.65, 1.0, 0.1, 0.1, 0.05, -0.65, 1.0, 0.1, 0.1, 0.18, 0.65, 1.0, 0.1, 0.1, 0.18, 0.65,
-        0.1, 1.0, 0.1, 0.05, -0.65, 0.1, 1.0, 0.1, 0.55, -0.65, 0.1, 1.0, 0.1, 0.18, 0.65, 0.1,
-        1.0, 0.1, 0.55, -0.65, 0.1, 1.0, 0.1, 0.40, 0.65, 0.1, 1.0, 0.1, -0.22, -0.05, 0.1, 0.3,
-        1.0, 0.33, -0.05, 0.1, 0.3, 1.0, 0.27, 0.14, 0.1, 0.3, 1.0, -0.22, -0.05, 0.1, 0.3, 1.0,
-        0.27, 0.14, 0.1, 0.3, 1.0, -0.16, 0.14, 0.1, 0.3, 1.0,
-    ];
-
-    upload_vertices_2d(&vertices)
-}
 
 fn load_texture_from_file(path: &str) -> Option<u32> {
     match image::open(path) {
@@ -1478,39 +1442,6 @@ fn load_texture_from_file(path: &str) -> Option<u32> {
     }
 }
 
-const HOME_VERTEX_SHADER: &str = r#"
-#version 330 core
-
-layout (location = 0) in vec2 a_position;
-layout (location = 1) in vec3 a_color;
-
-out vec3 v_color;
-
-void main() {
-    gl_Position = vec4(
-        a_position,
-        0.0,
-        1.0
-    );
-
-    v_color = a_color;
-}
-"#;
-
-const HOME_FRAGMENT_SHADER: &str = r#"
-#version 330 core
-
-in vec3 v_color;
-
-out vec4 FragColor;
-
-void main() {
-    FragColor = vec4(
-        v_color,
-        1.0
-    );
-}
-"#;
 
 const GRID_VERTEX_SHADER: &str = r#"
 #version 330 core
