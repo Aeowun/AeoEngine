@@ -406,25 +406,4 @@ Verification: `cargo check` passed and the full test suite passed with **303 tes
 
 ### Notes
 
-Version `0.7.1` introduces temporary runtime data and dynamic object creation for AeoScript, while maintaining that Play-mode execution never modifies authored project data.
-
-0.7.2
-Added
-* World Sky Environment system foundation.
-* Native OpenGL `GL_TEXTURE_CUBE_MAP` skybox rendering.
-* Support for single-asset horizontal cross layout cubemaps (4:3 aspect ratio).
-* Camera-locked skybox positioning to eliminate translation parallax.
-* 5 built-in sky presets: `Temperate`, `Tropical`, `Desert`, `Snowy`, `Mars`.
-* Persistent `SKY` configuration in world data.
-* Editor UI in the World panel for enabling sky and switching presets.
-* Asset routing for dedicated `.assets/skybox/` directory.
-
-Changed
-* Optimized texture fallback system to support multiple asset subdirectories.
-* Updated world persistence format to include single-asset sky configuration.
-
-Notes
-Version `0.7.2` establishes the foundation for environment rendering in AeoEngine with a seamless skybox system.
-
-TODO: Update online documentation and source-level documentation to reflect the new Sky Environment system and the required asset layout for custom cubemaps.
-
+Version `0.7.1` introduces temporary runtime data and dynamic object creation for AeoScript, while maintaining the absolute invariant that Play-mode execution never modifies authored project data.
