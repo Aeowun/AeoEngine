@@ -163,7 +163,7 @@ impl Editor {
         self.last_show_script_workspace = self.show_script_workspace;
 
         if self.show_script_workspace {
-            self.script_editor.show_ui(ctx, project_path);
+            self.script_editor.show_ui(ctx, project_path, world);
             return;
         }
 
@@ -424,6 +424,7 @@ pub enum PropertyChange {
     Visible(bool),
     ColorRgb(glam::Vec3),
     Texture(String),
+    CollisionEventsEnabled(bool),
     EntityIdentity(Option<String>),
     AttributeSet(String, AttributeValue),
     AttributeRemove(String),
@@ -447,6 +448,7 @@ impl Editor {
                         PropertyChange::Visible(visible) => other_cell.visible = *visible,
                         PropertyChange::ColorRgb(color) => other_cell.color_rgb = *color,
                         PropertyChange::Texture(texture) => other_cell.texture = texture.clone(),
+                        PropertyChange::CollisionEventsEnabled(enabled) => other_cell.collision_events_enabled = *enabled,
                         PropertyChange::EntityIdentity(identity) => other_cell.entity_identity = identity.clone(),
                         PropertyChange::AttributeSet(name, value) => {
                             other_cell.attributes.insert(name.clone(), value.clone());
@@ -555,6 +557,13 @@ impl Editor {
                                             ui.label(RichText::new("[missing/stale]").color(egui::Color32::from_rgb(255, 100, 100)).small());
                                         } else {
                                             ui.label(label);
+                                        }
+
+                                        ui.add_space(8.0);
+                                        let mut enabled = world.script_bindings[idx].enabled;
+                                        if ui.checkbox(&mut enabled, "Enabled").changed() {
+                                            world.script_bindings[idx].enabled = enabled;
+                                            self.needs_save = true;
                                         }
                                     } else {
                                         ui.label("None");
@@ -720,6 +729,11 @@ impl Editor {
                                 if ui.checkbox(&mut anchored, "Anchored").changed() {
                                     cell.anchored = anchored;
                                     changes.push(PropertyChange::Anchored(anchored));
+                                }
+                                let mut collision_events = cell.collision_events_enabled;
+                                if ui.checkbox(&mut collision_events, "Collision Events").changed() {
+                                    cell.collision_events_enabled = collision_events;
+                                    changes.push(PropertyChange::CollisionEventsEnabled(collision_events));
                                 }
                             });
 

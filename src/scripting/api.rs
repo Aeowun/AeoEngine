@@ -14,6 +14,7 @@ pub trait EngineHost {
     fn lookup_light(&self, x: i32, y: i32, z: i32) -> Option<u64>;
     fn is_light_enabled(&self, id: u64) -> Option<bool>;
     fn set_light_enabled(&mut self, id: u64, enabled: bool);
+    fn is_collision_events_enabled(&self, id: u64) -> bool;
 
     // Generic object model support
     fn get_all_cells_of_class(&self, class_name: &str) -> Vec<u64>;
@@ -58,6 +59,10 @@ impl EngineHost for EntityManager {
     }
 
     fn set_light_enabled(&mut self, _id: u64, _enabled: bool) {}
+
+    fn is_collision_events_enabled(&self, _id: u64) -> bool {
+        true
+    }
 
     fn get_all_cells_of_class(&self, _class_name: &str) -> Vec<u64> {
         Vec::new()

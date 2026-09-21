@@ -3675,6 +3675,7 @@ entity Test {
             fn lookup_light(&self, _: i32, _: i32, _: i32) -> Option<u64> { None }
             fn is_light_enabled(&self, _: u64) -> Option<bool> { None }
             fn set_light_enabled(&mut self, _: u64, _: bool) {}
+            fn is_collision_events_enabled(&self, _: u64) -> bool { true }
             fn get_all_cells_of_class(&self, _: &str) -> Vec<u64> { vec![] }
             fn find_objects(&self, _: &str) -> Vec<(HandleKind, u64)> { vec![] }
             fn get_children(&self, _: HandleKind, _: u64) -> Vec<(HandleKind, u64)> { vec![] }

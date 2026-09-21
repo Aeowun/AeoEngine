@@ -979,8 +979,7 @@ impl App {
                 let character_system =
                     &mut self.character_system;
 
-                let world = &self.world;
-
+                let mut contacted_this_frame = std::collections::HashSet::new();
                 self.physics_clock.update(
                     frame_time,
                     |dt| {
@@ -991,15 +990,35 @@ impl App {
                         p_world.refresh_dynamic_support();
                         p_world.update_sleeping(gravity);
 
-                        character_system.update(
-                            world,
+                        let contacted = character_system.update(
+                            &self.world,
                             p_world,
                             dt,
                             world_move_input,
                             self.jump_requested,
                         );
+                        contacted_this_frame.extend(contacted);
                     },
                 );
+
+                if !contacted_this_frame.is_empty() {
+                    if let Some(scene) = &mut self.script_scene {
+                        let em = &mut self.entity_manager;
+                        let world_mut = &mut self.world;
+                        let mut bridge = ScriptHostBridge {
+                            entity_manager: em,
+                            world: world_mut,
+                        };
+                        let mut context = HostContext {
+                            delta_time: frame_time as f64,
+                            engine: &mut bridge,
+                        };
+                        if let Err(e) = scene.on_player_contact(&contacted_this_frame, &mut context) {
+                            eprintln!("Scripting contact event error: {}", e);
+                            self.editor.terminal_output.push_str(&format!("[{}] [ERROR] Scripting contact event error: {}\n", get_timestamp(), e));
+                        }
+                    }
+                }
 
                 if let Some(player) =
                     self.character_system
@@ -1007,7 +1026,7 @@ impl App {
                         .next()
                 {
                     self.gameplay_camera
-                        .update(player, world);
+                        .update(player, &self.world);
                 }
 
                 self.jump_requested = false;

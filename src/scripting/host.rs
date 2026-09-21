@@ -48,6 +48,20 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         }
     }
 
+    fn is_collision_events_enabled(&self, id: u64) -> bool {
+        if let Some(coord) = self.world.resolve_cell_id(id) {
+            if let Some(rs) = self.world.runtime_state.get(&id) {
+                if let Some(v) = rs.collision_events_enabled {
+                    return v;
+                }
+            }
+            if let Some(cell) = self.world.get_effective_cell(coord) {
+                return cell.collision_events_enabled;
+            }
+        }
+        true
+    }
+
     fn create_runtime_cell(&mut self, cell_type: &str) -> Result<(HandleKind, u64), String> {
         let ct = match cell_type {
             "Block" => CellType::Block,

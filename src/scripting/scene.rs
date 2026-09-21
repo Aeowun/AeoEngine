@@ -23,6 +23,7 @@ pub struct ScriptEntity {
     state: EntityState,
     stopped: bool,
     script_path: Option<String>,
+    associated_cell_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -37,12 +38,13 @@ enum EntityState {
 }
 
 impl ScriptEntity {
-    fn new(instance: ScriptInstance, script_path: Option<String>) -> Self {
+    fn new(instance: ScriptInstance, script_path: Option<String>, cell_id: Option<u64>) -> Self {
         Self {
             instance,
             state: EntityState::Initial,
             stopped: false,
             script_path,
+            associated_cell_id: cell_id,
         }
     }
 
@@ -76,6 +78,7 @@ impl ScriptEntity {
 pub struct ScriptScene {
     runtime: ScriptRuntime,
     entities: Vec<ScriptEntity>,
+    disabled_scripts: Vec<String>,
     current_time: f64,
 }
 
@@ -93,6 +96,10 @@ impl ScriptScene {
         let mut seen_binding_targets = HashSet::new();
 
         for binding in bindings {
+            if world.disabled_scripts.contains(&binding.script_path) {
+                continue;
+            }
+
             if !seen_binding_targets.insert(binding.target_identity) {
                 return Err(format!(
                     "Multiple script bindings found for target cell ID '{}'. Each authored cell can only have one binding.",
@@ -186,8 +193,9 @@ impl ScriptScene {
             statements: Vec::new(),
         };
 
-        let spawn_params: Vec<(String, u64, Option<String>)> = valid_bindings
+        let spawn_params: Vec<(String, u64, Option<String>, Option<u64>)> = valid_bindings
             .iter()
+            .filter(|binding| binding.enabled)
             .map(|binding| {
                 let coord = world.resolve_cell_id(binding.target_identity).unwrap();
                 let cell = world.get(coord).unwrap();
@@ -202,13 +210,13 @@ impl ScriptScene {
                     id,
                     Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32),
                 );
-                (identity, id.0, Some(binding.script_path.clone()))
+                (identity, id.0, Some(binding.script_path.clone()), Some(binding.target_identity))
             })
             .collect();
 
         let created_ids: Vec<EntityId> = spawn_params
             .iter()
-            .map(|(_, raw_id, _)| EntityId(*raw_id))
+            .map(|(_, raw_id, _, _)| EntityId(*raw_id))
             .collect();
 
         let mut scene_res = {
@@ -228,6 +236,7 @@ impl ScriptScene {
         }
 
         let mut scene = scene_res.unwrap();
+        scene.disabled_scripts = world.disabled_scripts.clone();
 
         // Add event handlers from all loaded scripts with their correct paths.
         // We clear the default auto-registered handlers (which have UNKNOWN path)
@@ -239,6 +248,9 @@ impl ScriptScene {
 
         // Spawn top-level fibers for each script.
         for (path, program) in &loaded_scripts {
+            if world.disabled_scripts.contains(path) {
+                continue;
+            }
             if let Err(e) = scene.runtime.spawn_top_level_custom(path.clone(), &program.statements) {
                 scene.runtime.interpreter_mut().log_error(format!("Failed to spawn top-level fiber for {}: {}", path, e));
             }
@@ -288,20 +300,20 @@ impl ScriptScene {
 
     pub fn new(
         program: Program,
-        entities_to_spawn: Vec<(String, u64, Option<String>)>,
+        entities_to_spawn: Vec<(String, u64, Option<String>, Option<u64>)>,
         host: &mut HostContext,
     ) -> Result<Self, String> {
         let has_top_level = !program.statements.is_empty();
         let mut runtime = ScriptRuntime::new(program);
         let mut entities = Vec::with_capacity(entities_to_spawn.len());
 
-        for (name, id, script_path) in entities_to_spawn {
+        for (name, id, script_path, cell_id) in entities_to_spawn {
             let mut instance = runtime
                 .interpreter_mut()
                 .instantiate_entity(&name, id, host)
                 .map_err(|e| format!("Failed to instantiate script entity '{}': {}", name, e))?;
             instance.script_path = script_path.clone();
-            entities.push(ScriptEntity::new(instance, script_path));
+            entities.push(ScriptEntity::new(instance, script_path, cell_id));
         }
 
         // Spawn top-level fiber if there are any statements in the program.
@@ -313,6 +325,7 @@ impl ScriptScene {
         Ok(Self {
             runtime,
             entities,
+            disabled_scripts: Vec::new(),
             current_time: 0.0,
         })
     }
@@ -401,9 +414,40 @@ impl ScriptScene {
         self.runtime.interpreter_mut().drain_output()
     }
 
+    /// Handles player contact events for Cells.
+    pub fn on_player_contact(&mut self, contacted_cells: &HashSet<u64>, host: &mut HostContext) -> Result<(), String> {
+        for &cell_id in contacted_cells {
+            if !host.engine.is_collision_events_enabled(cell_id) {
+                continue;
+            }
+
+            let cell_handle = Value::Handle {
+                kind: crate::scripting::value::HandleKind::Cell,
+                id: cell_id,
+            };
+
+            // 1. Dispatch global event
+            self.dispatch_event("on_touch", vec![cell_handle.clone()], host)?;
+
+            // 2. Dispatch instance-specific lifecycle event
+            for entity in &mut self.entities {
+                if entity.associated_cell_id == Some(cell_id) && !entity.stopped {
+                    if Self::has_function(&self.runtime, entity, "on_touch") {
+                        self.runtime.spawn(
+                            entity.instance.clone(),
+                            "on_touch",
+                            vec![cell_handle.clone()],
+                        )?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Dispatches a global event to all scripts in the scene.
     pub fn dispatch_event(&mut self, name: &str, arguments: Vec<Value>, host: &mut HostContext) -> Result<(), String> {
-        self.runtime.dispatch_event(name, arguments, host)
+        self.runtime.dispatch_event(name, arguments, host, &self.disabled_scripts)
     }
 
     /// Stops all script execution and invokes on_destroy where available.
@@ -576,6 +620,20 @@ mod tests {
             if let Some(coord) = self.world.resolve_cell_id(id) {
                 self.world.set_light_enabled_runtime(coord, enabled);
             }
+        }
+
+        fn is_collision_events_enabled(&self, id: u64) -> bool {
+            if let Some(coord) = self.world.resolve_cell_id(id) {
+                if let Some(rs) = self.world.runtime_state.get(&id) {
+                    if let Some(v) = rs.collision_events_enabled {
+                        return v;
+                    }
+                }
+                if let Some(cell) = self.world.get_effective_cell(coord) {
+                    return cell.collision_events_enabled;
+                }
+            }
+            true
         }
 
         fn get_all_cells_of_class(&self, class_name: &str) -> Vec<u64> {
@@ -933,7 +991,7 @@ mod tests {
     fn create_scene(source: &str, host: &mut HostContext) -> ScriptScene {
         let tokens = Lexer::new(source).tokenize().unwrap();
         let program = Parser::new(tokens).parse().unwrap();
-        let entities_to_spawn: Vec<(String, u64, Option<String>)> = program
+        let entities_to_spawn: Vec<(String, u64, Option<String>, Option<u64>)> = program
             .declarations
             .iter()
             .filter_map(|decl| {
@@ -943,7 +1001,7 @@ mod tests {
                         .entity_manager()
                         .lookup_entity(&entity.name)
                         .unwrap_or(EntityId(0));
-                    Some((entity.name.clone(), id.0, None))
+                    Some((entity.name.clone(), id.0, None, None))
                 } else {
                     None
                 }
@@ -1316,7 +1374,7 @@ entity Enemy {}
         };
         let tokens = Lexer::new(source).tokenize().unwrap();
         let program = Parser::new(tokens).parse().unwrap();
-        let scene = ScriptScene::new(program, vec![("Player".to_string(), id.0, None)], &mut host)
+        let scene = ScriptScene::new(program, vec![("Player".to_string(), id.0, None, None)], &mut host)
             .unwrap();
 
         assert_eq!(scene.entities.len(), 1);
@@ -1342,7 +1400,7 @@ entity Unbound {
 
         let tokens = Lexer::new(source).tokenize().unwrap();
         let program = Parser::new(tokens).parse().unwrap();
-        let mut scene = ScriptScene::new(program, vec![("Bound".to_string(), id.0, None)], &mut host)
+        let mut scene = ScriptScene::new(program, vec![("Bound".to_string(), id.0, None, None)], &mut host)
             .unwrap();
         scene.start(&mut host).unwrap();
         scene.update(0.0, &mut host).unwrap();
@@ -1370,7 +1428,7 @@ entity B { fn on_spawn() { debug.log("B") } }
         let program = Parser::new(tokens).parse().unwrap();
         let mut scene = ScriptScene::new(
             program,
-            vec![("A".to_string(), id_a.0, None), ("B".to_string(), id_b.0, None)],
+            vec![("A".to_string(), id_a.0, None, None), ("B".to_string(), id_b.0, None, None)],
             &mut host,
         )
         .unwrap();
@@ -3230,5 +3288,113 @@ debug.log("ok")
         scene.update(0.0, &mut host).unwrap();
 
         assert!(scene.output().iter().any(|r| r.message == "ok"));
+    }
+
+    #[test]
+    fn test_cell_contact_event_authored() {
+        let source = r#"
+entity Spike {
+    fn on_touch(c) {
+        debug.log("Touched Spike:", c.id)
+    }
+}
+"#;
+        let mut th = test_host();
+        let coord = WorldCoord::new(0, 0, 0);
+        let cell_id = add_authored_entity(&mut th.world, coord, CellType::Block, "Spike");
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.entities[0].associated_cell_id = Some(cell_id);
+
+        scene.start(&mut host).unwrap();
+
+        let mut contacted = HashSet::new();
+        contacted.insert(cell_id);
+
+        scene.on_player_contact(&contacted, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        assert!(scene.output().iter().any(|r| r.message == format!("Touched Spike: {}", cell_id)));
+    }
+
+    #[test]
+    fn test_cell_contact_event_runtime_created_global() {
+        let source = r#"
+on on_touch(c) {
+    debug.log("Touched Cell:", c.id)
+}
+"#;
+        let mut th = test_host();
+        let cell_id = th.world.create_runtime_cell(CellType::Block);
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+
+        // Register event handler correctly (create_scene doesn't add global handlers from program)
+        // Actually ScriptRuntime::new does it.
+        // Wait, ScriptScene::new calls ScriptRuntime::new(program).
+        // ScriptRuntime::new collects Declaration::Event.
+
+        let mut contacted = HashSet::new();
+        contacted.insert(cell_id);
+
+        scene.on_player_contact(&contacted, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        assert!(scene.output().iter().any(|r| r.message == format!("Touched Cell: {}", cell_id)));
+    }
+
+    #[test]
+    fn test_cell_contact_event_script_deleted_during_callback() {
+        let source = r#"
+entity Trap {
+    fn on_touch(c) {
+        debug.log("Trap touched")
+        cell.delete(c)
+    }
+}
+"#;
+        let mut th = test_host();
+        let coord = WorldCoord::new(0, 0, 0);
+        let cell_id = add_authored_entity(&mut th.world, coord, CellType::Block, "Trap");
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.entities[0].associated_cell_id = Some(cell_id);
+        scene.start(&mut host).unwrap();
+
+        let mut contacted = HashSet::new();
+        contacted.insert(cell_id);
+
+        scene.on_player_contact(&contacted, &mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        assert!(scene.output().iter().any(|r| r.message == "Trap touched"));
+        assert!(th.world.resolve_cell_id(cell_id).is_none(), "Cell should be deleted");
+    }
+
+    #[test]
+    fn test_cell_contact_event_no_on_touch() {
+        let source = r#"
+entity Silent {
+    fn on_ready() { debug.log("ready") }
+}
+"#;
+        let mut th = test_host();
+        let cell_id = add_authored_entity(&mut th.world, WorldCoord::new(0,0,0), CellType::Block, "Silent");
+
+        let mut host = HostContext { delta_time: 0.0, engine: &mut th };
+        let mut scene = create_scene(source, &mut host);
+        scene.entities[0].associated_cell_id = Some(cell_id);
+        scene.start(&mut host).unwrap();
+
+        let mut contacted = HashSet::new();
+        contacted.insert(cell_id);
+
+        // Should not error or crash
+        assert!(scene.on_player_contact(&contacted, &mut host).is_ok());
+        scene.update(0.0, &mut host).unwrap();
     }
 }

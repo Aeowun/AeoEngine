@@ -1,183 +1,185 @@
 GRAVITY 0 -9.3 0
 LIGHTING true true 0.65 -0.45 0.68 1 1 1 2.6 0.1
-BLOCK 95154620 -6 17 2 true true true ground 0.5 0.5 0.5 None
-BLOCK 84641052 -11 17 2 true true true brick 0.5 0.5 0.5 None
-BLOCK 31839037 -11 17 -2 true true true brick 0.5 0.5 0.5 None
-BLOCK 97732802 -8 17 -7 true true true brick 0.5 0.5 0.5 None
-BLOCK 69928126 -8 17 5 true true true ground 0.5 0.5 0.5 None
-BLOCK 56438030 -2 17 -5 true true true ground 0.5 0.5 0.5 None
-BLOCK 54685684 -8 17 2 true true true ground 0.5 0.5 0.5 None
-BLOCK 57924358 0 17 5 true true true brick 0.5 0.5 0.5 None
-BLOCK 21544689 -1 17 -3 true true true ground 0.5 0.5 0.5 None
-BLOCK 50014739 -9 17 5 true true true ground 0.5 0.5 0.5 None
-BLOCK 39259005 -4 17 -4 true true true ground 0.5 0.5 0.5 None
-BLOCK 43348662 -2 17 -7 true true true brick 0.5 0.5 0.5 None
-BLOCK 79382383 -10 17 1 true true true ground 0.5 0.5 0.5 None
-BLOCK 16905044 -8 17 0 true true true ground 0.5 0.5 0.5 None
-BLOCK 38593597 -7 17 1 true true true ground 0.5 0.5 0.5 None
-BLOCK 87203723 0 17 -4 true true true brick 0.5 0.5 0.5 None
-BLOCK 18790172 -11 17 -7 true true true brick 0.5 0.5 0.5 None
-BLOCK 24958601 -7 18 4 true true true Block_tx 0.0075797234 0.49309596 0.5211065 AeoScriptTestBlock1
-BLOCK 20887746 -7 17 6 true true true brick 0.5 0.5 0.5 None
-BLOCK 27463325 -4 17 -6 true true true ground 0.5 0.5 0.5 None
-BLOCK 38025491 -10 17 3 true true true ground 0.5 0.5 0.5 None
-BLOCK 70286146 -2 17 -1 true true true ground 0.5 0.5 0.5 None
-BLOCK 43909973 -6 17 5 true true true ground 0.5 0.5 0.5 None
-BLOCK 65416009 -10 17 4 true true true ground 0.5 0.5 0.5 None
-BLOCK 67164933 -3 17 1 true true true ground 0.5 0.5 0.5 None
-BLOCK 15558330 -6 17 -6 true true true ground 0.5 0.5 0.5 None
-BLOCK 90840863 -4 17 4 true true true ground 0.5 0.5 0.5 None
-BLOCK 35456722 -10 17 5 true true true ground 0.5 0.5 0.5 None
-BLOCK 23789338 -1 17 2 true true true ground 0.5 0.5 0.5 None
-BLOCK 22122452 -4 17 -7 true true true brick 0.5 0.5 0.5 None
-BLOCK 89531952 -9 18 4 true true true Block_tx 0.493 0.018 0.433 Test
+DISABLED_SCRIPT scripts/attributeTest.aeo
+DISABLED_SCRIPT scripts/cellNew.aeo
+BLOCK 67164933 -3 17 1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 14661944 -8 17 -5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 39259005 -4 17 -4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 89467958 -8 17 -6 true true true ground 0.5 0.5 0.5 None true
+BLOCK 39333019 0 17 -2 true true true brick 0.5 0.5 0.5 None true
+BLOCK 86773460 -5 18 4 true true true Block_tx 0.0075797234 0.49309596 0.5211065 AeoScriptTestBlock2 true
+BLOCK 79970053 -3 17 0 true true true ground 0.5 0.5 0.5 None true
+BLOCK 35456722 -10 17 5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 59148875 -2 17 0 true true true ground 0.5 0.5 0.5 None true
+BLOCK 15397064 -3 17 -1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 73496039 -3 17 -2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 21103506 -5 17 5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 57077532 -4 17 0 true true true ground 0.5 0.5 0.5 None true
+BLOCK 79382383 -10 17 1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 19266245 -4 17 5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 21153413 -10 17 -3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 96398098 -6 17 -1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 99280186 -2 17 2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 38593597 -7 17 1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 29179726 0 17 -5 true true true brick 0.5 0.5 0.5 None true
+BLOCK 26983345 -2 17 -6 true true true ground 0.5 0.5 0.5 None true
+BLOCK 54601505 -6 17 -4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 90579723 0 17 2 true true true brick 0.5 0.5 0.5 None true
+BLOCK 26475172 -7 17 -1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 24576528 -11 17 -1 true true true brick 0.5 0.5 0.5 None true
+BLOCK 95288178 0 17 6 true true true brick 0.5 0.5 0.5 None true
+BLOCK 61868235 -1 17 3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 17025634 -5 17 2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 69928126 -8 17 5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 83886924 -9 17 -1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 31170017 -10 17 -5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 61470715 -1 17 4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 37898375 -8 17 -2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 77825815 -8 17 6 true true true brick 0.5 0.5 0.5 None true
+BLOCK 37135114 -11 17 6 true true true brick 0.5 0.5 0.5 None true
+BLOCK 30394595 -3 17 -4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 32421939 -5 17 -6 true true true ground 0.5 0.5 0.5 None true
+BLOCK 83391141 -3 17 -5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 55314301 -1 17 -7 true true true brick 0.5 0.5 0.5 None true
+BLOCK 71013108 -5 17 -4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 96168883 -5 17 1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 61081828 -6 17 -7 true true true brick 0.5 0.5 0.5 None true
+BLOCK 63478069 -7 17 4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 23876021 -2 17 3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 52154783 -6 17 -2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 50216405 -6 17 3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 96261105 -1 17 -1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 98465794 -1 17 1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 48342850 -3 18 4 true true true Block_tx 0.0075797234 0.49309596 0.5211065 AeoScriptTestBlock3 true
+BLOCK 50697576 -1 17 -4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 97283683 -7 17 -5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 56215441 -9 17 -3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 85169318 0 17 -6 true true true brick 0.5 0.5 0.5 None true
+SPAWN_POINT 60440418 -6 18 -1 false false true Block_tx 0.5 0.5 0.5 None true
+BLOCK 80094053 -4 17 -3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 49069702 -10 17 6 true true true brick 0.5 0.5 0.5 None true
+BLOCK 66466582 -7 17 2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 74916292 -6 17 0 true true true ground 0.5 0.5 0.5 None true
+BLOCK 49815176 0 17 4 true true true brick 0.5 0.5 0.5 None true
+BLOCK 23350563 -3 17 6 true true true brick 0.5 0.5 0.5 None true
+BLOCK 22122452 -4 17 -7 true true true brick 0.5 0.5 0.5 None true
+BLOCK 81255633 -10 17 2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 78591256 -1 18 4 true true true Block_tx 0 0.0940258 0.6804493 None true
+BLOCK 65416009 -10 17 4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 52952725 -8 17 -4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 94044413 -5 17 0 true true true ground 0.5 0.5 0.5 None true
+BLOCK 26595797 -2 17 -2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 29410199 -6 17 6 true true true brick 0.5 0.5 0.5 None true
+BLOCK 45729250 -4 17 -5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 84641052 -11 17 2 true true true brick 0.5 0.5 0.5 None true
+BLOCK 54782297 -4 17 -2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 37520106 -10 17 -6 true true true ground 0.5 0.5 0.5 None true
+BLOCK 61237424 -5 17 -7 true true true brick 0.5 0.5 0.5 None true
+BLOCK 10629182 -9 17 1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 52354861 -1 17 -5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 17693356 -7 17 3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 23789338 -1 17 2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 93896800 -7 17 -3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 23578882 -5 17 6 true true true brick 0.5 0.5 0.5 None true
+BLOCK 10587685 -6 17 -3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 31074191 -11 17 -6 true true true brick 0.5 0.5 0.5 None true
+BLOCK 10164704 -7 17 -2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 59169225 -5 17 -1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 26967681 -11 17 5 true true true brick 0.5 0.5 0.5 None true
+BLOCK 35157909 -5 17 -2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 19208983 -7 17 -6 true true true ground 0.5 0.5 0.5 None true
+BLOCK 57924358 0 17 5 true true true brick 0.5 0.5 0.5 None true
+BLOCK 16905044 -8 17 0 true true true ground 0.5 0.5 0.5 None true
+BLOCK 35403010 -11 17 0 true true true brick 0.5 0.5 0.5 None true
+BLOCK 44273427 -9 17 -6 true true true ground 0.5 0.5 0.5 None true
+BLOCK 83625149 -2 17 -4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 57908366 0 17 -3 true true true brick 0.5 0.5 0.5 None true
+BLOCK 65135564 -10 17 -1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 54685684 -8 17 2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 29734820 -1 17 5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 98303997 -2 17 6 true true true brick 0.5 0.5 0.5 None true
+BLOCK 38955867 -11 17 -4 true true true brick 0.5 0.5 0.5 None true
+BLOCK 38025491 -10 17 3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 87203723 0 17 -4 true true true brick 0.5 0.5 0.5 None true
+BLOCK 76230887 -5 17 -3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 24582791 -3 17 -3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 21427178 -9 17 6 true true true brick 0.5 0.5 0.5 None true
+BLOCK 15796188 -9 17 -2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 99501775 -9 17 2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 27170538 -7 17 0 true true true ground 0.5 0.5 0.5 None true
+BLOCK 34332008 -4 17 2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 57326381 -2 17 1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 75269608 -3 17 3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 50824604 -11 17 -3 true true true brick 0.5 0.5 0.5 None true
+BLOCK 21544689 -1 17 -3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 89531952 -9 18 4 true true true Block_tx 0.493 0.018 0.433 Test true
 ATTRIBUTES 89531952 {"Test":{"type":"String","value":"Alpha"},"testBool":{"type":"Bool","value":true},"testNum":{"type":"Number","value":1.0}}
-BLOCK 66593688 -3 17 2 true true true ground 0.5 0.5 0.5 None
-BLOCK 61118122 -4 17 3 true true true ground 0.5 0.5 0.5 None
-BLOCK 25734869 -9 18 1 true true true Block_tx 0.49327344 0.017937228 0.43277618 Test
+BLOCK 12450243 -9 17 4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 50014739 -9 17 5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 25052481 -10 17 -2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 18790172 -11 17 -7 true true true brick 0.5 0.5 0.5 None true
+BLOCK 12381198 0 17 -7 true true true brick 0.5 0.5 0.5 None true
+BLOCK 27463325 -4 17 -6 true true true ground 0.5 0.5 0.5 None true
+BLOCK 61118122 -4 17 3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 16453858 -3 17 5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 25734869 -9 18 1 true true true Block_tx 0.49327344 0.017937228 0.43277618 Test true
 ATTRIBUTES 25734869 {"Test":{"type":"String","value":"Bravo"},"testBool":{"type":"Bool","value":false},"testNum":{"type":"Number","value":2.0}}
-BLOCK 74916292 -6 17 0 true true true ground 0.5 0.5 0.5 None
-BLOCK 95288178 0 17 6 true true true brick 0.5 0.5 0.5 None
-BLOCK 89467958 -8 17 -6 true true true ground 0.5 0.5 0.5 None
-BLOCK 80094053 -4 17 -3 true true true ground 0.5 0.5 0.5 None
-BLOCK 99280186 -2 17 2 true true true ground 0.5 0.5 0.5 None
-BLOCK 54782297 -4 17 -2 true true true ground 0.5 0.5 0.5 None
-BLOCK 13670581 -1 17 -2 true true true ground 0.5 0.5 0.5 None
-BLOCK 21153413 -10 17 -3 true true true ground 0.5 0.5 0.5 None
-BLOCK 16453858 -3 17 5 true true true ground 0.5 0.5 0.5 None
-BLOCK 59148875 -2 17 0 true true true ground 0.5 0.5 0.5 None
-BLOCK 50697576 -1 17 -4 true true true ground 0.5 0.5 0.5 None
-BLOCK 98303997 -2 17 6 true true true brick 0.5 0.5 0.5 None
-BLOCK 63478069 -7 17 4 true true true ground 0.5 0.5 0.5 None
-BLOCK 35157909 -5 17 -2 true true true ground 0.5 0.5 0.5 None
-BLOCK 50216405 -6 17 3 true true true ground 0.5 0.5 0.5 None
-BLOCK 26475172 -7 17 -1 true true true ground 0.5 0.5 0.5 None
-BLOCK 23876021 -2 17 3 true true true ground 0.5 0.5 0.5 None
-BLOCK 93896800 -7 17 -3 true true true ground 0.5 0.5 0.5 None
-BLOCK 11746427 -3 17 4 true true true ground 0.5 0.5 0.5 None
-BLOCK 15796188 -9 17 -2 true true true ground 0.5 0.5 0.5 None
-BLOCK 31074191 -11 17 -6 true true true brick 0.5 0.5 0.5 None
-BLOCK 31752533 -10 17 -4 true true true ground 0.5 0.5 0.5 None
-BLOCK 77198735 -2 17 5 true true true ground 0.5 0.5 0.5 None
-BLOCK 78053560 -7 17 -7 true true true brick 0.5 0.5 0.5 None
-BLOCK 86773460 -5 18 4 true true true Block_tx 0.0075797234 0.49309596 0.5211065 AeoScriptTestBlock2
-BLOCK 75383587 -3 17 -7 true true true brick 0.5 0.5 0.5 None
-BLOCK 34332008 -4 17 2 true true true ground 0.5 0.5 0.5 None
-BLOCK 83625149 -2 17 -4 true true true ground 0.5 0.5 0.5 None
-BLOCK 27300365 -4 17 -1 true true true ground 0.5 0.5 0.5 None
-BLOCK 69870433 -8 17 3 true true true ground 0.5 0.5 0.5 None
-BLOCK 10164704 -7 17 -2 true true true ground 0.5 0.5 0.5 None
-BLOCK 71013108 -5 17 -4 true true true ground 0.5 0.5 0.5 None
-BLOCK 52154783 -6 17 -2 true true true ground 0.5 0.5 0.5 None
-BLOCK 26595797 -2 17 -2 true true true ground 0.5 0.5 0.5 None
-BLOCK 49815176 0 17 4 true true true brick 0.5 0.5 0.5 None
-BLOCK 19266245 -4 17 5 true true true ground 0.5 0.5 0.5 None
-BLOCK 39333019 0 17 -2 true true true brick 0.5 0.5 0.5 None
-BLOCK 43516000 0 17 3 true true true brick 0.5 0.5 0.5 None
-BLOCK 75269608 -3 17 3 true true true ground 0.5 0.5 0.5 None
-BLOCK 12381198 0 17 -7 true true true brick 0.5 0.5 0.5 None
-BLOCK 14651481 -1 17 0 true true true ground 0.5 0.5 0.5 None
-BLOCK 15397064 -3 17 -1 true true true ground 0.5 0.5 0.5 None
-BLOCK 19488333 -1 17 -6 true true true ground 0.5 0.5 0.5 None
-BLOCK 57958957 -6 17 1 true true true ground 0.5 0.5 0.5 None
-BLOCK 37520106 -10 17 -6 true true true ground 0.5 0.5 0.5 None
-BLOCK 12450243 -9 17 4 true true true ground 0.5 0.5 0.5 None
-BLOCK 24576528 -11 17 -1 true true true brick 0.5 0.5 0.5 None
-BLOCK 27777764 -9 17 -7 true true true brick 0.5 0.5 0.5 None
-BLOCK 77825815 -8 17 6 true true true brick 0.5 0.5 0.5 None
-BLOCK 81255633 -10 17 2 true true true ground 0.5 0.5 0.5 None
-BLOCK 85169318 0 17 -6 true true true brick 0.5 0.5 0.5 None
-BLOCK 57077532 -4 17 0 true true true ground 0.5 0.5 0.5 None
-BLOCK 74726391 -7 18 1 true true true Block_tx 0.49327344 0.017937228 0.43277618 Test
+BLOCK 70286146 -2 17 -1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 12455891 -10 17 0 true true true ground 0.5 0.5 0.5 None true
+BLOCK 77198735 -2 17 5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 69870433 -8 17 3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 38416799 -11 17 3 true true true brick 0.5 0.5 0.5 None true
+BLOCK 75383587 -3 17 -7 true true true brick 0.5 0.5 0.5 None true
+BLOCK 84792769 -7 17 5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 11746427 -3 17 4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 27440312 -4 17 1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 44877072 -11 17 -5 true true true brick 0.5 0.5 0.5 None true
+BLOCK 39630294 -11 17 4 true true true brick 0.5 0.5 0.5 None true
+BLOCK 78053560 -7 17 -7 true true true brick 0.5 0.5 0.5 None true
+BLOCK 74726391 -7 18 1 true true true Block_tx 0.49327344 0.017937228 0.43277618 Test true
 ATTRIBUTES 74726391 {"Test":{"type":"String","value":"Charlie"},"testBool":{"type":"Bool","value":false},"testNum":{"type":"Number","value":3.0}}
-BLOCK 10587685 -6 17 -3 true true true ground 0.5 0.5 0.5 None
-BLOCK 94639763 -2 17 4 true true true ground 0.5 0.5 0.5 None
-BLOCK 93452901 0 17 1 true true true brick 0.5 0.5 0.5 None
-BLOCK 57908366 0 17 -3 true true true brick 0.5 0.5 0.5 None
-BLOCK 45729250 -4 17 -5 true true true ground 0.5 0.5 0.5 None
-BLOCK 52354861 -1 17 -5 true true true ground 0.5 0.5 0.5 None
-BLOCK 26983345 -2 17 -6 true true true ground 0.5 0.5 0.5 None
-BLOCK 23350563 -3 17 6 true true true brick 0.5 0.5 0.5 None
-BLOCK 17693356 -7 17 3 true true true ground 0.5 0.5 0.5 None
-BLOCK 55200457 -5 17 -5 true true true ground 0.5 0.5 0.5 None
-BLOCK 79970053 -3 17 0 true true true ground 0.5 0.5 0.5 None
-BLOCK 56215441 -9 17 -3 true true true ground 0.5 0.5 0.5 None
-BLOCK 90579723 0 17 2 true true true brick 0.5 0.5 0.5 None
-BLOCK 61868235 -1 17 3 true true true ground 0.5 0.5 0.5 None
-BLOCK 78591256 -1 18 4 true true true Block_tx 0 0.0940258 0.6804493 None
-BLOCK 59169225 -5 17 -1 true true true ground 0.5 0.5 0.5 None
-BLOCK 66466582 -7 17 2 true true true ground 0.5 0.5 0.5 None
-BLOCK 11205860 -6 17 4 true true true ground 0.5 0.5 0.5 None
-BLOCK 53823127 -5 17 3 true true true ground 0.5 0.5 0.5 None
-BLOCK 62905835 -1 17 6 true true true brick 0.5 0.5 0.5 None
-BLOCK 99501775 -9 17 2 true true true ground 0.5 0.5 0.5 None
-BLOCK 31081652 -9 17 3 true true true ground 0.5 0.5 0.5 None
-BLOCK 97283683 -7 17 -5 true true true ground 0.5 0.5 0.5 None
-BLOCK 27170538 -7 17 0 true true true ground 0.5 0.5 0.5 None
-BLOCK 22542007 -3 17 -6 true true true ground 0.5 0.5 0.5 None
-BLOCK 65135564 -10 17 -1 true true true ground 0.5 0.5 0.5 None
-BLOCK 96261105 -1 17 -1 true true true ground 0.5 0.5 0.5 None
-BLOCK 26967681 -11 17 5 true true true brick 0.5 0.5 0.5 None
-BLOCK 46997053 -9 17 -5 true true true ground 0.5 0.5 0.5 None
-BLOCK 29882837 -8 17 -1 true true true ground 0.5 0.5 0.5 None
-BLOCK 12455891 -10 17 0 true true true ground 0.5 0.5 0.5 None
-BLOCK 84966575 -11 17 1 true true true brick 0.5 0.5 0.5 None
-BLOCK 98900040 -5 17 4 true true true ground 0.5 0.5 0.5 None
-BLOCK 76230887 -5 17 -3 true true true ground 0.5 0.5 0.5 None
-BLOCK 22521400 0 17 -1 true true true brick 0.5 0.5 0.5 None
-BLOCK 57326381 -2 17 1 true true true ground 0.5 0.5 0.5 None
-BLOCK 23578882 -5 17 6 true true true brick 0.5 0.5 0.5 None
-BLOCK 63563121 -2 17 -3 true true true ground 0.5 0.5 0.5 None
-BLOCK 96168883 -5 17 1 true true true ground 0.5 0.5 0.5 None
-BLOCK 44877072 -11 17 -5 true true true brick 0.5 0.5 0.5 None
-BLOCK 50824604 -11 17 -3 true true true brick 0.5 0.5 0.5 None
-BLOCK 37898375 -8 17 -2 true true true ground 0.5 0.5 0.5 None
-BLOCK 29734820 -1 17 5 true true true ground 0.5 0.5 0.5 None
-BLOCK 27440312 -4 17 1 true true true ground 0.5 0.5 0.5 None
-BLOCK 52952725 -8 17 -4 true true true ground 0.5 0.5 0.5 None
-BLOCK 61470715 -1 17 4 true true true ground 0.5 0.5 0.5 None
-BLOCK 55314301 -1 17 -7 true true true brick 0.5 0.5 0.5 None
-BLOCK 29410199 -6 17 6 true true true brick 0.5 0.5 0.5 None
-BLOCK 83886924 -9 17 -1 true true true ground 0.5 0.5 0.5 None
-BLOCK 67484794 -5 18 1 true true true Block_tx 0.017150974 0.47164604 0 Green
+BLOCK 53823127 -5 17 3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 56438030 -2 17 -5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 43516000 0 17 3 true true true brick 0.5 0.5 0.5 None true
+BLOCK 20887746 -7 17 6 true true true brick 0.5 0.5 0.5 None true
+BLOCK 15558330 -6 17 -6 true true true ground 0.5 0.5 0.5 None true
+BLOCK 19506118 -8 17 4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 14651481 -1 17 0 true true true ground 0.5 0.5 0.5 None true
+BLOCK 66593688 -3 17 2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 37084060 -9 17 -4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 57958957 -6 17 1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 80674340 -7 17 -4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 95154620 -6 17 2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 22521400 0 17 -1 true true true brick 0.5 0.5 0.5 None true
+BLOCK 69181584 -9 17 0 true true true ground 0.5 0.5 0.5 None true
+BLOCK 69498070 0 17 0 true true true brick 0.5 0.5 0.5 None true
+BLOCK 31752533 -10 17 -4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 97732802 -8 17 -7 true true true brick 0.5 0.5 0.5 None true
+BLOCK 27300365 -4 17 -1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 27777764 -9 17 -7 true true true brick 0.5 0.5 0.5 None true
+BLOCK 43348662 -2 17 -7 true true true brick 0.5 0.5 0.5 None true
+BLOCK 31839037 -11 17 -2 true true true brick 0.5 0.5 0.5 None true
+BLOCK 19488333 -1 17 -6 true true true ground 0.5 0.5 0.5 None true
+BLOCK 24958601 -7 18 4 true true true Block_tx 0.0075797234 0.49309596 0.5211065 AeoScriptTestBlock1 true
+BLOCK 91347445 -6 17 -5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 43909973 -6 17 5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 29882837 -8 17 -1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 93452901 0 17 1 true true true brick 0.5 0.5 0.5 None true
+BLOCK 66071156 -10 17 -7 true true true brick 0.5 0.5 0.5 None true
+BLOCK 98900040 -5 17 4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 46997053 -9 17 -5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 67484794 -5 18 1 true true true Block_tx 0.017150974 0.47164604 0 Green true
 ATTRIBUTES 67484794 {"Name":{"type":"String","value":"deletaBlock"}}
-BLOCK 54601505 -6 17 -4 true true true ground 0.5 0.5 0.5 None
-BLOCK 66071156 -10 17 -7 true true true brick 0.5 0.5 0.5 None
-BLOCK 61081828 -6 17 -7 true true true brick 0.5 0.5 0.5 None
-BLOCK 31170017 -10 17 -5 true true true ground 0.5 0.5 0.5 None
-BLOCK 10629182 -9 17 1 true true true ground 0.5 0.5 0.5 None
-BLOCK 29179726 0 17 -5 true true true brick 0.5 0.5 0.5 None
-BLOCK 91347445 -6 17 -5 true true true ground 0.5 0.5 0.5 None
-BLOCK 69498070 0 17 0 true true true brick 0.5 0.5 0.5 None
-BLOCK 48342850 -3 18 4 true true true Block_tx 0.0075797234 0.49309596 0.5211065 AeoScriptTestBlock3
-BLOCK 83391141 -3 17 -5 true true true ground 0.5 0.5 0.5 None
-BLOCK 98465794 -1 17 1 true true true ground 0.5 0.5 0.5 None
-BLOCK 19208983 -7 17 -6 true true true ground 0.5 0.5 0.5 None
-BLOCK 25052481 -10 17 -2 true true true ground 0.5 0.5 0.5 None
-BLOCK 30394595 -3 17 -4 true true true ground 0.5 0.5 0.5 None
-BLOCK 38955867 -11 17 -4 true true true brick 0.5 0.5 0.5 None
-BLOCK 19506118 -8 17 4 true true true ground 0.5 0.5 0.5 None
-BLOCK 39630294 -11 17 4 true true true brick 0.5 0.5 0.5 None
-BLOCK 84792769 -7 17 5 true true true ground 0.5 0.5 0.5 None
-BLOCK 37301538 -4 17 6 true true true brick 0.5 0.5 0.5 None
-BLOCK 35403010 -11 17 0 true true true brick 0.5 0.5 0.5 None
-BLOCK 21103506 -5 17 5 true true true ground 0.5 0.5 0.5 None
-SPAWN_POINT 60440418 -6 18 -1 false false true Block_tx 0.5 0.5 0.5 None
-BLOCK 94044413 -5 17 0 true true true ground 0.5 0.5 0.5 None
-BLOCK 52975103 -8 17 1 true true true ground 0.5 0.5 0.5 None
-BLOCK 38416799 -11 17 3 true true true brick 0.5 0.5 0.5 None
-BLOCK 61237424 -5 17 -7 true true true brick 0.5 0.5 0.5 None
-BLOCK 49069702 -10 17 6 true true true brick 0.5 0.5 0.5 None
-BLOCK 80674340 -7 17 -4 true true true ground 0.5 0.5 0.5 None
-BLOCK 32421939 -5 17 -6 true true true ground 0.5 0.5 0.5 None
-BLOCK 37135114 -11 17 6 true true true brick 0.5 0.5 0.5 None
-BLOCK 45440079 -8 17 -3 true true true ground 0.5 0.5 0.5 None
-BLOCK 69181584 -9 17 0 true true true ground 0.5 0.5 0.5 None
-BLOCK 14661944 -8 17 -5 true true true ground 0.5 0.5 0.5 None
-BLOCK 24582791 -3 17 -3 true true true ground 0.5 0.5 0.5 None
-BLOCK 44273427 -9 17 -6 true true true ground 0.5 0.5 0.5 None
-BLOCK 17025634 -5 17 2 true true true ground 0.5 0.5 0.5 None
-BLOCK 96398098 -6 17 -1 true true true ground 0.5 0.5 0.5 None
-BLOCK 37084060 -9 17 -4 true true true ground 0.5 0.5 0.5 None
-BLOCK 73496039 -3 17 -2 true true true ground 0.5 0.5 0.5 None
-BLOCK 21427178 -9 17 6 true true true brick 0.5 0.5 0.5 None
+BLOCK 37301538 -4 17 6 true true true brick 0.5 0.5 0.5 None true
+BLOCK 22542007 -3 17 -6 true true true ground 0.5 0.5 0.5 None true
+BLOCK 52975103 -8 17 1 true true true ground 0.5 0.5 0.5 None true
+BLOCK 63563121 -2 17 -3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 13670581 -1 17 -2 true true true ground 0.5 0.5 0.5 None true
+BLOCK 55200457 -5 17 -5 true true true ground 0.5 0.5 0.5 None true
+BLOCK 11205860 -6 17 4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 31081652 -9 17 3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 45440079 -8 17 -3 true true true ground 0.5 0.5 0.5 None true
+BLOCK 84966575 -11 17 1 true true true brick 0.5 0.5 0.5 None true
+BLOCK 90840863 -4 17 4 true true true ground 0.5 0.5 0.5 None true
+BLOCK 62905835 -1 17 6 true true true brick 0.5 0.5 0.5 None true
+BLOCK 94639763 -2 17 4 true true true ground 0.5 0.5 0.5 None true

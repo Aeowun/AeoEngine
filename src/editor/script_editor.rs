@@ -363,13 +363,13 @@ impl ScriptEditor {
         }
     }
 
-    pub fn show_ui(&mut self, ctx: &egui::Context, project_path: &Option<PathBuf>) {
+    pub fn show_ui(&mut self, ctx: &egui::Context, project_path: &Option<PathBuf>, world: &mut crate::world::World) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.style_mut().visuals.window_rounding = egui::Rounding::ZERO;
 
             // Layout: Top bar, then horizontal split (Explorer | Editor | Inspector), then Bottom panel (Problems/Output)
 
-            self.draw_workspace(ui, project_path);
+            self.draw_workspace(ui, project_path, world);
         });
 
         if self.show_new_script_dialog {
@@ -482,7 +482,7 @@ impl ScriptEditor {
         }
     }
 
-    fn draw_workspace(&mut self, ui: &mut egui::Ui, project_path: &Option<PathBuf>) {
+    fn draw_workspace(&mut self, ui: &mut egui::Ui, project_path: &Option<PathBuf>, world: &mut crate::world::World) {
         let mut action_open = None;
         let mut action_close = None;
 
@@ -689,7 +689,7 @@ impl ScriptEditor {
                 // RIGHT: Inspector
                 ui.allocate_ui(egui::vec2(inspector_width, main_height), |ui| {
                     egui::ScrollArea::vertical().id_salt("inspector_scroll").show(ui, |ui| {
-                        self.draw_inspector(ui);
+                        self.draw_inspector(ui, world, project_path);
                     });
                 });
             });
@@ -746,7 +746,7 @@ impl ScriptEditor {
         }
     }
 
-    fn draw_inspector(&mut self, ui: &mut egui::Ui) {
+    fn draw_inspector(&mut self, ui: &mut egui::Ui, world: &mut crate::world::World, project_path: &Option<PathBuf>) {
         ui.vertical(|ui| {
             ui.label(RichText::new("INSPECTOR").strong());
             ui.separator();
@@ -755,6 +755,24 @@ impl ScriptEditor {
                     ui.label(RichText::new("SCRIPT").strong());
                     ui.indent("script_info", |ui| {
                         ui.label(format!("File: {}", path.file_name().unwrap_or_default().to_string_lossy()));
+
+                        let relative_path = if let Some(root) = project_path {
+                            path.strip_prefix(root).unwrap_or(path).to_string_lossy().to_string()
+                        } else {
+                            path.to_string_lossy().to_string()
+                        };
+                        let relative_path = relative_path.replace("\\", "/");
+
+                        let mut enabled = !world.disabled_scripts.contains(&relative_path);
+                        if ui.checkbox(&mut enabled, "Script Enabled").on_hover_text("If disabled, this script will not execute lifecycle hooks or events for ANY attached cell.").changed() {
+                            if enabled {
+                                world.disabled_scripts.retain(|p| p != &relative_path);
+                            } else {
+                                if !world.disabled_scripts.contains(&relative_path) {
+                                    world.disabled_scripts.push(relative_path);
+                                }
+                            }
+                        }
                     });
 
                     ui.add_space(8.0);

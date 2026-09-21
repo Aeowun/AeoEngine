@@ -92,11 +92,19 @@ impl ScriptRuntime {
         name: &str,
         arguments: Vec<Value>,
         _host: &mut HostContext,
+        disabled_scripts: &[String],
     ) -> Result<(), String> {
         let matching: Vec<(Option<String>, EventDecl)> = self
             .event_handlers
             .iter()
-            .filter(|(_, h)| h.name == name)
+            .filter(|(path, h)| {
+                if let Some(p) = path {
+                    if disabled_scripts.contains(p) {
+                        return false;
+                    }
+                }
+                h.name == name
+            })
             .cloned()
             .collect();
 
@@ -762,7 +770,7 @@ on PlayerSpawned(player) {
         let mut host = HostContext { delta_time: 1.0, engine: &mut em };
 
         let args = vec![Value::Handle { kind: HandleKind::Entity, id: 1 }];
-        runtime.dispatch_event("PlayerSpawned", args, &mut host).unwrap();
+        runtime.dispatch_event("PlayerSpawned", args, &mut host, &[]).unwrap();
 
         assert_eq!(runtime.task_count(), 1);
         runtime.tick(0.0, &mut host).unwrap();

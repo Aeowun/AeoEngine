@@ -59,6 +59,9 @@ pub struct World {
 
     /// Authored script bindings for entities in this world.
     pub script_bindings: Vec<ScriptBinding>,
+
+    /// Paths to script files that are globally disabled.
+    pub disabled_scripts: Vec<String>,
 }
 
 impl World {
@@ -75,6 +78,7 @@ impl World {
             gravity: Vec3::new(0.0, -9.81, 0.0),
             lighting: LightingSettings::default(),
             script_bindings: Vec::new(),
+            disabled_scripts: Vec::new(),
         }
     }
 

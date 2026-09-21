@@ -51,7 +51,9 @@ impl CharacterSystem {
     }
 
     /// Performs a fixed simulation step for all active characters.
-    pub fn update(&mut self, world: &World, physics_world: &mut crate::engine::physics::PhysicsWorld, dt: f32, input: Vec2, jump_requested: bool) {
+    /// Returns a set of Cell IDs that the characters made contact with during this step.
+    pub fn update(&mut self, world: &World, physics_world: &mut crate::engine::physics::PhysicsWorld, dt: f32, input: Vec2, jump_requested: bool) -> std::collections::HashSet<u64> {
+        let mut contacted_cells = std::collections::HashSet::new();
         for character in self.characters.values_mut() {
             // 1. Horizontal Movement
             // We apply input directly to horizontal velocity.
@@ -89,10 +91,10 @@ impl CharacterSystem {
             // 6. Static Voxel Collision Resolution
             // Note: We use a static helper function to avoid borrow checker errors
             // when accessing world/physics while iterating characters.
-            Self::resolve_static_voxel_collisions(character, physics_world);
+            Self::resolve_static_voxel_collisions(character, physics_world, &mut contacted_cells);
 
             // Dynamic Body Collision Resolution
-            Self::resolve_dynamic_body_collisions(character, physics_world);
+            Self::resolve_dynamic_body_collisions(character, physics_world, &mut contacted_cells);
 
             // 7. Animation State Handoff
             let horizontal_speed = horizontal_vel.length();
@@ -117,16 +119,17 @@ impl CharacterSystem {
             // 9. Evaluate Pose for Renderer
             character.current_pose = character.animation_controller.evaluate_pose();
         }
+        contacted_cells
     }
 
-    fn resolve_static_voxel_collisions(character: &mut Character, physics_world: &crate::engine::physics::PhysicsWorld) {
+    fn resolve_static_voxel_collisions(character: &mut Character, physics_world: &crate::engine::physics::PhysicsWorld, contacted_cells: &mut std::collections::HashSet<u64>) {
         let radius = character.collision.radius;
         let height = character.collision.height;
 
         // Reset grounded state before checking downward collisions.
         character.movement.is_grounded = false;
 
-        for (_cell_id, v_min) in &physics_world.static_colliders {
+        for (cell_id, v_min) in &physics_world.static_colliders {
             let v_max = *v_min + Vec3::ONE;
 
             // AABB overlap test
@@ -138,6 +141,9 @@ impl CharacterSystem {
                 - (character.transform.position.z - radius).max(v_min.z);
 
             if overlap_x > 0.001 && overlap_y > 0.001 && overlap_z > 0.001 {
+                // Record contact
+                contacted_cells.insert(*cell_id);
+
                 // Resolve collision on the axis of shallowest penetration.
                 if overlap_y < overlap_x && overlap_y < overlap_z {
                     if character.transform.position.y < v_min.y {
@@ -173,7 +179,7 @@ impl CharacterSystem {
         }
     }
 
-    fn resolve_dynamic_body_collisions(character: &mut Character, physics_world: &mut crate::engine::physics::PhysicsWorld) {
+    fn resolve_dynamic_body_collisions(character: &mut Character, physics_world: &mut crate::engine::physics::PhysicsWorld, contacted_cells: &mut std::collections::HashSet<u64>) {
         let radius = character.collision.radius;
         let height = character.collision.height;
 
@@ -194,6 +200,11 @@ impl CharacterSystem {
                 - (character.transform.position.z - radius).max(v_min.z);
 
             if overlap_x > 0.001 && overlap_y > 0.001 && overlap_z > 0.001 {
+                // Record contact
+                if body.cell_id != 0 {
+                    contacted_cells.insert(body.cell_id);
+                }
+
                 // Resolve collision on the axis of shallowest penetration.
                 if overlap_y < overlap_x && overlap_y < overlap_z {
                     if character.transform.position.y < v_min.y {
@@ -303,7 +314,7 @@ mod tests {
 
         // Update for 1 second
         for _ in 0..60 {
-            system.update(&world, &mut p_world, 1.0 / 60.0, Vec2::ZERO, false);
+            let _ = system.update(&world, &mut p_world, 1.0 / 60.0, Vec2::ZERO, false);
         }
 
         let updated = system.get_active_characters().next().unwrap();
@@ -322,7 +333,7 @@ mod tests {
         p_world.register_from_world(&world);
 
         // Move Right (+X)
-        system.update(&world, &mut p_world, 0.1, Vec2::new(1.0, 0.0), false);
+        let _ = system.update(&world, &mut p_world, 0.1, Vec2::new(1.0, 0.0), false);
 
         let updated = system.get_active_characters().next().unwrap();
         assert!(updated.transform.position.x > 0.0);
@@ -346,7 +357,7 @@ mod tests {
 
         // Update until they hit the ground
         for _ in 0..60 {
-            system.update(&world, &mut p_world, 1.0 / 60.0, Vec2::ZERO, false);
+            let _ = system.update(&world, &mut p_world, 1.0 / 60.0, Vec2::ZERO, false);
         }
 
         let updated = system.get_active_characters().next().unwrap();
@@ -366,7 +377,7 @@ mod tests {
         p_world.register_from_world(&world);
 
         // 1. Idle (no input)
-        system.update(&world, &mut p_world, 0.1, Vec2::ZERO, false);
+        let _ = system.update(&world, &mut p_world, 0.1, Vec2::ZERO, false);
         assert_eq!(
             system
                 .get_active_characters()
@@ -378,7 +389,7 @@ mod tests {
         );
 
         // 2. Walk (input)
-        system.update(&world, &mut p_world, 0.1, Vec2::X, false);
+        let _ = system.update(&world, &mut p_world, 0.1, Vec2::X, false);
         assert_eq!(
             system
                 .get_active_characters()
@@ -401,7 +412,7 @@ mod tests {
         p_world.register_from_world(&world);
 
         // Move Right (+X, input.y is 0)
-        system.update(&world, &mut p_world, 0.1, Vec2::new(1.0, 0.0), false);
+        let _ = system.update(&world, &mut p_world, 0.1, Vec2::new(1.0, 0.0), false);
         let rot1 = system
             .get_active_characters()
             .next()
@@ -410,7 +421,7 @@ mod tests {
             .rotation;
 
         // Move Left (-X)
-        system.update(&world, &mut p_world, 0.1, Vec2::new(-1.0, 0.0), false);
+        let _ = system.update(&world, &mut p_world, 0.1, Vec2::new(-1.0, 0.0), false);
         let rot2 = system
             .get_active_characters()
             .next()
@@ -421,7 +432,7 @@ mod tests {
         assert_ne!(rot1, rot2);
 
         // Stationary character keeps rotation
-        system.update(&world, &mut p_world, 0.1, Vec2::ZERO, false);
+        let _ = system.update(&world, &mut p_world, 0.1, Vec2::ZERO, false);
         let rot3 = system
             .get_active_characters()
             .next()
@@ -444,7 +455,7 @@ mod tests {
         system.characters.insert(1, character);
 
         // Ensure grounded first
-        system.update(&world, &mut p_world, 1.0 / 60.0, Vec2::ZERO, false);
+        let _ = system.update(&world, &mut p_world, 1.0 / 60.0, Vec2::ZERO, false);
         assert!(
             system
                 .get_active_characters()
@@ -455,7 +466,7 @@ mod tests {
         );
 
         // Jump
-        system.update(&world, &mut p_world, 1.0 / 60.0, Vec2::ZERO, true);
+        let _ = system.update(&world, &mut p_world, 1.0 / 60.0, Vec2::ZERO, true);
         let updated = system.get_active_characters().next().unwrap();
         // Note: Gravity is applied in the same frame as the impulse, so we expect
         // JUMP_IMPULSE + gravity * dt.
@@ -464,7 +475,7 @@ mod tests {
         assert!(!updated.movement.is_grounded);
 
         // Airborne character cannot jump again (until grounded)
-        system.update(&world, &mut p_world, 1.0 / 60.0, Vec2::ZERO, true);
+        let _ = system.update(&world, &mut p_world, 1.0 / 60.0, Vec2::ZERO, true);
         // Velocity should have decreased due to gravity, not reset to JUMP_IMPULSE
         assert!(
             system
@@ -505,7 +516,7 @@ mod tests {
         // Character pos becomes 0.4. Right edge is 0.9.
         // Overlap with body (0.6 to 1.6) is 0.9 - 0.6 = 0.3.
         // Character should be pushed back to X = 0.4 - 0.3 = 0.1.
-        system.update(&world, &mut p_world, 0.1, Vec2::new(1.0, 0.0), false);
+        let _ = system.update(&world, &mut p_world, 0.1, Vec2::new(1.0, 0.0), false);
 
         let updated = system.get_active_characters().next().unwrap();
         assert!(updated.transform.position.x < 0.4, "Character should be blocked by awake body");
@@ -517,7 +528,7 @@ mod tests {
         // Reset character
         system.characters.get_mut(&1).unwrap().transform.position = Vec3::ZERO;
 
-        system.update(&world, &mut p_world, 0.1, Vec2::new(1.0, 0.0), false);
+        let _ = system.update(&world, &mut p_world, 0.1, Vec2::new(1.0, 0.0), false);
 
         let updated = system.get_active_characters().next().unwrap();
         assert!(updated.transform.position.x < 0.4, "Character should be blocked by sleeping body");
@@ -527,7 +538,7 @@ mod tests {
         p_world.bodies[0].solid = false;
         system.characters.get_mut(&1).unwrap().transform.position = Vec3::ZERO;
 
-        system.update(&world, &mut p_world, 0.1, Vec2::new(1.0, 0.0), false);
+        let _ = system.update(&world, &mut p_world, 0.1, Vec2::new(1.0, 0.0), false);
 
         let updated = system.get_active_characters().next().unwrap();
         assert!((updated.transform.position.x - 0.4).abs() < 0.01, "Character should pass through non-solid body");
@@ -559,7 +570,7 @@ mod tests {
         system.characters.insert(1, character);
 
         for _ in 0..60 {
-            system.update(&world, &mut p_world, 1.0/60.0, Vec2::ZERO, false);
+            let _ = system.update(&world, &mut p_world, 1.0/60.0, Vec2::ZERO, false);
         }
         let updated = system.get_active_characters().next().unwrap();
         assert!((updated.transform.position.y - 1.0).abs() < 0.01, "Should collide at authored position");
@@ -581,7 +592,7 @@ mod tests {
         system.characters.get_mut(&1).unwrap().movement.velocity = Vec3::ZERO;
 
         for _ in 0..10 {
-            system.update(&world, &mut p_world, 1.0/60.0, Vec2::ZERO, false);
+            let _ = system.update(&world, &mut p_world, 1.0/60.0, Vec2::ZERO, false);
         }
         let updated = system.get_active_characters().next().unwrap();
         assert!(updated.transform.position.y < 1.5, "Should fall through old position");
@@ -590,7 +601,7 @@ mod tests {
         // 7. Verify the character does collide at the Block's new effective position (top Y=3.0).
         system.characters.get_mut(&1).unwrap().transform.position = Vec3::new(0.0, 3.5, 0.0);
         for _ in 0..60 {
-            system.update(&world, &mut p_world, 1.0/60.0, Vec2::ZERO, false);
+            let _ = system.update(&world, &mut p_world, 1.0/60.0, Vec2::ZERO, false);
         }
         let updated = system.get_active_characters().next().unwrap();
         assert!((updated.transform.position.y - 3.0).abs() < 0.01, "Should collide at effective position");
@@ -602,7 +613,7 @@ mod tests {
 
         system.characters.get_mut(&1).unwrap().transform.position = Vec3::new(0.0, 5.5, 0.0);
         for _ in 0..60 {
-            system.update(&world, &mut p_world, 1.0/60.0, Vec2::ZERO, false);
+            let _ = system.update(&world, &mut p_world, 1.0/60.0, Vec2::ZERO, false);
         }
         let updated = system.get_active_characters().next().unwrap();
         assert!((updated.transform.position.y - 5.0).abs() < 0.01, "Should follow new offset");
@@ -614,7 +625,7 @@ mod tests {
         // 10. Verify collision returns to the authored position (top Y=1.0).
         system.characters.get_mut(&1).unwrap().transform.position = Vec3::new(0.0, 1.5, 0.0);
         for _ in 0..60 {
-            system.update(&world, &mut p_world, 1.0/60.0, Vec2::ZERO, false);
+            let _ = system.update(&world, &mut p_world, 1.0/60.0, Vec2::ZERO, false);
         }
         let updated = system.get_active_characters().next().unwrap();
         assert!((updated.transform.position.y - 1.0).abs() < 0.01, "Should return to authored position");

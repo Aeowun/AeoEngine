@@ -42,9 +42,13 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
     for binding in &world.script_bindings {
         writeln!(
             file,
-            "SCRIPT_BINDING {} {}",
-            binding.target_identity, binding.script_path
+            "SCRIPT_BINDING {} {} {}",
+            binding.target_identity, binding.script_path, binding.enabled
         )?;
+    }
+
+    for path in &world.disabled_scripts {
+        writeln!(file, "DISABLED_SCRIPT {}", path)?;
     }
 
     for coord in world.active_blocks() {
@@ -53,7 +57,7 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                 CellType::Block => {
                     writeln!(
                         file,
-                        "BLOCK {} {} {} {} {} {} {} {} {} {} {} {}",
+                        "BLOCK {} {} {} {} {} {} {} {} {} {} {} {} {}",
                         cell.id,
                         coord.x,
                         coord.y,
@@ -65,14 +69,15 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                         cell.color_rgb.x,
                         cell.color_rgb.y,
                         cell.color_rgb.z,
-                        cell.entity_identity.as_deref().unwrap_or("None")
+                        cell.entity_identity.as_deref().unwrap_or("None"),
+                        cell.collision_events_enabled
                     )?;
                 }
 
                 CellType::FxBlock => {
                     writeln!(
                         file,
-                        "FX_BLOCK {} {} {} {} {} {} {} {} {} {} {} {}",
+                        "FX_BLOCK {} {} {} {} {} {} {} {} {} {} {} {} {}",
                         cell.id,
                         coord.x,
                         coord.y,
@@ -84,14 +89,15 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                         cell.color_rgb.x,
                         cell.color_rgb.y,
                         cell.color_rgb.z,
-                        cell.entity_identity.as_deref().unwrap_or("None")
+                        cell.entity_identity.as_deref().unwrap_or("None"),
+                        cell.collision_events_enabled
                     )?;
                 }
 
                 CellType::SpawnPoint => {
                     writeln!(
                         file,
-                        "SPAWN_POINT {} {} {} {} {} {} {} {} {} {} {} {}",
+                        "SPAWN_POINT {} {} {} {} {} {} {} {} {} {} {} {} {}",
                         cell.id,
                         coord.x,
                         coord.y,
@@ -103,14 +109,15 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                         cell.color_rgb.x,
                         cell.color_rgb.y,
                         cell.color_rgb.z,
-                        cell.entity_identity.as_deref().unwrap_or("None")
+                        cell.entity_identity.as_deref().unwrap_or("None"),
+                        cell.collision_events_enabled
                     )?;
                 }
 
                 CellType::Light => {
                     writeln!(
                         file,
-                        "LIGHT {} {} {} {} {} {} {} {} {} {} {} {}",
+                        "LIGHT {} {} {} {} {} {} {} {} {} {} {} {} {}",
                         cell.id,
                         coord.x,
                         coord.y,
@@ -122,14 +129,15 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                         cell.light_range,
                         cell.light_shadows,
                         cell.light_enabled,
-                        cell.entity_identity.as_deref().unwrap_or("None")
+                        cell.entity_identity.as_deref().unwrap_or("None"),
+                        cell.collision_events_enabled
                     )?;
                 }
 
                 CellType::Player => {
                     writeln!(
                         file,
-                        "PLAYER {} {} {} {} {} {} {} {} {} {} {} {}",
+                        "PLAYER {} {} {} {} {} {} {} {} {} {} {} {} {}",
                         cell.id,
                         coord.x,
                         coord.y,
@@ -141,14 +149,15 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                         cell.color_rgb.x,
                         cell.color_rgb.y,
                         cell.color_rgb.z,
-                        cell.entity_identity.as_deref().unwrap_or("None")
+                        cell.entity_identity.as_deref().unwrap_or("None"),
+                        cell.collision_events_enabled
                     )?;
                 }
 
                 CellType::NPC => {
                     writeln!(
                         file,
-                        "NPC {} {} {} {} {} {} {} {} {} {} {} {}",
+                        "NPC {} {} {} {} {} {} {} {} {} {} {} {} {}",
                         cell.id,
                         coord.x,
                         coord.y,
@@ -160,7 +169,8 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                         cell.color_rgb.x,
                         cell.color_rgb.y,
                         cell.color_rgb.z,
-                        cell.entity_identity.as_deref().unwrap_or("None")
+                        cell.entity_identity.as_deref().unwrap_or("None"),
+                        cell.collision_events_enabled
                     )?;
                 }
 
@@ -252,10 +262,19 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
             let script_path = parts[2].to_string();
 
             if let Ok(id) = target_str.parse::<u64>() {
-                world.script_bindings.push(ScriptBinding::new(id, script_path));
+                let mut binding = ScriptBinding::new(id, script_path);
+                if parts.len() >= 4 {
+                    binding.enabled = parts[3].parse::<bool>().unwrap_or(true);
+                }
+                world.script_bindings.push(binding);
             } else {
                 legacy_bindings.push((target_str.to_string(), script_path));
             }
+            continue;
+        }
+
+        if parts[0] == "DISABLED_SCRIPT" && parts.len() >= 2 {
+            world.disabled_scripts.push(parts[1].to_string());
             continue;
         }
 
@@ -350,6 +369,9 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                                 cell.entity_identity = Some(identity.to_string());
                             }
                         }
+                        if parts.len() >= offset + 13 {
+                            cell.collision_events_enabled = parts[offset + 12].parse::<bool>().unwrap_or(true);
+                        }
                     } else {
                         parse_block_properties(cell, &parts, offset);
                         if parts.len() >= offset + 12 {
@@ -357,6 +379,9 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                             if identity != "None" {
                                 cell.entity_identity = Some(identity.to_string());
                             }
+                        }
+                        if parts.len() >= offset + 13 {
+                            cell.collision_events_enabled = parts[offset + 12].parse::<bool>().unwrap_or(true);
                         }
                     }
                 }

@@ -38,6 +38,8 @@ pub struct Cell {
     pub texture: String,
     pub color_rgb: Vec3,
 
+    pub collision_events_enabled: bool,
+
     // Authored light properties. Only used when cell_type is Light.
     pub light_color: Vec3,
     pub light_intensity: f32,
@@ -63,6 +65,7 @@ pub struct RuntimeCellState {
     pub color_rgb: Option<Vec3>,
     pub solid: Option<bool>,
     pub anchored: Option<bool>,
+    pub collision_events_enabled: Option<bool>,
     pub visual_offset: Option<Vec3>,
     pub attribute_overrides: BTreeMap<String, AttributeValue>,
     pub is_deleted: bool,
@@ -78,6 +81,7 @@ impl Default for Cell {
             anchored: true,
             texture: "None".to_string(),
             color_rgb: Vec3::new(0.5, 0.5, 0.5),
+            collision_events_enabled: true,
             light_color: Vec3::ONE,
             light_intensity: 5.0,
             light_range: 10.0,
@@ -97,6 +101,7 @@ impl Cell {
             visible: true,
             solid: true,
             anchored: true,
+            collision_events_enabled: true,
             texture: "Block_tx".to_string(),
             ..Default::default()
         }
@@ -111,6 +116,7 @@ impl Cell {
             visible: false,
             solid: false,
             anchored: true,
+            collision_events_enabled: true,
             texture: "Light_tx".to_string(),
             color_rgb: Vec3::new(1.0, 1.0, 0.0), // Visual indicator color
             light_color: Vec3::ONE,              // White emitted light
@@ -130,6 +136,7 @@ impl Cell {
             visible: true,
             solid: true,
             anchored: true,
+            collision_events_enabled: true,
             texture: "Block_tx".to_string(),
             color_rgb: Vec3::new(0.5, 0.5, 0.5),
             ..Default::default()

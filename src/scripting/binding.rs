@@ -12,6 +12,9 @@ pub struct ScriptBinding {
 
     /// The relative path to the script asset (e.g. "scripts/player.aeo").
     pub script_path: String,
+
+    /// Whether this script binding is currently active.
+    pub enabled: bool,
 }
 
 impl ScriptBinding {
@@ -19,6 +22,7 @@ impl ScriptBinding {
         Self {
             target_identity,
             script_path: script_path.into(),
+            enabled: true,
         }
     }
 }
