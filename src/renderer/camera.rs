@@ -30,6 +30,29 @@ impl CameraController {
         self.pitch = self.pitch.clamp(-limit, limit);
     }
 
+    pub fn look(&mut self, dx: f32, dy: f32) {
+        let old_pos = self.get_position();
+
+        self.yaw -= dx * 0.005;
+        self.pitch += dy * 0.005;
+
+        // Clamp pitch to avoid gimbal lock and flipping.
+        let limit = 89.0_f32.to_radians();
+
+        self.pitch = self.pitch.clamp(-limit, limit);
+
+        // Re-calculate target so camera position remains unchanged.
+        let cos_pitch = self.pitch.cos();
+
+        let offset = Vec3::new(
+            self.distance * cos_pitch * self.yaw.sin(),
+            self.distance * self.pitch.sin(),
+            self.distance * cos_pitch * self.yaw.cos(),
+        );
+
+        self.target = old_pos - offset;
+    }
+
     pub fn zoom(&mut self, delta: f32) {
         self.distance -= delta * 1.5;
 
@@ -78,6 +101,12 @@ impl CameraController {
         let speed = self.distance * 0.01;
 
         self.target += right * dx * speed + up * dy * speed;
+    }
+
+    pub fn translate_free(&mut self, movement: Vec3) {
+        let (right, up, forward) = self.get_basis();
+
+        self.target += right * movement.x + up * movement.y + forward * movement.z;
     }
 }
 

@@ -133,7 +133,7 @@ fn main() {
                 }
 
                 if !response.consumed {
-                    app.on_window_event(&event, egui_state.egui_ctx());
+                    app.on_window_event(&event, egui_state.egui_ctx(), &window);
                 }
             }
 

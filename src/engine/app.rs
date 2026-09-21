@@ -39,6 +39,10 @@ const COLOR_ACCENT_CREAM: egui::Color32 =
 const COLOR_ACCENT_COOL: egui::Color32 =
     egui::Color32::from_rgb(96, 115, 125);
 
+const RMB_GUARD_MAX_RADIUS_FACTOR: f32 = 0.45;
+const RMB_GUARD_INNER_RADIUS_FACTOR: f32 = 0.38;
+const RMB_GUARD_EDGE_SCROLL_SPEED: f32 = 500.0;
+
 /// Application state shared by the window, editor, renderer, world, project
 /// system, input handling, and runtime physics.
 pub struct App {
@@ -58,9 +62,13 @@ pub struct App {
     pub show_open_project_dialog: bool,
     pub show_unsaved_scripts_dialog: bool,
 
+    pub is_right_mouse_down: bool,
     pub is_middle_mouse_down: bool,
     pub last_cursor_pos: Option<(f64, f64)>,
     pub mouse_pos: (f64, f64),
+
+    pub rmb_edge_scroll_velocity: glam::Vec2,
+    pub last_set_cursor_pos: Option<(f64, f64)>,
 
     pub is_left_mouse_down: bool,
     pub drag_start_coord: Option<crate::world::WorldCoord>,
@@ -96,9 +104,12 @@ impl App {
             new_project_name: String::new(),
             show_open_project_dialog: false,
             show_unsaved_scripts_dialog: false,
+            is_right_mouse_down: false,
             is_middle_mouse_down: false,
             last_cursor_pos: None,
             mouse_pos: (0.0, 0.0),
+            rmb_edge_scroll_velocity: glam::Vec2::ZERO,
+            last_set_cursor_pos: None,
             is_left_mouse_down: false,
             drag_start_coord: None,
             keys_down: std::collections::HashSet::new(),
@@ -111,7 +122,12 @@ impl App {
         }
     }
 
-    pub fn on_window_event(&mut self, event: &WindowEvent, egui_ctx: &egui::Context) {
+    pub fn on_window_event(
+        &mut self,
+        event: &WindowEvent,
+        egui_ctx: &egui::Context,
+        window: &winit::window::Window,
+    ) {
         match event {
             WindowEvent::Resized(size) => {
                 self.renderer
@@ -167,6 +183,14 @@ impl App {
                             || self.keys_down.contains(&KeyCode::ControlRight);
 
                         match key {
+                            KeyCode::F5 => {
+                                if self.view == View::Editor
+                                    && self.editor.mode == EditorMode::Editor
+                                {
+                                    self.editor.mode = EditorMode::Play;
+                                }
+                            }
+
                             KeyCode::KeyG => {
                                 self.view = if self.view == View::Home {
                                     View::Editor
@@ -367,6 +391,22 @@ impl App {
 
                 let wants_pointer = egui_ctx.wants_pointer_input();
 
+                if *button == MouseButton::Right {
+                    if *state == ElementState::Pressed {
+                        if !in_viewport || wants_pointer {
+                            return;
+                        }
+
+                        self.is_right_mouse_down = true;
+                    } else {
+                        self.is_right_mouse_down = false;
+                        self.rmb_edge_scroll_velocity = glam::Vec2::ZERO;
+                        self.last_cursor_pos = None;
+                    }
+
+                    return;
+                }
+
                 if *button == MouseButton::Middle {
                     if *state == ElementState::Pressed {
                         if !in_viewport || wants_pointer {
@@ -442,10 +482,93 @@ impl App {
                     self.editor.hovered_cell = None;
                 }
 
-                if self.is_middle_mouse_down
+                if self.view == View::Editor
+                    && self.editor.mode == EditorMode::Editor
+                    && self.is_right_mouse_down
+                {
+                    // Radial mouse guard logic
+                    if let Some((lx, ly)) = self.last_set_cursor_pos {
+                        if (position.x - lx).abs() < 0.1
+                            && (position.y - ly).abs() < 0.1
+                        {
+                            self.last_set_cursor_pos = None;
+                            return;
+                        }
+                    }
+
+                    let ppp = egui_ctx.pixels_per_point();
+                    let viewport_rect = self.editor.viewport_rect;
+                    let center_logical = viewport_rect.center();
+                    let center_physical = egui::pos2(
+                        center_logical.x * ppp,
+                        center_logical.y * ppp,
+                    );
+
+                    let min_side = viewport_rect
+                        .width()
+                        .min(viewport_rect.height())
+                        * ppp;
+                    let max_radius =
+                        min_side * RMB_GUARD_MAX_RADIUS_FACTOR;
+                    let inner_radius =
+                        min_side * RMB_GUARD_INNER_RADIUS_FACTOR;
+
+                    let offset = egui::pos2(
+                        position.x as f32 - center_physical.x,
+                        position.y as f32 - center_physical.y,
+                    );
+                    let distance =
+                        (offset.x * offset.x + offset.y * offset.y).sqrt();
+
+                    // Apply normal mouse-look
+                    self.editor.camera.look(dx as f32, dy as f32);
+
+                    // Calculate edge-scroll velocity
+                    if distance > inner_radius {
+                        let strength = ((distance - inner_radius)
+                            / (max_radius - inner_radius))
+                            .clamp(0.0, 1.0);
+                        let dir = egui::vec2(
+                            offset.x / distance,
+                            offset.y / distance,
+                        );
+                        self.rmb_edge_scroll_velocity =
+                            glam::Vec2::new(dir.x, dir.y)
+                                * strength
+                                * RMB_GUARD_EDGE_SCROLL_SPEED;
+                    } else {
+                        self.rmb_edge_scroll_velocity = glam::Vec2::ZERO;
+                    }
+
+                    // Enforce MAX_RADIUS boundary
+                    if distance > max_radius {
+                        let clamped_offset = egui::vec2(
+                            offset.x / distance * max_radius,
+                            offset.y / distance * max_radius,
+                        );
+                        let clamped_pos = egui::pos2(
+                            center_physical.x + clamped_offset.x,
+                            center_physical.y + clamped_offset.y,
+                        );
+
+                        let _ = window.set_cursor_position(
+                            winit::dpi::PhysicalPosition::new(
+                                clamped_pos.x as f64,
+                                clamped_pos.y as f64,
+                            ),
+                        );
+                        self.last_set_cursor_pos =
+                            Some((clamped_pos.x as f64, clamped_pos.y as f64));
+                        self.mouse_pos =
+                            (clamped_pos.x as f64, clamped_pos.y as f64);
+                    }
+                } else if self.is_middle_mouse_down
+                    && self.view == View::Editor
                     && self.editor.mode == EditorMode::Editor
                 {
                     self.editor.camera.orbit(dx as f32, dy as f32);
+                } else {
+                    self.rmb_edge_scroll_velocity = glam::Vec2::ZERO;
                 }
             }
 
@@ -898,29 +1021,43 @@ impl App {
                 return;
             }
 
-            let mut move_vec = glam::Vec2::ZERO;
+            let mut move_vec = glam::Vec3::ZERO;
 
-            if self.keys_down.contains(&KeyCode::KeyW) {
-                move_vec.y += 1.0;
+            if self.is_right_mouse_down
+                && self.view == View::Editor
+                && self.editor.mode == EditorMode::Editor
+            {
+                if self.keys_down.contains(&KeyCode::KeyW) {
+                    move_vec.z += 1.0;
+                }
+
+                if self.keys_down.contains(&KeyCode::KeyS) {
+                    move_vec.z -= 1.0;
+                }
+
+                if self.keys_down.contains(&KeyCode::KeyA) {
+                    move_vec.x -= 1.0;
+                }
+
+                if self.keys_down.contains(&KeyCode::KeyD) {
+                    move_vec.x += 1.0;
+                }
+
+                if self.keys_down.contains(&KeyCode::KeyE) {
+                    move_vec.y += 1.0;
+                }
+
+                if self.keys_down.contains(&KeyCode::KeyQ) {
+                    move_vec.y -= 1.0;
+                }
             }
 
-            if self.keys_down.contains(&KeyCode::KeyS) {
-                move_vec.y -= 1.0;
-            }
+            if move_vec != glam::Vec3::ZERO {
+                let speed = self.editor.camera.distance * 0.6 * frame_time;
 
-            if self.keys_down.contains(&KeyCode::KeyA) {
-                move_vec.x -= 1.0;
-            }
-
-            if self.keys_down.contains(&KeyCode::KeyD) {
-                move_vec.x += 1.0;
-            }
-
-            if move_vec != glam::Vec2::ZERO {
-                self.editor.camera.move_target(
-                    move_vec.x,
-                    move_vec.y,
-                );
+                self.editor
+                    .camera
+                    .translate_free(move_vec.normalize() * speed);
 
                 let target = self.editor.camera.target;
 
@@ -932,6 +1069,18 @@ impl App {
 
                 self.editor.navigation_window.z_buf =
                     (target.z.floor() as i32).to_string();
+            }
+
+            // Apply RMB edge-scroll contribution
+            if self.is_right_mouse_down
+                && self.view == View::Editor
+                && self.editor.mode == EditorMode::Editor
+                && self.rmb_edge_scroll_velocity != glam::Vec2::ZERO
+            {
+                self.editor.camera.look(
+                    self.rmb_edge_scroll_velocity.x * frame_time,
+                    self.rmb_edge_scroll_velocity.y * frame_time,
+                );
             }
 
             if self.editor.needs_clear_world {
