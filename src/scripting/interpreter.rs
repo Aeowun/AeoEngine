@@ -8,6 +8,7 @@ use super::api::{
 use super::ast::*;
 use super::execution::{FiberResult, YieldReason};
 use super::log::{LogRecord, LogSeverity};
+use super::source::SourceSpan;
 use super::value::{HandleKind, MapKey, Scope, Value};
 use std::cell::RefCell;
 
@@ -84,6 +85,7 @@ struct CallFrame {
     function_name: String,
     captured_scopes: Vec<Scope>,
     expects_return_value: bool,
+    call_site_span: Option<SourceSpan>,
 }
 
 /// A cooperative AeoScript execution fiber.
@@ -100,6 +102,7 @@ pub struct ScriptFiber {
     finished: bool,
     result: Option<Value>,
     pub return_value: Option<Value>,
+    pub return_site_span: Option<SourceSpan>,
 }
 
 impl ScriptFiber {
@@ -454,10 +457,12 @@ impl Interpreter {
                 function_name: function_name.to_string(),
                 captured_scopes: Vec::new(),
                 expects_return_value: false,
+                call_site_span: None,
             }],
             finished: false,
             result: None,
             return_value: None,
+            return_site_span: None,
         })
     }
 
@@ -505,10 +510,12 @@ impl Interpreter {
                 function_name,
                 captured_scopes,
                 expects_return_value: false,
+                call_site_span: None,
             }],
             finished: false,
             result: None,
             return_value: None,
+            return_site_span: None,
         })
     }
 
@@ -560,10 +567,12 @@ impl Interpreter {
                 function_name,
                 captured_scopes,
                 expects_return_value: false,
+                call_site_span: None,
             }],
             finished: false,
             result: None,
             return_value: None,
+            return_site_span: None,
         };
 
         self.call_depth += 1;
@@ -621,10 +630,12 @@ impl Interpreter {
                 function_name: event.name.clone(),
                 captured_scopes: Vec::new(),
                 expects_return_value: false,
+                call_site_span: None,
             }],
             finished: false,
             result: None,
             return_value: None,
+            return_site_span: None,
         })
     }
 
@@ -647,10 +658,12 @@ impl Interpreter {
                 function_name: "top-level".to_string(),
                 captured_scopes: Vec::new(),
                 expects_return_value: false,
+                call_site_span: None,
             }],
             finished: false,
             result: None,
             return_value: None,
+            return_site_span: None,
         })
     }
 
@@ -692,6 +705,7 @@ impl Interpreter {
                     break fiber.complete(Value::Nil);
                 }
                 fiber.return_value = frame.expects_return_value.then_some(Value::Nil);
+                fiber.return_site_span = frame.call_site_span;
                 continue;
             }
 
@@ -1024,6 +1038,7 @@ impl Interpreter {
                                 function_name: name,
                                 captured_scopes: captures,
                                 expects_return_value: false,
+                                call_site_span: None,
                             });
                             let insert_at = fiber.stack.len().saturating_sub(1);
                             fiber.stack.insert(insert_at, frame);
@@ -1171,6 +1186,7 @@ impl Interpreter {
                                 function_name: name,
                                 captured_scopes: Vec::new(),
                                 expects_return_value: false,
+                                call_site_span: None,
                             });
                             fiber.return_value = None;
                             let insert_at = fiber.stack.len().saturating_sub(1);
@@ -1255,6 +1271,7 @@ impl Interpreter {
                     }
 
                     fiber.return_value = frame.expects_return_value.then_some(value);
+                    fiber.return_site_span = frame.call_site_span;
                     continue;
                 }
             }
@@ -1787,6 +1804,7 @@ impl Interpreter {
         function_name: String,
         host: &mut HostContext,
         captures: Vec<Scope>,
+        call_site_span: Option<SourceSpan>,
         opt_fiber: Option<&mut ScriptFiber>,
     ) -> Result<Value, String> {
         if let Some(fiber) = opt_fiber {
@@ -1823,6 +1841,7 @@ impl Interpreter {
                 function_name,
                 captured_scopes: captures,
                 expects_return_value: true,
+                call_site_span,
             });
 
             Err(FRAME_PUSHED_SENTINEL.to_string())
@@ -1888,8 +1907,11 @@ impl Interpreter {
             ExpressionKind::Call { .. } | ExpressionKind::MethodCall { .. }
         ) {
             if let Some(fiber) = opt_fiber.as_deref_mut() {
-                if let Some(val) = fiber.return_value.take() {
-                    return Ok(val);
+                if fiber.return_site_span == Some(expression.span) {
+                    fiber.return_site_span = None;
+                    if let Some(val) = fiber.return_value.take() {
+                        return Ok(val);
+                    }
                 }
             }
         }
@@ -2008,6 +2030,7 @@ impl Interpreter {
             ExpressionKind::Call { callee, arguments } => self.eval_call_opt_fiber(
                 instance,
                 scopes,
+                expression.span,
                 callee,
                 arguments,
                 host,
@@ -2093,6 +2116,7 @@ impl Interpreter {
                                 method.clone(),
                                 host,
                                 caps,
+                                Some(expression.span),
                                 opt_fiber,
                             )
                         } else {
@@ -2265,6 +2289,7 @@ impl Interpreter {
         &mut self,
         instance: &mut ScriptInstance,
         scopes: &mut Vec<Scope>,
+        call_span: SourceSpan,
         callee: &Expression,
         arguments: &[Expression],
         host: &mut HostContext,
@@ -2273,6 +2298,7 @@ impl Interpreter {
         self.eval_call_opt_fiber(
             instance,
             scopes,
+            call_span,
             callee,
             arguments,
             host,
@@ -2285,6 +2311,7 @@ impl Interpreter {
         &mut self,
         instance: &mut ScriptInstance,
         scopes: &mut Vec<Scope>,
+        call_span: SourceSpan,
         callee: &Expression,
         arguments: &[Expression],
         host: &mut HostContext,
@@ -2362,6 +2389,7 @@ impl Interpreter {
                             name.clone(),
                             host,
                             caps,
+                            Some(call_span),
                             opt_fiber,
                         );
                     }
@@ -2405,6 +2433,7 @@ impl Interpreter {
                                 name.clone(),
                                 host,
                                 caps,
+                                Some(call_span),
                                 opt_fiber,
                             );
                         }
@@ -2454,6 +2483,7 @@ impl Interpreter {
                     "anonymous".to_string(),
                     host,
                     captures,
+                    Some(call_span),
                     opt_fiber,
                 )
             }
@@ -2538,6 +2568,7 @@ impl Interpreter {
                             name.clone(),
                             host,
                             vec![],
+                            Some(call_span),
                             opt_fiber,
                         )
                     }

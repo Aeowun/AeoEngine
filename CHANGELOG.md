@@ -428,13 +428,23 @@ Version `0.7.1` introduces temporary runtime data and dynamic object creation fo
 * Optimized texture fallback system to support multiple asset subdirectories.
 * Updated world persistence format to include single-asset sky configuration.
 
+### Fixed
+
+* Fixed Play → Stop → Play scripting lifecycle state leaking between sessions.
+* Preserved authored disabled-script state across Play sessions.
+* Cleared transient scripting state when stopping Play mode.
+* Fixed nested AeoScript function return values being consumed by the wrong call site.
+* Fixed release executable relative paths so `UserData` and `.assets` resolve from the executable directory.
+
 ### Notes
 
-Version `0.7.2` establishes the foundation for environment rendering in AeoEngine with a seamless skybox system.
+Version `0.7.2` establishes the sky/environment foundation and closes the release with scripting lifecycle, interpreter, and release-runtime stability fixes.
+Version `0.7.2` also introduced the master .aeo integration test script, which runs and verifies individual scripts for language features, control flow, arrays, maps, strings, functions, closures, waits, Cells, attributes, Entities, Lights, World behavior, handles, callbacks, and math as a single in-game test suite.
+Verification: **402/402 Rust tests passing; 16/16 in-game integration tests passing across 5 consecutive full-suite runs.**
 
 ---
 
-## 0.7.3
+## 0.7.3 — Unreleased (partially applied to 0.7.2)
 
 ### Added
 
@@ -442,6 +452,7 @@ Version `0.7.2` establishes the foundation for environment rendering in AeoEngin
 * Cell Collision Event Toggle: Persistent `collision_events_enabled` property to control whether a Cell dispatches contact events.
 * Script Enable/Disable: Ability to temporarily deactivate scripts from the Script Editor Inspector.
 * Persistence for new collision and script state settings.
+* Lexical language work completed during the previous development cycle, with corresponding lexer/parser behavior and regression coverage.
 
 ### Changed
 
@@ -451,4 +462,38 @@ Version `0.7.2` establishes the foundation for environment rendering in AeoEngin
 
 ### Notes
 
-Version `0.7.3` provides fine-grained control over script execution and object-level interactivity, enabling more complex gameplay scenarios and better debugging tools.
+Version `0.7.3` expands AeoScript event and execution control while incorporating the completed lexical-language work from the preceding development cycle.
+
+### Planned
+
+#### Runtime UI
+
+AeoScript will gain a small runtime UI system for creating panels, text, and interactive buttons directly from scripts. The first version will stay intentionally simple while providing the foundation for in-game interfaces without introducing a large UI framework.
+
+#### Input System
+
+AeoScript will gain direct access to keyboard and mouse input, including button states, mouse position, and mouse movement. The API is designed to stay small and composable rather than introducing large collections of specialized input functions.
+
+#### Syntax Highlighting
+
+The Script Editor will gain proper AeoScript syntax highlighting based on the engine's existing lexer. This will make keywords, strings, numbers, functions, comments, and other language elements visually distinct while keeping the editor aligned with the actual language grammar.
+
+#### Closures & Scripting
+
+AeoScript is being expanded with proper lexical closures so functions can retain access to variables from the scope where they were created. This enables patterns such as callbacks, event handlers, delayed behavior, and shared script state without exposing the engine's internal runtime architecture.
+
+#### Voxel Rendering
+
+The voxel renderer will avoid generating faces that are completely hidden by neighboring blocks. This will significantly reduce unnecessary geometry while continuing to use GPU back-face culling for the faces that remain.
+
+#### Runtime Script Control
+
+AeoEngine is planned to support controlling scripts during runtime rather than only enabling or disabling them during project loading. This will allow game logic to dynamically control which scripted behaviors are active as the game runs.
+
+---
+
+## TODO
+
+* Perform a full sweep of AeoEngine documentation.
+* Perform a full sweep of the AEOWUN website.
+* Bring documentation and website terminology into alignment with the current AeoEngine and AeoScript implementation.

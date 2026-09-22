@@ -88,6 +88,7 @@ pub struct App {
     pub script_test_results: std::collections::BTreeMap<String, bool>,
     pub script_pending_enable: Vec<String>,
     pub script_pending_disable: Vec<String>,
+    pub authored_disabled_scripts: Vec<String>,
     pub entity_manager: EntityManager,
 }
 
@@ -127,6 +128,7 @@ impl App {
             script_test_results: std::collections::BTreeMap::new(),
             script_pending_enable: Vec::new(),
             script_pending_disable: Vec::new(),
+            authored_disabled_scripts: Vec::new(),
             entity_manager: EntityManager::new(),
         }
     }
@@ -1040,6 +1042,7 @@ impl App {
 
     fn start_scripting(&mut self) {
         self.script_contacted_last_frame.clear();
+        self.authored_disabled_scripts = self.world.disabled_scripts.clone();
         let Some(project_path) = &self.project_manager.current_project else {
             return;
         };
@@ -1085,7 +1088,6 @@ impl App {
     }
 
     fn stop_scripting(&mut self) {
-        self.script_contacted_last_frame.clear();
         let scene_opt = self.script_scene.take();
         let em = &mut self.entity_manager;
 
@@ -1097,6 +1099,14 @@ impl App {
 
             scene.stop(&mut host);
         }
+
+        self.script_contacted_last_frame.clear();
+        self.script_pending_events.clear();
+        self.script_test_results.clear();
+        self.script_pending_enable.clear();
+        self.script_pending_disable.clear();
+        self.script_dynamic_properties.clear();
+        self.world.disabled_scripts = std::mem::take(&mut self.authored_disabled_scripts);
 
         em.clear();
         self.world.clear_runtime_state();

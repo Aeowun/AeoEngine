@@ -5,6 +5,7 @@ fn log_header(title) {
 }
 
 fn run_single_test(script_path, test_name) {
+    debug.log("[MASTER] BEFORE TEST:", test_name, "completed =", test.is_completed(test_name))
     debug.log("[MASTER] Enabling script:", script_path)
     script.enable(script_path)
 
@@ -27,7 +28,7 @@ fn run_single_test(script_path, test_name) {
     debug.log("[MASTER] Disabling script:", script_path)
     script.disable(script_path)
 
-    event.fire("run_test")
+    debug.log("[MASTER] AFTER TEST:", test_name, "completed =", test.is_completed(test_name))
     wait(0.2)
 }
 
@@ -57,3 +58,4 @@ debug.log("PASSED:", summary[0])
 debug.log("FAILED:", summary[1])
 debug.log("TOTAL: ", summary[2])
 debug.log("========================================")
+

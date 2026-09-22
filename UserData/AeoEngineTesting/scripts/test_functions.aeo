@@ -7,17 +7,22 @@ fn multiply(a, b) {
 }
 
 on run_test() {
-    debug.log("[TEST] test_functions START")
+    debug.log("[TEST] test_functions START TEST 2")
     ok: bool = true
 
     const sum = add(10, 20)
-    if sum != 30 { ok = false }
+	debug.log("[TEST] sum =", sum)
+	if sum != 30 { ok = false }
 
-    const nested = multiply(add(2, 3), 4)
-    if nested != 20 { ok = false }
+	const nested = multiply(add(2, 3), 4)
+	debug.log("[TEST] nested =", nested)
+	if nested != 20 { ok = false }
 
-    const func_val = add
-    if func_val(5, 5) != 10 { ok = false }
+	const func_val = add
+	debug.log("[TEST] func_val type =", func_val)
+	const func_result = func_val(5, 5)
+	debug.log("[TEST] func_result =", func_result)
+	if func_result != 10 { ok = false }
 
     if ok {
         debug.log("[TEST] test_functions PASS")

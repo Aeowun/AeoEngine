@@ -28,6 +28,18 @@ use winit::window::{CursorGrabMode, WindowAttributes};
 use engine::app::App;
 
 fn main() {
+    #[cfg(not(debug_assertions))]
+    {
+        let exe_dir = std::env::current_exe()
+            .expect("Failed to determine executable path")
+            .parent()
+            .expect("Executable has no parent directory")
+            .to_path_buf();
+
+        std::env::set_current_dir(&exe_dir)
+            .expect("Failed to set working directory to executable directory");
+    }
+
     let event_loop = EventLoop::new().expect("Failed to create event loop");
 
     let window_attributes = WindowAttributes::default()

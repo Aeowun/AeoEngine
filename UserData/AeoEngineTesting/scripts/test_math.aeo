@@ -20,7 +20,7 @@ on run_test() {
     if roll < 1 || roll > 6 { ok = false }
 
     if ok {
-        debug.log("[TEST] test_math PASS")
+        debug.log("[TEST] test_math PASS <EASTER EGG AT RUN #4>")
     } else {
         debug.log("[TEST] test_math FAIL")
     }

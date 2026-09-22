@@ -1,5 +1,5 @@
 on run_test() {
-    debug.log("[TEST] test_control_flow START")
+    debug.log("[TEST] test_control_flow START <EASTER EGG AT RUN #3>")
     ok: bool = true
 
     branch: number = 0

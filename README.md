@@ -6,9 +6,9 @@ A voxel engine and editor for building authored worlds and running them with phy
 
 AeoEngine provides a grid-based editor for creating authored worlds and a runtime for simulating and playing them.
 
-Authored World data is kept separate from runtime state. Changes made during Play mode—such as moving a physics body, changing a Cell property through AeoScript, or modifying runtime character state—are temporary and are discarded when Play mode stops.
+Authored World data is kept separate from runtime state. Changes made during Play mode—such as moving a physics body, changing a Cell property through AeoScript, creating or deleting runtime Cells, or modifying runtime character state—are temporary and are discarded when Play mode stops.
 
-The authored World remains the source of truth for scene data.
+The authored World remains the source of truth for persistent scene data.
 
 ## Current Features
 
@@ -18,6 +18,7 @@ The authored World remains the source of truth for scene data.
 * Plane and Top-Block building modes
 * Build, Erase, Undo, and Redo
 * Project-owned texture assets
+* World sky environment and built-in sky presets
 * Runtime physics simulation
 * Dynamic PhysicsBodies
 * Change-driven static physics synchronization
@@ -25,14 +26,23 @@ The authored World remains the source of truth for scene data.
 * Third-person gameplay camera
 * Directional and point lighting
 * AeoScript gameplay scripting
-* Script bindings using persistent Cell IDs
-* Cell and Entity handles
-* Object discovery through `find()` and `getAllCellsOfClass()`
-* Runtime Cell property overrides
-* AeoScript standard library
+* Top-level AeoScript execution
 * Persistent script lifecycle state
 * Cooperative script fibers and `wait()`
+* Cell and Entity handles
+* Persistent Cell IDs
+* Object discovery through `find()` and `getAllCellsOfClass()`
+* Authored Cell attributes
+* Runtime Cell property overrides
+* Runtime Cell creation and deletion
+* Runtime Cell position and property changes
+* Runtime attribute overrides
+* `on_touch(cell)` events
+* Per-Cell collision event control
+* Script enable/disable
+* AeoScript standard library
 * Runtime script diagnostics and terminal output
+* In-game AeoScript integration testing
 
 ## Getting Started
 
@@ -69,32 +79,46 @@ The `docs/` directory contains the engine and AeoScript documentation.
 
 AeoEngine is under active development.
 
-The current development phase is focused on using the engine to build actual games, exercising the complete editor-to-runtime workflow, and addressing problems discovered through real gameplay and authoring.
+Version `0.7.2` is the current completed release. Development is now focused on using AeoEngine to build actual games, exercising the complete editor-to-runtime workflow, and addressing problems discovered through real gameplay and authoring.
+
+Version `0.7.3` is currently under development. Current work includes expanding AeoScript interaction, editor tooling, runtime UI, input access, lexical closures, syntax highlighting, runtime script control, and voxel rendering optimization.
 
 AeoScript currently supports:
 
 * Variables and constants
 * Numbers, strings, booleans, and `nil`
 * Functions and return values
+* Nested function calls
 * Conditionals and loops
 * Events and lifecycle functions
-* Nested function calls
+* Top-level executable statements
 * Persistent script fibers
 * Cooperative `wait(seconds)`
 * Maps and reference-backed baskets
 * Math, basket, and string standard-library namespaces
 * Unicode-aware string operations
+* `math.random()`
+* `math.random(min, max)`
 * Cell and Entity handles
 * Persistent Cell IDs
 * Name-based object discovery through `find()`
 * Class-based object discovery through `getAllCellsOfClass()`
+* Authored Cell attributes
 * Runtime Cell property changes
+* Runtime Cell creation and deletion
+* Runtime Cell position changes
+* Runtime attribute overrides
 * Separation between authored state and runtime overrides
+* `on_touch(cell)` events
+* Per-Cell collision event control
+* Script enable/disable
 * Persistent lifecycle state between script updates
 * Structured runtime diagnostics
 * Script Editor integration
 
 Script bindings target the unique persistent `Cell.id` of an authored World Cell. The authored `entity_identity` value remains a human-facing name and may be shared by multiple Cells.
+
+AeoEngine also contains an in-game integration test suite. A master `.aeo` test script runs individual tests for language features, control flow, arrays, maps, strings, functions, closures, waits, Cells, attributes, Entities, Lights, World behavior, handles, callbacks, and math.
 
 See [CHANGELOG.md](CHANGELOG.md) for the development history and current work.
 
@@ -108,12 +132,12 @@ Performance work should be driven by profiling and representative test worlds ra
 
 The World currently stores authored cells individually, and active block collection requires traversing the stored cells.
 
-Possible future changes include:
+Planned rendering work includes:
 
 * Spatially chunked World storage
 * Visible-chunk selection
 * Per-chunk render meshes
-* Face culling
+* Hidden-face culling
 * Greedy meshing
 * Render batching
 
@@ -213,12 +237,12 @@ Current development is in the `0.7.x` phase.
 
 Version `0.6.x` established the advanced editor workflow and the first complete AeoScript runtime, including its standard library, handles, persistent Cell-ID bindings, fibers, nested yielding, and lifecycle persistence.
 
-Version `0.7.x` begins the next development phase: building actual games with AeoEngine and using those games to expose and fix the first real workflow, gameplay, and engine-integration problems.
+Version `0.7.0` expanded AeoScript with authored Cell attributes, top-level executable statements, a dedicated scripting host boundary, and ordered top-level execution.
 
-## Development Time
+Version `0.7.1` added runtime Cell creation, deletion, property mutation, runtime attribute overrides, and `math.random()` while preserving the separation between authored World data and temporary Play-mode state.
 
-Estimated active development time represented by the current sprint:
+Version `0.7.2` added the World sky environment, completed the current scripting lifecycle and nested-return fixes, and established the master in-game AeoScript integration test suite.
 
-**~50 hours 52 minutes**
+Version `0.7.3` is the current unreleased development cycle. Planned work includes runtime UI, direct keyboard and mouse input, AeoScript syntax highlighting, lexical closures, voxel hidden-face culling, and runtime script control.
 
-*Not sponsored by Red Bull.*
+See [CHANGELOG.md](CHANGELOG.md) for the complete development history.

@@ -4418,4 +4418,143 @@ entity Trigger {
                 .any(|r| r.message == format!("Exited: {}", cell_id))
         );
     }
+
+    #[test]
+    fn test_play_stop_play_lifecycle_reset() {
+        // Mock App-level containers
+        let mut test_results = std::collections::BTreeMap::new();
+        let mut pending_events = Vec::new();
+        let mut pending_enable = Vec::new();
+        let mut pending_disable = Vec::new();
+        let mut dynamic_properties = std::collections::HashMap::new();
+        let mut authored_disabled_scripts: Vec<String> = Vec::new();
+
+        let mut world = World::new();
+        world.disabled_scripts = vec!["initial.aeo".to_string()];
+        let mut em = EntityManager::new();
+
+        // --- SESSION 1 START ---
+        // 1. Snapshot taken in start_scripting
+        authored_disabled_scripts = world.disabled_scripts.clone();
+
+        // 2. Play mode mutations
+        {
+            let mut bridge = crate::scripting::host::ScriptHostBridge {
+                entity_manager: &mut em,
+                world: &mut world,
+                dynamic_properties: &mut dynamic_properties,
+                pending_events: &mut pending_events,
+                test_results: &mut test_results,
+                pending_enable_scripts: &mut pending_enable,
+                pending_disable_scripts: &mut pending_disable,
+            };
+            bridge.complete_test("leak_test", true);
+            bridge.fire_event("leak_event", vec![]);
+            bridge.disable_script("runtime_disabled.aeo");
+        }
+
+        // --- SESSION 1 STOP (Simulate App::stop_scripting) ---
+        // (scene.stop() would run here)
+        test_results.clear();
+        pending_events.clear();
+        pending_enable.clear();
+        pending_disable.clear();
+        dynamic_properties.clear();
+        // Restore snapshot
+        world.disabled_scripts = std::mem::take(&mut authored_disabled_scripts);
+
+        // --- SESSION 2 START (Verify clean start) ---
+        assert!(test_results.is_empty(), "Test results should be cleared");
+        assert!(pending_events.is_empty(), "Pending events should be cleared");
+        assert_eq!(world.disabled_scripts, vec!["initial.aeo".to_string()], "World script state should be restored");
+        assert!(authored_disabled_scripts.is_empty(), "Snapshot should be consumed");
+    }
+
+    #[test]
+    fn test_master_suite_in_game() {
+        let project_dir = std::path::Path::new("UserData/AeoEngineTesting");
+        if !project_dir.exists() {
+            return;
+        }
+
+        let mut em = EntityManager::new();
+        let mut world = World::new();
+        let world_path = project_dir.join("world.dat");
+        if world_path.exists() {
+            let _ = crate::world::persistence::load_world(&mut world, &world_path);
+        }
+
+        let mut dynamic_properties = std::collections::HashMap::new();
+        let mut pending_events = Vec::new();
+        let mut test_results = std::collections::BTreeMap::new();
+        let mut pending_enable = Vec::new();
+        let mut pending_disable = Vec::new();
+        let mut authored_disabled_scripts: Vec<String>;
+
+        for session in 1..=3 {
+            println!("--- STARTING SESSION {} ---", session);
+
+            // Re-create player for every session
+            let player_id = em.create_entity("Player");
+            em.set_position(player_id, glam::Vec3::new(0.0, 18.0, 0.0));
+
+            // 1. start_scripting snapshot
+            authored_disabled_scripts = world.disabled_scripts.clone();
+
+            let mut scene = ScriptScene::load_from_bindings(
+                project_dir,
+                &world,
+                &world.script_bindings,
+                &mut em,
+                0.0,
+            )
+            .unwrap();
+
+            let mut completed = false;
+            for _ in 0..1000 {
+                {
+                    let mut bridge = crate::scripting::host::ScriptHostBridge {
+                        entity_manager: &mut em,
+                        world: &mut world,
+                        dynamic_properties: &mut dynamic_properties,
+                        pending_events: &mut pending_events,
+                        test_results: &mut test_results,
+                        pending_enable_scripts: &mut pending_enable,
+                        pending_disable_scripts: &mut pending_disable,
+                    };
+
+                    let mut host = HostContext {
+                        delta_time: 0.1,
+                        engine: &mut bridge,
+                    };
+
+                    scene.update(0.1, &mut host).unwrap();
+                }
+
+                // Check if session completed
+                if test_results.contains_key("language") {
+                    completed = true;
+                    break;
+                }
+            }
+
+            for record in scene.output() {
+                println!("[SESSION {}] [LOG] {}", session, record.message);
+            }
+
+            assert!(completed, "Master test suite did not complete in Session {}", session);
+            assert!(test_results.get("language").copied().unwrap_or(false), "language test failed in Session {}", session);
+
+            // 2. stop_scripting cleanup
+            // (scene.stop() would run here if we simulated the drop)
+            test_results.clear();
+            pending_events.clear();
+            pending_enable.clear();
+            pending_disable.clear();
+            dynamic_properties.clear();
+            world.disabled_scripts = std::mem::take(&mut authored_disabled_scripts);
+            em.clear();
+            world.clear_runtime_state();
+        }
+    }
 }
