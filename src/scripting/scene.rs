@@ -424,6 +424,7 @@ impl ScriptScene {
         if !self.disabled_scripts.contains(&norm) {
             self.disabled_scripts.push(norm.clone());
         }
+        self.top_level_spawned.remove(&norm);
         eprintln!("[RUNTIME] script disabled: {}", norm);
         self.runtime.cancel_fibers_for_script(&norm);
     }
@@ -1328,8 +1329,7 @@ pub(crate) mod tests {
         TestHost {
             entity_manager: EntityManager::new(),
             world: World::new(),
-            dynamic_properties: HashMap::new(),
-        }
+            dynamic_properties: HashMap::new(),        }
     }
 
     pub(crate) fn create_scene(source: &str, host: &mut HostContext) -> ScriptScene {

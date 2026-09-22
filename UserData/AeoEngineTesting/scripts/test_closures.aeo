@@ -25,7 +25,6 @@ on run_test() {
     }
 
     const add10 = make_adder(10)
-    const add10 = make_adder(10)
     if add10(5) != 15 { ok = false }
 
     // 4. Standalone closure call followed by assignment (exact regression test)

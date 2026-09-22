@@ -271,6 +271,7 @@ impl ScriptScheduler {
 
             _ => {
                 task.state = ScriptTaskState::Failed;
+                self.ready_queue.retain(|&queued_id| queued_id != id);
 
                 Ok(())
             }
@@ -577,5 +578,18 @@ mod tests {
         scheduler.cancel(id).expect("cancel should succeed");
 
         assert_eq!(scheduler.state(id), Some(ScriptTaskState::Failed));
+    }
+
+    #[test]
+    fn cancelled_task_removed_from_ready_queue() {
+        let mut scheduler = ScriptScheduler::new();
+
+        let id = scheduler.spawn();
+        assert_eq!(scheduler.state(id), Some(ScriptTaskState::Ready));
+
+        scheduler.cancel(id).expect("cancel should succeed");
+
+        assert_eq!(scheduler.state(id), Some(ScriptTaskState::Failed));
+        assert_eq!(scheduler.pop_ready(), None);
     }
 }

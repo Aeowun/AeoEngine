@@ -6,10 +6,23 @@ on run_test() {
     if dt < 0 { ok = false }
 
     const blocks = getAllCellsOfClass("Block")
-    if blocks == nil { ok = false }
+    if blocks == nil || basket.len(blocks) == 0 {
+        ok = false
+    } else {
+        const b0 = blocks[0]
+        if b0 == nil {
+            ok = false
+        } else {
+            if !cell.exists(b0.id) {
+                ok = false
+            }
+        }
+    }
 
     const objects = find("NonExistentObjectQuery")
-    if objects == nil { ok = false }
+    if objects == nil || basket.len(objects) != 0 {
+        ok = false
+    }
 
     if ok {
         debug.log("[TEST] test_world PASS")

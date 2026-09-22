@@ -5,10 +5,17 @@ on run_test() {
     called: bool = false
     const temp = cell.new("Block")
     if temp != nil {
-        temp.on_touch = fn(other) {
+        const callback = fn(other) {
             called = true
         }
+        temp.on_touch = callback
+        callback(temp)
+        if !called {
+            ok = false
+        }
         cell.delete(temp)
+    } else {
+        ok = false
     }
 
     if ok {

@@ -16,23 +16,23 @@ These functions execute inside the normal AeoScript runtime.
 
 # 1. `math`
 
-The `math` namespace provides deterministic numeric operations.
+The `math` namespace provides numeric, trigonometric, interpolation, conversion, and random-value utilities.
 
 ### `math.abs(x)`
 
 Returns the absolute value.
 
-### `math.min(...)`
+### `math.min(a, b)`
 
-Returns the smallest supplied value.
+Returns the smaller of exactly two numeric arguments.
 
 ~~~aeoscript
-const lowest = math.min(8, 3, 12, 1)
+const lowest = math.min(8, 3)
 ~~~
 
-### `math.max(...)`
+### `math.max(a, b)`
 
-Returns the largest supplied value.
+Returns the larger of exactly two numeric arguments.
 
 ### `math.floor(x)`
 
@@ -207,7 +207,7 @@ The object is supplied to the underlying native namespace operation as the appro
 
 # 5. Standard Library Design
 
-The current library intentionally focuses on deterministic, broadly useful gameplay operations.
+The current library intentionally focuses on broadly useful gameplay operations.
 
 Not currently part of this first standard-library pass:
 

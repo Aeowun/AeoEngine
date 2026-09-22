@@ -1,4 +1,4 @@
-﻿# AeoScript Gameplay Scripting
+# AeoScript Gameplay Scripting
 
 AeoScript is AeoEngine's gameplay scripting language.
 
@@ -47,7 +47,7 @@ Cell ID → script path
 
 ### Script Enable / Disable
 
-You can temporarily disable a script from the **INSPECTOR** panel in the Script Editor. When disabled, the script will not execute top-level code, lifecycle hooks, or event handlers.
+Runtime controls are `script.enable(path)`, `script.disable(path)`, and `script.is_enabled(path)`. Disabled script paths are excluded from normal event dispatch, and disabling cancels their active fibers; this is file-level execution control, not a promise to recreate bindings on re-enable.
 
 Removing a binding does not delete the source script.
 
@@ -69,7 +69,7 @@ entity Spike {
 }
 ~~~
 
-Use the **Collision Events** toggle in the Cell Properties panel to enable or disable these callbacks for specific objects.
+The runtime dispatches supported contact and overlap callbacks through global handlers, dynamic handle properties, and bound entity handlers.
 
 ---
 
@@ -106,7 +106,7 @@ Use `getAllCellsOfClass()` when you want a class-based query.
 const blocks = getAllCellsOfClass("Block")
 ~~~
 
-Both return baskets of handles.
+Both return baskets of handles. `find()` can return Entity and Cell-family handles: an authored Cell identity match is not an Entity handle.
 
 ---
 
@@ -242,13 +242,15 @@ Missing map keys return `nil`.
 
 # 12. Standard Library
 
-The current standard-library namespaces are:
+Core utility namespaces are:
 
 ~~~text
 math
 basket
 string
 ~~~
+
+Engine-integrated namespaces are `cell`, `entity`, `script`, `event`, and `test`; `debug` is the logging namespace, and `time.delta` is a host-provided property.
 
 Examples:
 
@@ -321,4 +323,3 @@ Repeat
 ~~~
 
 Build the smallest working behavior first, then add complexity.
-

@@ -82,7 +82,7 @@ and:
 
 ```aeoscript
 entity Player {
-    fn take_damage(amount: number) {
+    fn move_to_origin() {
         ...
     }
 }
@@ -446,7 +446,7 @@ method_call:
 Example:
 
 ```aeoscript
-entity:destroy()
+entity:set_position(0, 1, 0)
 ```
 
 ### Indexing
@@ -477,7 +477,7 @@ blocks.find(target)
 ```
 
 ```aeoscript
-objects[0]:destroy()
+objects[0]:translate(1, 0, 0)
 ```
 
 ---

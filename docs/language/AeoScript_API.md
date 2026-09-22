@@ -25,9 +25,9 @@ Writes a structured script message to the AeoEngine output/diagnostic system.
 const matches = find("Ghost")
 ```
 
-Finds authored Cells and runtime Entities whose authored/name identity matches `name`.
+Searches runtime Entities by runtime name and active/effective World Cells by authored `entity_identity`.
 
-Returns a `basket` of handles.
+Returns a `basket` of typed handles. An authored Cell match is a `Cell` or `Light` handle, not an `Entity` handle.
 
 Names are not required to be unique, so the result may contain multiple objects.
 
@@ -39,7 +39,7 @@ Names are not required to be unique, so the result may contain multiple objects.
 const blocks = getAllCellsOfClass("Block")
 ```
 
-Returns a `basket` containing handles to authored Cells of the specified class.
+Returns a `basket` containing active/effective World Cells of the specified class.
 
 Examples include:
 
@@ -56,7 +56,7 @@ Examples include:
 wait(0.5)
 ```
 
-Suspends the current AeoScript fiber for the specified duration.
+Suspends the current AeoScript fiber for a finite, positive duration of scheduler simulation time.
 
 The fiber resumes after the wait while preserving its execution state, including:
 
@@ -86,26 +86,26 @@ The suspended execution resumes inside `delayed_action()` rather than restarting
 
 # 2. `math` Namespace
 
-Provides deterministic mathematical operations.
+Provides numeric, trigonometric, interpolation, conversion, and random-value utilities.
 
 ### `math.abs(x)`
 
 Returns the absolute value of `x`.
 
-### `math.min(...)`
+### `math.min(a, b)`
 
-Returns the smallest supplied numeric argument.
+Returns the smaller of exactly two numeric arguments.
 
 ```aeoscript
-const lowest = math.min(8, 3, 12, 1)
+const lowest = math.min(8, 3)
 ```
 
-### `math.max(...)`
+### `math.max(a, b)`
 
-Returns the largest supplied numeric argument.
+Returns the larger of exactly two numeric arguments.
 
 ```aeoscript
-const highest = math.max(8, 3, 12, 1)
+const highest = math.max(8, 3)
 ```
 
 ### `math.floor(x)`
@@ -485,14 +485,6 @@ For authored Cells, this is typically read-only. For runtime-created Cells, this
 
 ---
 
-### `.collisionEventsEnabled`
-
-Controls whether this Cell dispatches the `on_touch` event.
-
-Read/write.
-
----
-
 ### `.attributes`
 
 A map-like interface to the Cell's authored and runtime attributes.
@@ -526,9 +518,9 @@ Provides utilities for dynamic Cell management during Play mode.
 
 ### `cell.new(type_name)`
 
-Creates a new runtime-only Cell of the specified type (e.g., `"Block"`, `"Light"`).
+Creates a new runtime-only Cell. Supported types are `Block`, `FxBlock`, `Player`, `NPC`, `Light`, and `SpawnPoint`.
 
-Returns a `Cell` handle.
+Returns a `Cell` or `Light` handle.
 
 Runtime Cells exist only during the current Play session and are not persisted to the World file.
 
@@ -556,16 +548,6 @@ Returns `true` if a Cell with the specified ID exists in the current session.
 An `Entity` handle refers to a live runtime object such as a Player or NPC.
 
 Entity handles are runtime references rather than authored World Cells.
-
-## Properties
-
-### `.id`
-
-Unique runtime Entity ID.
-
-Read-only.
-
----
 
 ### `.name`
 
@@ -610,7 +592,7 @@ Returns `true` if an Entity with the specified ID exists.
 
 # 10. Anonymous Functions
 
-AeoScript supports first-class anonymous functions. These can be assigned to variables, passed as arguments, or stored as dynamic properties on engine handles.
+AeoScript supports first-class functions (both named function declarations and anonymous closures). Function values support lexical capture (for anonymous closures) and can be assigned to variables, returned, passed as arguments, or stored as dynamic properties on engine handles.
 
 ```aeoscript
 const callback = fn(x) {
@@ -641,7 +623,7 @@ Engine handles refer to engine-managed objects.
 
 A handle may become invalid when the referenced runtime object is destroyed or otherwise removed.
 
-Operations performed on invalid references produce runtime errors rather than silently affecting another object.
+Entity methods validate EntityManager handles. Cell lookup can use `cell.get()` and `cell.exists()`; property and method behavior depends on the exposed host operation.
 
 Scripts should therefore treat long-lived runtime references as potentially stale after destruction or lifecycle changes.
 
@@ -690,16 +672,11 @@ AeoScript scripts attached to authored objects can participate in lifecycle exec
 Common lifecycle functions include:
 
 ```aeoscript
-fn on_ready() {
-    ...
-}
-
-fn update(dt) {
-    ...
-}
-
-fn on_destroy() {
-    ...
+entity BoundCell {
+    fn on_spawn() { }
+    fn on_ready() { }
+    fn update(dt) { }
+    fn on_destroy() { }
 }
 ```
 
@@ -791,7 +768,7 @@ AeoScript reports descriptive runtime errors for invalid operations including:
 * Invalid `math` arguments
 * Unsupported basket comparator sorting
 
-Runtime errors include available script context such as the script path, function, and source location.
+Runtime errors include available context such as script path, active function, entity context, and source location when that information is available.
 
 Errors are reported through the AeoEngine script diagnostics/output system.
 
@@ -807,7 +784,6 @@ Examples of functionality that remain future API work include:
 
 * Custom comparator functions for basket sorting
 * Advanced string pattern operations
-* Random-number generation with defined runtime seeding semantics
 * Runtime object spawning and destruction APIs beyond currently supported engine objects
 * Audio APIs
 * Animation control APIs

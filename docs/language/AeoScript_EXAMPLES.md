@@ -385,7 +385,6 @@ Use `on_touch(cell)` to react when the player makes contact with an object.
 entity Lava {
     fn on_touch(player_char) {
         debug.log("Player touched lava!")
-        // Potential logic: player_char.damage(10)
     }
 }
 ~~~
@@ -430,4 +429,3 @@ const onTouchDoor = fn(c) {
 if door1 { door1.on_touch = onTouchDoor }
 if door2 { door2.on_touch = onTouchDoor }
 ~~~
-

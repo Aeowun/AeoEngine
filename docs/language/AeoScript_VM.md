@@ -327,7 +327,6 @@ Running
 Waiting
 Complete
 Failed
-Cancelled
 ```
 
 The scheduler maintains the current script time and moves waiting tasks back into the ready state once their wake time is reached.
@@ -612,7 +611,6 @@ It does not yet provide:
 * Native machine-code compilation.
 * Multithreaded script execution.
 * Automatic budget-based continuation yielding.
-* User-defined first-class function values.
 * Arbitrary coroutine creation from script.
 * A general-purpose module/package system.
 

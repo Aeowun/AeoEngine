@@ -724,31 +724,27 @@ impl Interpreter {
                     initializer,
                     is_const,
                 } => {
-                    let value = if let Some(val) = fiber.return_value.take() {
-                        val
-                    } else {
-                        let captured_scopes = frame.captured_scopes.clone();
-                        match initializer {
-                            Some(initializer) => match self.eval_expression_on_fiber(
-                                fiber,
-                                &mut frame.scopes,
-                                &initializer,
-                                host,
-                                &captured_scopes,
-                            ) {
-                                Ok(value) => value,
-                                Err(error) if error == FRAME_PUSHED_SENTINEL => {
-                                    let insert_at = fiber.stack.len().saturating_sub(1);
-                                    fiber.stack.insert(insert_at, frame);
-                                    continue;
-                                }
-                                Err(error) => {
-                                    self.log_error(error.clone());
-                                    break fiber.fail(error);
-                                }
-                            },
-                            None => Value::Nil,
-                        }
+                    let captured_scopes = frame.captured_scopes.clone();
+                    let value = match initializer {
+                        Some(initializer) => match self.eval_expression_on_fiber(
+                            fiber,
+                            &mut frame.scopes,
+                            &initializer,
+                            host,
+                            &captured_scopes,
+                        ) {
+                            Ok(value) => value,
+                            Err(error) if error == FRAME_PUSHED_SENTINEL => {
+                                let insert_at = fiber.stack.len().saturating_sub(1);
+                                fiber.stack.insert(insert_at, frame);
+                                continue;
+                            }
+                            Err(error) => {
+                                self.log_error(error.clone());
+                                break fiber.fail(error);
+                            }
+                        },
+                        None => Value::Nil,
                     };
 
                     let Some(scope) = frame.scopes.last() else {
@@ -771,26 +767,22 @@ impl Interpreter {
                     value,
                 } => {
                     let captured_scopes = frame.captured_scopes.clone();
-                    let right = if let Some(val) = fiber.return_value.take() {
-                        val
-                    } else {
-                        match self.eval_expression_on_fiber(
-                            fiber,
-                            &mut frame.scopes,
-                            &value,
-                            host,
-                            &captured_scopes,
-                        ) {
-                            Ok(value) => value,
-                            Err(error) if error == FRAME_PUSHED_SENTINEL => {
-                                let insert_at = fiber.stack.len().saturating_sub(1);
-                                fiber.stack.insert(insert_at, frame);
-                                continue;
-                            }
-                            Err(error) => {
-                                self.log_error(error.clone());
-                                break fiber.fail(error);
-                            }
+                    let right = match self.eval_expression_on_fiber(
+                        fiber,
+                        &mut frame.scopes,
+                        &value,
+                        host,
+                        &captured_scopes,
+                    ) {
+                        Ok(value) => value,
+                        Err(error) if error == FRAME_PUSHED_SENTINEL => {
+                            let insert_at = fiber.stack.len().saturating_sub(1);
+                            fiber.stack.insert(insert_at, frame);
+                            continue;
+                        }
+                        Err(error) => {
+                            self.log_error(error.clone());
+                            break fiber.fail(error);
                         }
                     };
 
@@ -811,12 +803,6 @@ impl Interpreter {
                 }
 
                 Instruction::Evaluate(expression) => {
-                    if let Some(_) = fiber.return_value.take() {
-                        frame.pc += 1;
-                        fiber.stack.push(frame);
-                        continue;
-                    }
-
                     let captured_scopes = frame.captured_scopes.clone();
                     match self.eval_expression_on_fiber(
                         fiber,
@@ -845,27 +831,23 @@ impl Interpreter {
                 }
 
                 Instruction::JumpIfFalse { condition, target } => {
-                    let value = if let Some(val) = fiber.return_value.take() {
-                        val
-                    } else {
-                        let captured_scopes = frame.captured_scopes.clone();
-                        match self.eval_expression_on_fiber(
-                            fiber,
-                            &mut frame.scopes,
-                            &condition,
-                            host,
-                            &captured_scopes,
-                        ) {
-                            Ok(value) => value,
-                            Err(error) if error == FRAME_PUSHED_SENTINEL => {
-                                let insert_at = fiber.stack.len().saturating_sub(1);
-                                fiber.stack.insert(insert_at, frame);
-                                continue;
-                            }
-                            Err(error) => {
-                                self.log_error(error.clone());
-                                break fiber.fail(error);
-                            }
+                    let captured_scopes = frame.captured_scopes.clone();
+                    let value = match self.eval_expression_on_fiber(
+                        fiber,
+                        &mut frame.scopes,
+                        &condition,
+                        host,
+                        &captured_scopes,
+                    ) {
+                        Ok(value) => value,
+                        Err(error) if error == FRAME_PUSHED_SENTINEL => {
+                            let insert_at = fiber.stack.len().saturating_sub(1);
+                            fiber.stack.insert(insert_at, frame);
+                            continue;
+                        }
+                        Err(error) => {
+                            self.log_error(error.clone());
+                            break fiber.fail(error);
                         }
                     };
 
@@ -2781,6 +2763,17 @@ impl Interpreter {
             || name == "time"
         {
             return Ok(Value::Namespace(name.to_string()));
+        }
+
+        if let Some(function) = self.find_function(&instance.entity_name, name) {
+            let cache_key = (instance.entity_name.clone(), name.to_string());
+            let compiled = if let Some(compiled) = self.compiled_functions.get(&cache_key) {
+                Arc::clone(compiled)
+            } else {
+                Arc::new(compile_function(&function))
+            };
+            let param_names = function.parameters.iter().map(|p| p.name.clone()).collect();
+            return Ok(Value::Function(compiled, param_names, vec![]));
         }
 
         Err(format!("unknown variable '{}'", name))
@@ -5117,6 +5110,37 @@ entity Test {
                 .unwrap_err()
                 .contains("unknown variable 'local_value'")
         );
+    }
+
+    #[test]
+    fn test_named_function_as_value() {
+        let source = r#"
+fn add(a, b) {
+    return a + b
+}
+
+entity Test {
+    result: number = 0
+
+    fn main() {
+        const func_val = add
+        result = func_val(5, 5)
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut em,
+        };
+        let mut instance = interpreter
+            .instantiate_entity("Test", 1, &mut host)
+            .unwrap();
+        interpreter
+            .call(&mut instance, "main", vec![], &mut host)
+            .unwrap();
+        assert_eq!(instance.get_field("result"), Some(&Value::Number(10.0)));
     }
 
     #[test]
