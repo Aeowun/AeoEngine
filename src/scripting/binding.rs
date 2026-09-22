@@ -54,7 +54,8 @@ mod tests {
     fn test_serialization_round_trip() {
         let original = ScriptBinding::new(12345678, "assets/enemy.aeo");
         let serialized = serde_json::to_string(&original).expect("Should serialize");
-        let deserialized: ScriptBinding = serde_json::from_str(&serialized).expect("Should deserialize");
+        let deserialized: ScriptBinding =
+            serde_json::from_str(&serialized).expect("Should deserialize");
 
         assert_eq!(original, deserialized);
     }

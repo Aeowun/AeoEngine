@@ -162,6 +162,18 @@ Converts degrees to radians.
 
 Converts radians to degrees.
 
+### `math.random([min, max])`
+
+Generates a pseudo-random number.
+
+*   When called without arguments, returns a float in the range `[0.0, 1.0)`.
+*   When called with two integer arguments `min` and `max`, returns an integer in the inclusive range `[min, max]`.
+
+```aeoscript
+const chance = math.random()
+const roll = math.random(1, 20)
+```
+
 ---
 
 # 3. `basket` Namespace
@@ -469,13 +481,77 @@ Runtime override.
 
 Effective runtime world position.
 
-Read-only.
-
-The effective position may include runtime state such as physics movement and runtime visual offset depending on the object and property being queried.
+For authored Cells, this is typically read-only. For runtime-created Cells, this is read/write and allows the Cell to be moved between grid coordinates.
 
 ---
 
-# 7. Entity Handles
+### `.collisionEventsEnabled`
+
+Controls whether this Cell dispatches the `on_touch` event.
+
+Read/write.
+
+---
+
+### `.attributes`
+
+A map-like interface to the Cell's authored and runtime attributes.
+
+```aeoscript
+const coins = cell.attributes["coins"]
+cell.attributes["active"] = true
+```
+
+Assigning `nil` to a runtime attribute removes the override and restores the authored value.
+
+---
+
+### Dynamic Properties
+
+Cells support dynamic property assignment. You can store arbitrary data or functions directly on a handle.
+
+```aeoscript
+const c = cell.get(12345)
+c.myValue = 10
+c.on_touch = fn(other) { debug.log("Touched!") }
+```
+
+All mutations made to Cell handles during Play mode are treated as **runtime overrides** or **temporary script state**. They never modify the authored World file.
+
+---
+
+# 7. `cell` Namespace
+
+Provides utilities for dynamic Cell management during Play mode.
+
+### `cell.new(type_name)`
+
+Creates a new runtime-only Cell of the specified type (e.g., `"Block"`, `"Light"`).
+
+Returns a `Cell` handle.
+
+Runtime Cells exist only during the current Play session and are not persisted to the World file.
+
+### `cell.delete(handle)`
+
+Removes a Cell from the active world.
+
+*   If the target is a runtime-created Cell, it is destroyed.
+*   If the target is an authored Cell, it is temporarily removed from the Play session but remains unchanged in the authored World.
+
+### `cell.get(id)`
+
+Returns a `Cell` handle for the authored or runtime Cell with the specified persistent ID.
+
+Returns `nil` if no Cell with that ID exists.
+
+### `cell.exists(id)`
+
+Returns `true` if a Cell with the specified ID exists in the current session.
+
+---
+
+# 8. Entity Handles
 
 An `Entity` handle refers to a live runtime object such as a Player or NPC.
 
@@ -507,7 +583,59 @@ Read-only.
 
 ---
 
-# 8. Object References and Validity
+### Dynamic Properties
+
+Entities support dynamic property assignment, similar to Cells.
+
+```aeoscript
+const e = entity.get(1)
+e.state = "idle"
+```
+
+---
+
+# 9. `entity` Namespace
+
+### `entity.get(id)`
+
+Returns an `Entity` handle for the live runtime Entity with the specified ID.
+
+Returns `nil` if not found.
+
+### `entity.exists(id)`
+
+Returns `true` if an Entity with the specified ID exists.
+
+---
+
+# 10. Anonymous Functions
+
+AeoScript supports first-class anonymous functions. These can be assigned to variables, passed as arguments, or stored as dynamic properties on engine handles.
+
+```aeoscript
+const callback = fn(x) {
+    return x * 2
+}
+
+const result = callback(10) // 20
+```
+
+### The `self` Keyword
+
+Inside a function called as a method (e.g., `obj:method()`), the `self` keyword refers to the object it was called on.
+
+```aeoscript
+const c = cell.get(101)
+c.toggle = fn() {
+    self.visible = !self.visible
+}
+
+c:toggle()
+```
+
+---
+
+# 11. Object References and Validity
 
 Engine handles refer to engine-managed objects.
 

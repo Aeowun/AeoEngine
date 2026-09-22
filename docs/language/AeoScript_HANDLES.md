@@ -88,7 +88,47 @@ These are runtime changes and do not silently modify authored World values.
 
 ---
 
-# 6. Finding Cells
+# 6. Dynamic Properties and Methods
+
+Engine handles (both Cells and Entities) support dynamic property assignment. This allows scripts to attach custom data or logic to specific engine objects without needing to modify the engine itself.
+
+~~~aeoscript
+const door = cell.get(10552341)
+
+// Store custom data
+door.isOpen = false
+
+// Assign a custom method
+door.toggle = fn() {
+    self.isOpen = !self.isOpen
+    self.visible = !self.isOpen
+    self.solid = !self.isOpen
+}
+
+// Call the custom method
+door:toggle()
+~~~
+
+### The `self` Keyword
+
+Inside a function called as a method using the colon syntax (`handle:method()`), the `self` variable automatically refers to the handle the method was called on.
+
+---
+
+# 7. Explicit Handle Lookup
+
+While `find()` and `getAllCellsOfClass()` are useful for discovery, scripts can also target specific instances directly by their persistent ID.
+
+~~~aeoscript
+const trap = cell.get(882210)
+const player = entity.get(1)
+~~~
+
+These functions return `nil` if the specified object does not exist.
+
+---
+
+# 8. Finding Cells
 
 Scripts can discover Cells by name:
 

@@ -375,3 +375,59 @@ Same fiber resumes
 
 This keeps gameplay logic readable while using the engine's runtime state model correctly.
 
+---
+
+# 21. Contact Events
+
+Use `on_touch(cell)` to react when the player makes contact with an object.
+
+~~~aeoscript
+entity Lava {
+    fn on_touch(player_char) {
+        debug.log("Player touched lava!")
+        // Potential logic: player_char.damage(10)
+    }
+}
+~~~
+
+The `cell` parameter provides a handle to the object being touched.
+
+---
+
+# 22. Dynamic Spawning
+
+Use the `cell` namespace to manage objects at runtime.
+
+~~~aeoscript
+fn spawn_collectible(x, y, z) {
+    const star = cell.new("Block")
+    star.position = [x, y, z]
+    star.color = [1, 1, 0]
+    star.attributes["type"] = "collectible"
+}
+~~~
+
+---
+
+# 23. The "Manager" Pattern (The Roblox Way)
+
+Rather than attaching scripts to every individual object in the editor, you can use a single script to manage multiple objects by their IDs.
+
+~~~aeoscript
+// Manager Script
+const door1 = cell.get(10552341)
+const door2 = cell.get(10552342)
+
+const onTouchDoor = fn(c) {
+    debug.log("Door touched by:", c.name)
+    self.visible = false
+    self.solid = false
+    wait(1)
+    self.visible = true
+    self.solid = true
+}
+
+if door1 { door1.on_touch = onTouchDoor }
+if door2 { door2.on_touch = onTouchDoor }
+~~~
+

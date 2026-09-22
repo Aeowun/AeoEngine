@@ -1,6 +1,6 @@
+use super::value::{HandleKind, Value};
+use crate::engine::entity::{EntityId, EntityManager};
 use glam::Vec3;
-use super::value::{Value, HandleKind};
-use crate::engine::entity::{EntityManager, EntityId};
 
 /// Abstraction for engine services exposed to AeoScript.
 ///
@@ -24,11 +24,29 @@ pub trait EngineHost {
     fn get_cell_object(&self, cell_id: u64) -> Option<(HandleKind, u64)>;
 
     fn get_property(&self, kind: HandleKind, id: u64, name: &str) -> Result<Option<Value>, String>;
-    fn set_property(&mut self, kind: HandleKind, id: u64, name: &str, value: Value) -> Result<(), String>;
-    fn call_method(&mut self, kind: HandleKind, id: u64, name: &str, args: &[Value]) -> Result<Option<Value>, String>;
+    fn set_property(
+        &mut self,
+        kind: HandleKind,
+        id: u64,
+        name: &str,
+        value: Value,
+    ) -> Result<bool, String>;
+    fn call_method(
+        &mut self,
+        kind: HandleKind,
+        id: u64,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Option<Value>, String>;
 
     fn set_attribute(&mut self, id: u64, key: String, value: Value) -> Result<(), String>;
     fn remove_attribute(&mut self, id: u64, key: &str) -> Result<(), String>;
+
+    fn cell_exists(&self, id: u64) -> bool;
+    fn entity_exists(&self, id: u64) -> bool;
+
+    fn get_script_property(&self, kind: HandleKind, id: u64, name: &str) -> Option<Value>;
+    fn set_script_property(&mut self, kind: HandleKind, id: u64, name: String, value: Value);
 
     fn create_runtime_cell(&mut self, cell_type: &str) -> Result<(HandleKind, u64), String>;
     fn move_runtime_cell(&mut self, id: u64, x: i32, y: i32, z: i32) -> Result<(), String>;
@@ -84,15 +102,38 @@ impl EngineHost for EntityManager {
         None
     }
 
-    fn get_property(&self, _kind: HandleKind, _id: u64, _name: &str) -> Result<Option<Value>, String> {
+    fn get_property(
+        &self,
+        _kind: HandleKind,
+        _id: u64,
+        _name: &str,
+    ) -> Result<Option<Value>, String> {
         Ok(None)
     }
 
-    fn set_property(&mut self, _kind: HandleKind, _id: u64, _name: &str, _value: Value) -> Result<(), String> {
-        Ok(())
+    fn set_property(
+        &mut self,
+        _kind: HandleKind,
+        _id: u64,
+        _name: &str,
+        _value: Value,
+    ) -> Result<bool, String> {
+        Ok(false)
     }
 
-    fn call_method(&mut self, _kind: HandleKind, _id: u64, _name: &str, _args: &[Value]) -> Result<Option<Value>, String> {
+    fn get_script_property(&self, _kind: HandleKind, _id: u64, _name: &str) -> Option<Value> {
+        None
+    }
+
+    fn set_script_property(&mut self, _kind: HandleKind, _id: u64, _name: String, _value: Value) {}
+
+    fn call_method(
+        &mut self,
+        _kind: HandleKind,
+        _id: u64,
+        _name: &str,
+        _args: &[Value],
+    ) -> Result<Option<Value>, String> {
         Ok(None)
     }
 
@@ -102,6 +143,14 @@ impl EngineHost for EntityManager {
 
     fn remove_attribute(&mut self, _id: u64, _key: &str) -> Result<(), String> {
         Ok(())
+    }
+
+    fn cell_exists(&self, _id: u64) -> bool {
+        false
+    }
+
+    fn entity_exists(&self, id: u64) -> bool {
+        EntityManager::validate_handle(self, id)
     }
 
     fn create_runtime_cell(&mut self, _cell_type: &str) -> Result<(HandleKind, u64), String> {
@@ -168,7 +217,9 @@ pub fn call_host_function(
 
         "getAllCellsOfClass" => {
             if arguments.len() != 1 {
-                return Err("getAllCellsOfClass expects exactly 1 argument (class_name)".to_string());
+                return Err(
+                    "getAllCellsOfClass expects exactly 1 argument (class_name)".to_string()
+                );
             }
 
             let class_name = arguments[0].as_string()?;
@@ -228,14 +279,28 @@ pub fn resolve_host_member_property(
     handle_id: u64,
     property_name: &str,
 ) -> Result<Option<Value>, String> {
-    if let Some(value) = context.engine.get_property(handle_kind, handle_id, property_name)? {
+    if let Some(value) = context
+        .engine
+        .get_property(handle_kind, handle_id, property_name)?
+    {
+        return Ok(Some(value));
+    }
+
+    if let Some(value) = context
+        .engine
+        .get_script_property(handle_kind, handle_id, property_name)
+    {
         return Ok(Some(value));
     }
 
     match handle_kind {
         HandleKind::Entity => match property_name {
             "name" => {
-                if let Some(name) = context.engine.entity_manager().get_name(EntityId(handle_id)) {
+                if let Some(name) = context
+                    .engine
+                    .entity_manager()
+                    .get_name(EntityId(handle_id))
+                {
                     Ok(Some(Value::String(name.to_string())))
                 } else {
                     Ok(Some(Value::Nil))
@@ -266,7 +331,20 @@ pub fn set_host_member_property(
     property_name: &str,
     value: Value,
 ) -> Result<(), String> {
-    context.engine.set_property(handle_kind, handle_id, property_name, value)
+    if context
+        .engine
+        .set_property(handle_kind, handle_id, property_name, value.clone())?
+    {
+        Ok(())
+    } else {
+        context.engine.set_script_property(
+            handle_kind,
+            handle_id,
+            property_name.to_string(),
+            value,
+        );
+        Ok(())
+    }
 }
 
 /// Dispatches a member function call on an engine handle.
@@ -277,7 +355,10 @@ pub fn call_host_member(
     name: &str,
     arguments: &[Value],
 ) -> Result<Option<Value>, String> {
-    if let Some(result) = context.engine.call_method(handle_kind, handle_id, name, arguments)? {
+    if let Some(result) = context
+        .engine
+        .call_method(handle_kind, handle_id, name, arguments)?
+    {
         return Ok(Some(result));
     }
 
@@ -304,7 +385,10 @@ pub fn call_host_member(
         HandleKind::Cell | HandleKind::Light => match name {
             "getObject" => {
                 if !arguments.is_empty() {
-                    return Err(format!("{}.getObject() expects 0 arguments", handle_kind.name()));
+                    return Err(format!(
+                        "{}.getObject() expects 0 arguments",
+                        handle_kind.name()
+                    ));
                 }
                 if let Some((kind, id)) = context.engine.get_cell_object(handle_id) {
                     Ok(Some(Value::Handle { kind, id }))
@@ -315,7 +399,10 @@ pub fn call_host_member(
 
             "is_enabled" => {
                 if !arguments.is_empty() {
-                    return Err(format!("{}.is_enabled() expects 0 arguments", handle_kind.name()));
+                    return Err(format!(
+                        "{}.is_enabled() expects 0 arguments",
+                        handle_kind.name()
+                    ));
                 }
 
                 if let Some(enabled) = context.engine.is_light_enabled(handle_id) {
@@ -327,7 +414,10 @@ pub fn call_host_member(
 
             "set_enabled" => {
                 if arguments.len() != 1 {
-                    return Err(format!("{}.set_enabled() expects 1 argument (bool)", handle_kind.name()));
+                    return Err(format!(
+                        "{}.set_enabled() expects 1 argument (bool)",
+                        handle_kind.name()
+                    ));
                 }
 
                 let enabled = arguments[0].as_bool()?;
@@ -355,7 +445,11 @@ pub fn call_host_member(
                     return Err("entity.name() expects 0 arguments".to_string());
                 }
 
-                if let Some(entity_name) = context.engine.entity_manager().get_name(EntityId(handle_id)) {
+                if let Some(entity_name) = context
+                    .engine
+                    .entity_manager()
+                    .get_name(EntityId(handle_id))
+                {
                     Ok(Some(Value::String(entity_name.to_string())))
                 } else {
                     Err("entity.name() called on an invalid handle".to_string())

@@ -1,18 +1,10 @@
 use std::collections::HashMap;
 
-use super::ast::{Declaration, EventDecl, Program, Statement};
-use super::execution::{
-    FiberResult,
-    ScriptScheduler,
-    ScriptTaskId,
-};
-use super::interpreter::{
-    Interpreter,
-    ScriptFiber,
-    ScriptInstance,
-};
-use super::value::Value;
 use super::api::HostContext;
+use super::ast::{Declaration, EventDecl, Program, Statement};
+use super::execution::{FiberResult, ScriptScheduler, ScriptTaskId};
+use super::interpreter::{Interpreter, ScriptFiber, ScriptInstance};
+use super::value::Value;
 
 use super::log::LogRecord;
 
@@ -55,7 +47,8 @@ impl ScriptRuntime {
     pub fn add_event_handlers(&mut self, script_path: String, program: &Program) {
         for decl in &program.declarations {
             if let Declaration::Event(event) = decl {
-                self.event_handlers.push((Some(script_path.clone()), event.clone()));
+                self.event_handlers
+                    .push((Some(script_path.clone()), event.clone()));
             }
         }
     }
@@ -124,16 +117,15 @@ impl ScriptRuntime {
         let mut instance = ScriptInstance::new_empty();
         instance.script_path = script_path;
 
-        let fiber = self.interpreter.start_event_fiber(instance, handler, arguments)?;
+        let fiber = self
+            .interpreter
+            .start_event_fiber(instance, handler, arguments)?;
         let task_id = self.scheduler.spawn();
         self.fibers.insert(task_id, fiber);
         Ok(task_id)
     }
 
-    pub fn spawn_top_level(
-        &mut self,
-        script_path: String,
-    ) -> Result<Option<ScriptTaskId>, String> {
+    pub fn spawn_top_level(&mut self, script_path: String) -> Result<Option<ScriptTaskId>, String> {
         let statements = self.interpreter.program().statements.clone();
         if statements.is_empty() {
             return Ok(None);
@@ -142,7 +134,9 @@ impl ScriptRuntime {
         let mut instance = ScriptInstance::new_empty();
         instance.script_path = Some(script_path);
 
-        let fiber = self.interpreter.start_top_level_fiber(instance, &statements)?;
+        let fiber = self
+            .interpreter
+            .start_top_level_fiber(instance, &statements)?;
         let task_id = self.scheduler.spawn();
         self.fibers.insert(task_id, fiber);
         Ok(Some(task_id))
@@ -160,7 +154,9 @@ impl ScriptRuntime {
         let mut instance = ScriptInstance::new_empty();
         instance.script_path = Some(script_path);
 
-        let fiber = self.interpreter.start_top_level_fiber(instance, statements)?;
+        let fiber = self
+            .interpreter
+            .start_top_level_fiber(instance, statements)?;
         let task_id = self.scheduler.spawn();
         self.fibers.insert(task_id, fiber);
         Ok(Some(task_id))
@@ -190,11 +186,12 @@ impl ScriptRuntime {
         self.fibers.get(&id)
     }
 
-    pub fn fiber_mut(
-        &mut self,
-        id: ScriptTaskId,
-    ) -> Option<&mut ScriptFiber> {
+    pub fn fiber_mut(&mut self, id: ScriptTaskId) -> Option<&mut ScriptFiber> {
         self.fibers.get_mut(&id)
+    }
+
+    pub fn fibers_mut(&mut self) -> &mut HashMap<ScriptTaskId, ScriptFiber> {
+        &mut self.fibers
     }
 
     /// Starts a new persistent script fiber and schedules it immediately.
@@ -206,11 +203,7 @@ impl ScriptRuntime {
     ) -> Result<ScriptTaskId, String> {
         let fiber = self
             .interpreter
-            .start_fiber(
-                instance,
-                function_name,
-                arguments,
-            )?;
+            .start_fiber(instance, function_name, arguments)?;
 
         let task_id = self.scheduler.spawn();
 
@@ -256,8 +249,7 @@ impl ScriptRuntime {
                 self.interpreter.resume_fiber(fiber, host)
             };
 
-            self.scheduler
-                .apply_result(task_id, result.clone())?;
+            self.scheduler.apply_result(task_id, result.clone())?;
 
             results.push((task_id, result));
         }
@@ -265,10 +257,7 @@ impl ScriptRuntime {
         Ok(results)
     }
 
-    pub fn cancel(
-        &mut self,
-        task_id: ScriptTaskId,
-    ) -> Result<(), String> {
+    pub fn cancel(&mut self, task_id: ScriptTaskId) -> Result<(), String> {
         self.scheduler.cancel(task_id)
     }
 
@@ -276,10 +265,7 @@ impl ScriptRuntime {
     ///
     /// The scheduler state is intentionally left untouched; callers should
     /// remove fibers only after observing the terminal state.
-    pub fn remove_fiber(
-        &mut self,
-        task_id: ScriptTaskId,
-    ) -> Option<ScriptFiber> {
+    pub fn remove_fiber(&mut self, task_id: ScriptTaskId) -> Option<ScriptFiber> {
         self.fibers.remove(&task_id)
     }
 }
@@ -288,23 +274,16 @@ impl ScriptRuntime {
 mod tests {
     use super::*;
 
-    use crate::scripting::execution::{
-        ScriptTaskState,
-        YieldReason,
-    };
+    use crate::engine::entity::EntityManager;
+    use crate::scripting::execution::{ScriptTaskState, YieldReason};
     use crate::scripting::lexer::Lexer;
     use crate::scripting::parser::Parser;
     use crate::scripting::value::{HandleKind, Value};
-    use crate::engine::entity::EntityManager;
 
     fn runtime(source: &str) -> ScriptRuntime {
-        let tokens = Lexer::new(source)
-            .tokenize()
-            .expect("lexer should succeed");
+        let tokens = Lexer::new(source).tokenize().expect("lexer should succeed");
 
-        let program = Parser::new(tokens)
-            .parse()
-            .expect("parser should succeed");
+        let program = Parser::new(tokens).parse().expect("parser should succeed");
 
         ScriptRuntime::new(program)
     }
@@ -327,7 +306,10 @@ entity Test {
 
         let mut runtime = runtime(source);
         let mut em = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut em,
+        };
 
         let instance = runtime
             .interpreter_mut()
@@ -335,11 +317,7 @@ entity Test {
             .expect("entity should instantiate");
 
         let task_id = runtime
-            .spawn(
-                instance,
-                "update",
-                vec![Value::Number(1.0)],
-            )
+            .spawn(instance, "update", vec![Value::Number(1.0)])
             .expect("fiber should spawn");
 
         assert_eq!(runtime.task_count(), 1);
@@ -366,7 +344,10 @@ entity Test {
 
         let mut runtime = runtime(source);
         let mut em = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut em,
+        };
 
         let instance = runtime
             .interpreter_mut()
@@ -374,11 +355,7 @@ entity Test {
             .expect("entity should instantiate");
 
         let task_id = runtime
-            .spawn(
-                instance,
-                "update",
-                vec![Value::Number(1.0)],
-            )
+            .spawn(instance, "update", vec![Value::Number(1.0)])
             .expect("fiber should spawn");
 
         let results = runtime
@@ -387,19 +364,12 @@ entity Test {
 
         assert_eq!(
             results,
-            vec![(
-                task_id,
-                FiberResult::Yield(
-                    YieldReason::WaitSeconds(1.0)
-                )
-            )]
+            vec![(task_id, FiberResult::Yield(YieldReason::WaitSeconds(1.0)))]
         );
 
         assert_eq!(
             runtime.scheduler().state(task_id),
-            Some(ScriptTaskState::Waiting {
-                wake_at: 1.0
-            })
+            Some(ScriptTaskState::Waiting { wake_at: 1.0 })
         );
 
         assert_eq!(
@@ -430,10 +400,7 @@ entity Test {
             .tick(1.0, &mut host)
             .expect("wake tick should succeed");
 
-        assert_eq!(
-            results,
-            vec![(task_id, FiberResult::Complete)]
-        );
+        assert_eq!(results, vec![(task_id, FiberResult::Complete)]);
 
         assert_eq!(
             runtime.scheduler().state(task_id),
@@ -464,7 +431,10 @@ entity Test {
 
         let mut runtime = runtime(source);
         let mut em = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut em,
+        };
 
         let instance = runtime
             .interpreter_mut()
@@ -472,21 +442,12 @@ entity Test {
             .expect("entity should instantiate");
 
         let task_id = runtime
-            .spawn(
-                instance,
-                "update",
-                vec![Value::Number(1.0)],
-            )
+            .spawn(instance, "update", vec![Value::Number(1.0)])
             .expect("fiber should spawn");
 
-        let results = runtime
-            .tick(0.0, &mut host)
-            .expect("tick should succeed");
+        let results = runtime.tick(0.0, &mut host).expect("tick should succeed");
 
-        assert_eq!(
-            results,
-            vec![(task_id, FiberResult::Complete)]
-        );
+        assert_eq!(results, vec![(task_id, FiberResult::Complete)]);
     }
 
     #[test]
@@ -505,7 +466,10 @@ entity Test {
 
         let mut runtime = runtime(source);
         let mut em = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut em,
+        };
 
         let first_instance = runtime
             .interpreter_mut()
@@ -518,39 +482,25 @@ entity Test {
             .expect("second entity should instantiate");
 
         let first = runtime
-            .spawn(
-                first_instance,
-                "update",
-                vec![Value::Number(1.0)],
-            )
+            .spawn(first_instance, "update", vec![Value::Number(1.0)])
             .expect("first fiber should spawn");
 
         let second = runtime
-            .spawn(
-                second_instance,
-                "update",
-                vec![Value::Number(1.0)],
-            )
+            .spawn(second_instance, "update", vec![Value::Number(1.0)])
             .expect("second fiber should spawn");
 
-        let results = runtime
-            .tick(0.0, &mut host)
-            .expect("tick should succeed");
+        let results = runtime.tick(0.0, &mut host).expect("tick should succeed");
 
         assert_eq!(results.len(), 2);
 
         assert_eq!(
             runtime.scheduler().state(first),
-            Some(ScriptTaskState::Waiting {
-                wake_at: 1.0
-            })
+            Some(ScriptTaskState::Waiting { wake_at: 1.0 })
         );
 
         assert_eq!(
             runtime.scheduler().state(second),
-            Some(ScriptTaskState::Waiting {
-                wake_at: 1.0
-            })
+            Some(ScriptTaskState::Waiting { wake_at: 1.0 })
         );
 
         let results = runtime
@@ -562,8 +512,7 @@ entity Test {
         assert!(
             results
                 .iter()
-                .all(|(_, result)| *result
-                    == FiberResult::Complete)
+                .all(|(_, result)| *result == FiberResult::Complete)
         );
     }
 
@@ -579,7 +528,10 @@ entity Test {
 
         let mut runtime = runtime(source);
         let mut em = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut em,
+        };
 
         let instance = runtime
             .interpreter_mut()
@@ -587,11 +539,7 @@ entity Test {
             .expect("entity should instantiate");
 
         let task_id = runtime
-            .spawn(
-                instance,
-                "update",
-                vec![Value::Number(1.0)],
-            )
+            .spawn(instance, "update", vec![Value::Number(1.0)])
             .expect("fiber should spawn");
 
         let results = runtime
@@ -633,7 +581,10 @@ entity Test {
 
         let mut runtime = runtime(source);
         let mut em = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut em,
+        };
 
         let instance = runtime
             .interpreter_mut()
@@ -641,11 +592,7 @@ entity Test {
             .expect("entity should instantiate");
 
         let task_id = runtime
-            .spawn(
-                instance,
-                "update",
-                vec![Value::Number(1.0)],
-            )
+            .spawn(instance, "update", vec![Value::Number(1.0)])
             .expect("fiber should spawn");
 
         let results = runtime
@@ -656,29 +603,20 @@ entity Test {
             results,
             vec![(
                 task_id,
-                FiberResult::Yield(
-                    YieldReason::WaitSeconds(
-                        0.0001
-                    )
-                )
+                FiberResult::Yield(YieldReason::WaitSeconds(0.0001))
             )]
         );
 
         assert_eq!(
             runtime.scheduler().state(task_id),
-            Some(ScriptTaskState::Waiting {
-                wake_at: 0.0001
-            })
+            Some(ScriptTaskState::Waiting { wake_at: 0.0001 })
         );
 
         let results = runtime
             .tick(0.0001, &mut host)
             .expect("wake tick should succeed");
 
-        assert_eq!(
-            results,
-            vec![(task_id, FiberResult::Complete)]
-        );
+        assert_eq!(results, vec![(task_id, FiberResult::Complete)]);
 
         assert_eq!(
             runtime
@@ -702,7 +640,10 @@ entity Test {
 "#;
         let mut runtime = runtime(source);
         let mut em = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut em,
+        };
 
         let instance = runtime
             .interpreter_mut()
@@ -717,7 +658,11 @@ entity Test {
         assert_eq!(results[0].1, FiberResult::Complete);
 
         assert_eq!(
-            runtime.fiber(task_id).unwrap().instance().get_field("value"),
+            runtime
+                .fiber(task_id)
+                .unwrap()
+                .instance()
+                .get_field("value"),
             Some(&Value::Number(100.0))
         );
     }
@@ -733,7 +678,10 @@ entity Test {
 "#;
         let mut runtime = runtime(source);
         let mut em = test_host();
-        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut em,
+        };
 
         let instance = runtime
             .interpreter_mut()
@@ -767,14 +715,28 @@ on PlayerSpawned(player) {
         let mut runtime = runtime(source);
         let mut em = test_host();
         em.create_entity("Player"); // id 1
-        let mut host = HostContext { delta_time: 1.0, engine: &mut em };
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut em,
+        };
 
-        let args = vec![Value::Handle { kind: HandleKind::Entity, id: 1 }];
-        runtime.dispatch_event("PlayerSpawned", args, &mut host, &[]).unwrap();
+        let args = vec![Value::Handle {
+            kind: HandleKind::Entity,
+            id: 1,
+        }];
+        runtime
+            .dispatch_event("PlayerSpawned", args, &mut host, &[])
+            .unwrap();
 
         assert_eq!(runtime.task_count(), 1);
         runtime.tick(0.0, &mut host).unwrap();
 
-        assert!(runtime.interpreter().output().iter().any(|r| r.message.contains("Spawned: Player")));
+        assert!(
+            runtime
+                .interpreter()
+                .output()
+                .iter()
+                .any(|r| r.message.contains("Spawned: Player"))
+        );
     }
 }

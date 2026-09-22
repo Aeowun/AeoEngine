@@ -1,14 +1,25 @@
-entity doorScript {
+// Find every Door in the level.
+const doors = find("Door")
 
-    fn on_spawn() {
-    }
+// Give every Door the same touch behavior.
+for door in doors {
 
-    fn on_ready() {
-    }
+    door.on_touch = fn(c) {
 
-    fn update(dt: number) {
-    }
+        debug.log("Door touched:", c.id)
 
-    fn on_destroy() {
+        // React to every Door at once.
+        for target in doors {
+            target.visible = false
+            target.solid = false
+        }
+
+        wait(1)
+
+        // Restore every Door together.
+        for target in doors {
+            target.visible = true
+            target.solid = true
+        }
     }
 }

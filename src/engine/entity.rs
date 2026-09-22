@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use glam::Vec3;
+use std::collections::HashMap;
 
 /// Unique runtime identifier for an entity during a single Play session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

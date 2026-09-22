@@ -34,9 +34,7 @@ impl YieldReason {
                 }
 
                 if seconds <= 0.0 {
-                    return Err(
-                        "AeoScript wait duration must be greater than zero.".to_string()
-                    );
+                    return Err("AeoScript wait duration must be greater than zero.".to_string());
                 }
 
                 Ok(self)
@@ -44,7 +42,6 @@ impl YieldReason {
         }
     }
 }
-
 
 /// Current scheduler state of one script task.
 #[derive(Clone, Copy, Debug, PartialEq)]

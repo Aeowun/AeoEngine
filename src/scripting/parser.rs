@@ -991,8 +991,73 @@ impl Parser {
 
             TokenKind::LeftBrace => self.parse_map(),
 
+            TokenKind::Fn => self.parse_anonymous_function(),
+
             _ => Err(ParserError::new("Expected an expression.", &token)),
         }
+    }
+
+    fn parse_anonymous_function(&mut self) -> Result<Expression, ParserError> {
+        let fn_token = self.consume_simple(TokenKind::Fn, "Expected 'fn'.")?;
+        let start = fn_token.span.start;
+
+        self.consume_simple(TokenKind::LeftParen, "Expected '(' after 'fn'.")?;
+
+        let mut parameters = Vec::new();
+        self.skip_newlines();
+
+        if !self.check_simple(&TokenKind::RightParen) {
+            loop {
+                let (parameter_name, parameter_name_span) =
+                    self.consume_identifier("Expected parameter name.")?;
+
+                let type_annotation = if self.match_simple(&TokenKind::Colon) {
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
+
+                let parameter_end = type_annotation
+                    .as_ref()
+                    .map(|type_annotation| type_annotation.span.end)
+                    .unwrap_or(parameter_name_span.end);
+
+                parameters.push(Parameter {
+                    span: SourceSpan::new(parameter_name_span.start, parameter_end),
+                    name: parameter_name,
+                    type_annotation,
+                });
+
+                self.skip_newlines();
+
+                if !self.match_simple(&TokenKind::Comma) {
+                    break;
+                }
+
+                self.skip_newlines();
+            }
+        }
+
+        self.consume_simple(TokenKind::RightParen, "Expected ')' after parameters.")?;
+
+        let return_type = if self.match_simple(&TokenKind::Colon) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+
+        self.skip_newlines();
+
+        let body = self.parse_block()?;
+
+        Ok(Expression {
+            span: SourceSpan::new(start, body.span.end),
+            kind: ExpressionKind::AnonymousFunction {
+                parameters,
+                return_type,
+                body,
+            },
+        })
     }
 
     fn parse_array(&mut self) -> Result<Expression, ParserError> {
@@ -1057,7 +1122,12 @@ impl Parser {
                             kind: ExpressionKind::String(s),
                         }
                     }
-                    _ => return Err(ParserError::new("Expected map key (string, number, or identifier).", &key_token)),
+                    _ => {
+                        return Err(ParserError::new(
+                            "Expected map key (string, number, or identifier).",
+                            &key_token,
+                        ));
+                    }
                 };
 
                 self.consume_simple(TokenKind::Colon, "Expected ':' after map key.")?;

@@ -69,7 +69,17 @@ World lighting data includes settings such as:
 
 ---
 
-# 6. Gameplay Camera
+# 6. Skybox and Environment
+
+The renderer implements a seamless sky environment using OpenGL cubemaps (`GL_TEXTURE_CUBE_MAP`).
+
+*   **Cubemap Geometry**: A standard skybox cube is rendered at "infinite" distance (depth value of 1.0).
+*   **Asset Support**: Loads single-texture horizontal cross layouts from `.assets/skybox/`.
+*   **Parallax Lock**: The skybox follows the active camera position to eliminate translation parallax while allowing rotation.
+
+---
+
+# 7. Gameplay Camera
 
 The renderer uses the active camera state provided by the editor or GameplayCamera.
 

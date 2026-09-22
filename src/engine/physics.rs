@@ -270,29 +270,29 @@ impl PhysicsWorld {
                         let overlap_y = b_max.y.min(v_max.y) - b_min.y.max(v_min.y);
                         let overlap_z = b_max.z.min(v_max.z) - b_min.z.max(v_min.z);
 
-                        let (axis_normal, depth) =
-                            if overlap_x < overlap_y && overlap_x < overlap_z {
-                                let n = if b_center.x < v_center.x {
-                                    Vec3::NEG_X
-                                } else {
-                                    Vec3::X
-                                };
-                                (n, overlap_x)
-                            } else if overlap_y < overlap_z {
-                                let n = if b_center.y < v_center.y {
-                                    Vec3::NEG_Y
-                                } else {
-                                    Vec3::Y
-                                };
-                                (n, overlap_y)
+                        let (axis_normal, depth) = if overlap_x < overlap_y && overlap_x < overlap_z
+                        {
+                            let n = if b_center.x < v_center.x {
+                                Vec3::NEG_X
                             } else {
-                                let n = if b_center.z < v_center.z {
-                                    Vec3::NEG_Z
-                                } else {
-                                    Vec3::Z
-                                };
-                                (n, overlap_z)
+                                Vec3::X
                             };
+                            (n, overlap_x)
+                        } else if overlap_y < overlap_z {
+                            let n = if b_center.y < v_center.y {
+                                Vec3::NEG_Y
+                            } else {
+                                Vec3::Y
+                            };
+                            (n, overlap_y)
+                        } else {
+                            let n = if b_center.z < v_center.z {
+                                Vec3::NEG_Z
+                            } else {
+                                Vec3::Z
+                            };
+                            (n, overlap_z)
+                        };
 
                         if depth < min_overlap {
                             min_overlap = depth;
@@ -621,7 +621,8 @@ impl PhysicsWorld {
     }
 
     pub fn register_from_world(&mut self, world: &World) {
-        self.bodies.clear(); self.static_colliders.clear();
+        self.bodies.clear();
+        self.static_colliders.clear();
         self.id_gen = PhysicsIdGenerator::new();
         self.step_count = 0;
         for coord in world.active_effective_blocks() {
@@ -635,7 +636,8 @@ impl PhysicsWorld {
 
                 if anchored {
                     if solid {
-                        let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32) + world.get_visual_offset(coord);
+                        let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32)
+                            + world.get_visual_offset(coord);
                         self.add_static_collider(cell.id, pos);
                     }
                 } else {
@@ -688,8 +690,13 @@ impl PhysicsWorld {
                         // Transition/Reconcile Static
                         self.bodies.retain(|b| b.cell_id != cell_id);
                         if solid {
-                            let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32) + world.get_visual_offset(coord);
-                            if let Some(existing) = self.static_colliders.iter_mut().find(|(id, _)| *id == cell_id) {
+                            let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32)
+                                + world.get_visual_offset(coord);
+                            if let Some(existing) = self
+                                .static_colliders
+                                .iter_mut()
+                                .find(|(id, _)| *id == cell_id)
+                            {
                                 existing.1 = pos;
                             } else {
                                 self.static_colliders.push((cell_id, pos));
@@ -701,7 +708,9 @@ impl PhysicsWorld {
                         // Transition/Reconcile Dynamic
                         self.static_colliders.retain(|(id, _)| *id != cell_id);
                         if solid {
-                            if let Some(body) = self.bodies.iter_mut().find(|b| b.cell_id == cell_id) {
+                            if let Some(body) =
+                                self.bodies.iter_mut().find(|b| b.cell_id == cell_id)
+                            {
                                 body.solid = true;
                                 body.visible = world.is_cell_visible(coord);
                                 body.color_rgb = world.get_effective_color(coord);
@@ -722,7 +731,7 @@ impl PhysicsWorld {
                         }
                     }
                 } else {
-                     // ID no longer resolves to a cell (e.g. Empty or removed runtime cell)
+                    // ID no longer resolves to a cell (e.g. Empty or removed runtime cell)
                     self.static_colliders.retain(|(id, _)| *id != cell_id);
                     self.bodies.retain(|b| b.cell_id != cell_id);
                 }
@@ -864,7 +873,8 @@ mod tests {
     #[test]
     fn test_physics_position_integration() {
         let mut p_world = PhysicsWorld::new();
-        let mut body = PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(10.0, 10.0, 10.0), Vec3::ONE);
+        let mut body =
+            PhysicsBody::new(PhysicsBodyId(1), 0, Vec3::new(10.0, 10.0, 10.0), Vec3::ONE);
         body.velocity = Vec3::new(1.0, 2.0, 3.0);
         p_world.bodies.push(body);
         p_world.integrate_positions(0.1);
@@ -907,7 +917,12 @@ mod tests {
             cell.solid = true;
         }
         p_world.register_from_world(&world);
-        assert!(p_world.static_colliders.iter().any(|(_, pos)| *pos == Vec3::new(c1.x as f32, c1.y as f32, c1.z as f32)));
+        assert!(
+            p_world
+                .static_colliders
+                .iter()
+                .any(|(_, pos)| *pos == Vec3::new(c1.x as f32, c1.y as f32, c1.z as f32))
+        );
     }
 
     #[test]

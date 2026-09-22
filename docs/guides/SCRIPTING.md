@@ -35,7 +35,7 @@ The actual script binding targets the Cell's persistent numeric ID.
 
 ---
 
-# 3. Attach the Script
+# 3. Attach and Manage Scripts
 
 Select the Cell and use the script controls in the Properties panel.
 
@@ -45,11 +45,35 @@ The engine creates a persistent binding between:
 Cell ID → script path
 ~~~
 
+### Script Enable / Disable
+
+You can temporarily disable a script from the **INSPECTOR** panel in the Script Editor. When disabled, the script will not execute top-level code, lifecycle hooks, or event handlers.
+
 Removing a binding does not delete the source script.
 
 ---
 
-# 4. Use `update(dt)`
+# 4. Lifecycle Events
+
+In addition to `update(dt)`, AeoScript supports contextual events.
+
+### Contact Events
+
+The `on_touch(cell)` function runs when the player character makes contact with a scripted object.
+
+~~~aeoscript
+entity Spike {
+    fn on_touch(c) {
+        debug.log("Player took damage!")
+    }
+}
+~~~
+
+Use the **Collision Events** toggle in the Cell Properties panel to enable or disable these callbacks for specific objects.
+
+---
+
+# 5. Use `update(dt)`
 
 `update(dt)` is the normal per-frame lifecycle function.
 
@@ -94,14 +118,30 @@ Supported Cell runtime properties can be modified directly.
 for block in blocks {
     block.visible = false
     block.solid = false
+    block.attributes["health"] = 100
 }
 ~~~
 
-These changes are temporary runtime overrides.
+These changes are temporary runtime overrides. Assign `nil` to an attribute to restore its authored value.
 
 ---
 
-# 7. Use Persistent Fields
+# 7. Dynamic Object Management
+
+Use the `cell` namespace to create or remove objects during Play.
+
+~~~aeoscript
+const coin = cell.new("Block")
+coin.position = [10, 5, 2]
+coin.color = [1, 0.8, 0]
+
+// Later...
+cell.delete(coin)
+~~~
+
+---
+
+# 8. Use Persistent Fields
 
 Script fields persist across lifecycle executions.
 

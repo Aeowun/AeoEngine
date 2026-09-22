@@ -103,6 +103,7 @@ Depending on the selected Cell, the panel can expose:
 * Visibility.
 * Solidity.
 * Anchored state.
+* Collision events enablement (controls whether `on_touch` triggers).
 * Offset-related authored data.
 * Light properties.
 * Texture information.
@@ -122,6 +123,7 @@ Bindings target the persistent Cell ID, not the human-readable identity/name.
 The editor can display:
 
 * The current bound script.
+* Script enabled/disabled state (controls whether lifecycle and top-level code runs).
 * Stale binding diagnostics.
 * Binding removal controls.
 * Other script binding information.

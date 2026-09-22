@@ -1,8 +1,8 @@
 use super::cell::{Cell, CellType, RuntimeCellState};
 use super::coordinate::WorldCoord;
+use crate::scripting::binding::ScriptBinding;
 use glam::Vec3;
 use std::collections::HashMap;
-use crate::scripting::binding::ScriptBinding;
 
 #[derive(Clone)]
 pub struct LightingSettings {
@@ -26,6 +26,38 @@ impl Default for LightingSettings {
             global_light_intensity: 1.0,
             ambient_intensity: 0.20,
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SkySettings {
+    pub enabled: bool,
+    pub preset: String,
+    pub texture: String,
+}
+
+impl Default for SkySettings {
+    fn default() -> Self {
+        let mut s = Self {
+            enabled: true,
+            preset: "Temperate".to_string(),
+            texture: String::new(),
+        };
+        s.update_preset_textures();
+        s
+    }
+}
+
+impl SkySettings {
+    pub fn update_preset_textures(&mut self) {
+        self.texture = match self.preset.as_str() {
+            "Tropical" => "Cubemap_Tropical_01-512x512.png",
+            "Desert" => "Cubemap_Desert_01-512x512.png",
+            "Snowy" => "Cubemap_Snowy_01-512x512.png",
+            "Mars" => "Cubemap_Mars_01-512x512.png",
+            _ => "Cubemap_Temperate_01-512x512.png",
+        }
+        .to_string();
     }
 }
 
@@ -57,6 +89,9 @@ pub struct World {
     // Authoritative scene lighting settings.
     pub lighting: LightingSettings,
 
+    // Authoritative scene sky settings.
+    pub sky: SkySettings,
+
     /// Authored script bindings for entities in this world.
     pub script_bindings: Vec<ScriptBinding>,
 
@@ -77,6 +112,7 @@ impl World {
             // We default to Earth standard gravity.
             gravity: Vec3::new(0.0, -9.81, 0.0),
             lighting: LightingSettings::default(),
+            sky: SkySettings::default(),
             script_bindings: Vec::new(),
             disabled_scripts: Vec::new(),
         }
@@ -128,10 +164,7 @@ impl World {
     pub fn set_light_enabled_runtime(&mut self, coord: WorldCoord, enabled: bool) {
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
-            self.runtime_state
-                .entry(id)
-                .or_default()
-                .light_enabled = Some(enabled);
+            self.runtime_state.entry(id).or_default().light_enabled = Some(enabled);
         }
     }
 
@@ -154,10 +187,7 @@ impl World {
     pub fn set_cell_visible_runtime(&mut self, coord: WorldCoord, visible: bool) {
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
-            self.runtime_state
-                .entry(id)
-                .or_default()
-                .visible = Some(visible);
+            self.runtime_state.entry(id).or_default().visible = Some(visible);
         }
     }
 
@@ -178,10 +208,7 @@ impl World {
     pub fn set_cell_color_runtime(&mut self, coord: WorldCoord, color: Vec3) {
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
-            self.runtime_state
-                .entry(id)
-                .or_default()
-                .color_rgb = Some(color);
+            self.runtime_state.entry(id).or_default().color_rgb = Some(color);
         }
     }
 
@@ -202,10 +229,7 @@ impl World {
     pub fn set_cell_solid_runtime(&mut self, coord: WorldCoord, solid: bool) {
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
-            self.runtime_state
-                .entry(id)
-                .or_default()
-                .solid = Some(solid);
+            self.runtime_state.entry(id).or_default().solid = Some(solid);
             self.mark_physics_dirty(id);
         }
     }
@@ -227,10 +251,7 @@ impl World {
     pub fn set_cell_anchored_runtime(&mut self, coord: WorldCoord, anchored: bool) {
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
-            self.runtime_state
-                .entry(id)
-                .or_default()
-                .anchored = Some(anchored);
+            self.runtime_state.entry(id).or_default().anchored = Some(anchored);
             self.mark_physics_dirty(id);
         }
     }
@@ -251,15 +272,15 @@ impl World {
     pub fn set_visual_offset_runtime(&mut self, coord: WorldCoord, offset: Vec3) {
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
-            self.runtime_state
-                .entry(id)
-                .or_default()
-                .visual_offset = Some(offset);
+            self.runtime_state.entry(id).or_default().visual_offset = Some(offset);
             self.mark_physics_dirty(id);
         }
     }
 
-    pub fn get_effective_attributes(&self, coord: WorldCoord) -> std::collections::BTreeMap<String, super::cell::AttributeValue> {
+    pub fn get_effective_attributes(
+        &self,
+        coord: WorldCoord,
+    ) -> std::collections::BTreeMap<String, super::cell::AttributeValue> {
         let mut result = std::collections::BTreeMap::new();
         if let Some(cell) = self.cells.get(&coord) {
             result.extend(cell.attributes.clone());
@@ -270,7 +291,11 @@ impl World {
         result
     }
 
-    pub fn get_effective_attribute(&self, coord: WorldCoord, key: &str) -> Option<super::cell::AttributeValue> {
+    pub fn get_effective_attribute(
+        &self,
+        coord: WorldCoord,
+        key: &str,
+    ) -> Option<super::cell::AttributeValue> {
         if let Some(cell) = self.get_effective_cell(coord) {
             if let Some(rs) = self.runtime_state.get(&cell.id) {
                 if let Some(val) = rs.attribute_overrides.get(key) {
@@ -386,9 +411,7 @@ impl World {
         loop {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
-            let timestamp = Local::now()
-                .format("%Y:%m:%d:%S:%f")
-                .to_string();
+            let timestamp = Local::now().format("%Y:%m:%d:%S:%f").to_string();
 
             timestamp.hash(&mut hasher);
             retry_count.hash(&mut hasher);
@@ -398,7 +421,9 @@ impl World {
             // Map to 9 digit range: 100,000,000 to 999,999,999.
             let id = 100_000_000 + (hash % 900_000_000);
 
-            if !self.runtime_cells.contains_key(&id) && !self.cells.values().any(|cell| cell.id == id) {
+            if !self.runtime_cells.contains_key(&id)
+                && !self.cells.values().any(|cell| cell.id == id)
+            {
                 return id;
             }
 
@@ -406,7 +431,12 @@ impl World {
         }
     }
 
-    pub fn set_attribute_runtime(&mut self, coord: WorldCoord, key: String, value: super::cell::AttributeValue) {
+    pub fn set_attribute_runtime(
+        &mut self,
+        coord: WorldCoord,
+        key: String,
+        value: super::cell::AttributeValue,
+    ) {
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
             self.runtime_state
@@ -485,11 +515,7 @@ impl World {
         }
     }
 
-    pub(crate) fn generate_unique_id(
-        &mut self,
-        coord: WorldCoord,
-        cell_type: CellType,
-    ) -> u64 {
+    pub(crate) fn generate_unique_id(&mut self, coord: WorldCoord, cell_type: CellType) -> u64 {
         use chrono::Local;
         use std::hash::{Hash, Hasher};
 
@@ -498,9 +524,7 @@ impl World {
         loop {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
-            let timestamp = Local::now()
-                .format("%Y:%m:%d:%S")
-                .to_string();
+            let timestamp = Local::now().format("%Y:%m:%d:%S").to_string();
 
             timestamp.hash(&mut hasher);
             coord.hash(&mut hasher);

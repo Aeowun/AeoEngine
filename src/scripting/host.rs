@@ -1,14 +1,18 @@
-use std::collections::BTreeMap;
-use glam::Vec3;
-use crate::engine::entity::{EntityManager, EntityId};
-use crate::world::{World, WorldCoord, CellType};
-use crate::world::cell::AttributeValue;
+use crate::engine::entity::{EntityId, EntityManager};
 use crate::scripting::api::EngineHost;
-use crate::scripting::value::{Value, HandleKind, MapKey};
+use crate::scripting::value::{HandleKind, MapKey, Value};
+use crate::world::cell::AttributeValue;
+use crate::world::{CellType, World, WorldCoord};
+use glam::Vec3;
+use std::collections::BTreeMap;
 
 pub struct ScriptHostBridge<'a> {
     pub entity_manager: &'a mut EntityManager,
     pub world: &'a mut World,
+    pub dynamic_properties: &'a mut std::collections::HashMap<
+        (HandleKind, u64),
+        std::collections::BTreeMap<String, Value>,
+    >,
 }
 
 impl<'a> EngineHost for ScriptHostBridge<'a> {
@@ -169,8 +173,16 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                 if let Some(cell) = self.world.get_effective_cell_by_id(id) {
                     match name {
                         "id" => return Ok(Some(Value::Number(cell.id as f64))),
-                        "name" => return Ok(Some(Value::String(cell.entity_identity.clone().unwrap_or_else(|| "Cell".to_string())))),
-                        "cellType" => return Ok(Some(Value::String(format!("{:?}", cell.cell_type)))),
+                        "name" => {
+                            return Ok(Some(Value::String(
+                                cell.entity_identity
+                                    .clone()
+                                    .unwrap_or_else(|| "Cell".to_string()),
+                            )));
+                        }
+                        "cellType" => {
+                            return Ok(Some(Value::String(format!("{:?}", cell.cell_type))));
+                        }
                         "position" => {
                             if let Some(coord) = self.world.resolve_cell_id(id) {
                                 return Ok(Some(Value::array(vec![
@@ -189,17 +201,21 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                                 // Default to cell property if no coord (i.e. no runtime override possible yet via coord-based API)
                                 // Actually RuntimeCellState is ID-based.
                                 if let Some(rs) = self.world.runtime_state.get(&id) {
-                                    if let Some(v) = rs.visible { return Ok(Some(Value::Bool(v))); }
+                                    if let Some(v) = rs.visible {
+                                        return Ok(Some(Value::Bool(v)));
+                                    }
                                 }
                                 return Ok(Some(Value::Bool(cell.visible)));
                             }
                         }
                         "enabled" => {
-                             if let Some(coord) = self.world.resolve_cell_id(id) {
+                            if let Some(coord) = self.world.resolve_cell_id(id) {
                                 return Ok(Some(Value::Bool(self.world.is_light_enabled(coord))));
                             } else {
                                 if let Some(rs) = self.world.runtime_state.get(&id) {
-                                    if let Some(v) = rs.light_enabled { return Ok(Some(Value::Bool(v))); }
+                                    if let Some(v) = rs.light_enabled {
+                                        return Ok(Some(Value::Bool(v)));
+                                    }
                                 }
                                 return Ok(Some(Value::Bool(cell.light_enabled)));
                             }
@@ -209,7 +225,9 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                                 return Ok(Some(Value::Bool(self.world.is_cell_solid(coord))));
                             } else {
                                 if let Some(rs) = self.world.runtime_state.get(&id) {
-                                    if let Some(v) = rs.solid { return Ok(Some(Value::Bool(v))); }
+                                    if let Some(v) = rs.solid {
+                                        return Ok(Some(Value::Bool(v)));
+                                    }
                                 }
                                 return Ok(Some(Value::Bool(cell.solid)));
                             }
@@ -219,7 +237,9 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                                 return Ok(Some(Value::Bool(self.world.is_cell_anchored(coord))));
                             } else {
                                 if let Some(rs) = self.world.runtime_state.get(&id) {
-                                    if let Some(v) = rs.anchored { return Ok(Some(Value::Bool(v))); }
+                                    if let Some(v) = rs.anchored {
+                                        return Ok(Some(Value::Bool(v)));
+                                    }
                                 }
                                 return Ok(Some(Value::Bool(cell.anchored)));
                             }
@@ -229,7 +249,11 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                                 self.world.get_effective_color(coord)
                             } else {
                                 if let Some(rs) = self.world.runtime_state.get(&id) {
-                                    if let Some(v) = rs.color_rgb { v } else { cell.color_rgb }
+                                    if let Some(v) = rs.color_rgb {
+                                        v
+                                    } else {
+                                        cell.color_rgb
+                                    }
                                 } else {
                                     cell.color_rgb
                                 }
@@ -302,48 +326,64 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         Ok(None)
     }
 
-    fn set_property(&mut self, kind: HandleKind, id: u64, name: &str, value: Value) -> Result<(), String> {
+    fn set_property(
+        &mut self,
+        kind: HandleKind,
+        id: u64,
+        name: &str,
+        value: Value,
+    ) -> Result<bool, String> {
         match kind {
             HandleKind::Cell | HandleKind::Light => {
-                if let Some(cell) = self.world.get_effective_cell_by_id(id) {
+                if let Some(_cell) = self.world.get_effective_cell_by_id(id) {
                     match name {
                         "position" => {
                             let basket = value.as_basket()?;
                             let borrowed = basket.borrow();
                             if borrowed.elements.len() != 3 {
-                                return Err("position must be a basket of 3 numbers [x, y, z]".to_string());
+                                return Err(
+                                    "position must be a basket of 3 numbers [x, y, z]".to_string()
+                                );
                             }
                             let x = borrowed.elements[0].as_number()? as i32;
                             let y = borrowed.elements[1].as_number()? as i32;
                             let z = borrowed.elements[2].as_number()? as i32;
-                            return self.move_runtime_cell(id, x, y, z);
+                            self.move_runtime_cell(id, x, y, z)?;
+                            return Ok(true);
                         }
                         "name" => {
                             let name = value.as_string()?;
                             if let Some(cell) = self.world.runtime_cells.get_mut(&id) {
                                 cell.entity_identity = Some(name.to_string());
                             } else {
-                                return Err("Cannot change name of an authored cell at runtime".to_string());
+                                return Err(
+                                    "Cannot change name of an authored cell at runtime".to_string()
+                                );
                             }
-                            return Ok(());
+                            return Ok(true);
                         }
                         "visible" => {
                             let visible = value.as_bool()?;
                             if let Some(coord) = self.world.resolve_cell_id(id) {
                                 self.world.set_cell_visible_runtime(coord, visible);
                             } else {
-                                self.world.runtime_state.entry(id).or_default().visible = Some(visible);
+                                self.world.runtime_state.entry(id).or_default().visible =
+                                    Some(visible);
                             }
-                            return Ok(());
+                            return Ok(true);
                         }
                         "enabled" => {
                             let enabled = value.as_bool()?;
                             if let Some(coord) = self.world.resolve_cell_id(id) {
                                 self.world.set_light_enabled_runtime(coord, enabled);
                             } else {
-                                self.world.runtime_state.entry(id).or_default().light_enabled = Some(enabled);
+                                self.world
+                                    .runtime_state
+                                    .entry(id)
+                                    .or_default()
+                                    .light_enabled = Some(enabled);
                             }
-                            return Ok(());
+                            return Ok(true);
                         }
                         "solid" => {
                             let solid = value.as_bool()?;
@@ -352,22 +392,25 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                             } else {
                                 self.world.runtime_state.entry(id).or_default().solid = Some(solid);
                             }
-                            return Ok(());
+                            return Ok(true);
                         }
                         "anchored" => {
                             let anchored = value.as_bool()?;
                             if let Some(coord) = self.world.resolve_cell_id(id) {
                                 self.world.set_cell_anchored_runtime(coord, anchored);
                             } else {
-                                self.world.runtime_state.entry(id).or_default().anchored = Some(anchored);
+                                self.world.runtime_state.entry(id).or_default().anchored =
+                                    Some(anchored);
                             }
-                            return Ok(());
+                            return Ok(true);
                         }
                         "color" => {
                             let basket = value.as_basket()?;
                             let borrowed = basket.borrow();
                             if borrowed.elements.len() != 3 {
-                                return Err("color must be a basket of 3 numbers [r, g, b]".to_string());
+                                return Err(
+                                    "color must be a basket of 3 numbers [r, g, b]".to_string()
+                                );
                             }
                             let r = borrowed.elements[0].as_number()? as f32;
                             let g = borrowed.elements[1].as_number()? as f32;
@@ -376,15 +419,18 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                             if let Some(coord) = self.world.resolve_cell_id(id) {
                                 self.world.set_cell_color_runtime(coord, color);
                             } else {
-                                self.world.runtime_state.entry(id).or_default().color_rgb = Some(color);
+                                self.world.runtime_state.entry(id).or_default().color_rgb =
+                                    Some(color);
                             }
-                            return Ok(());
+                            return Ok(true);
                         }
                         "offset" => {
                             let basket = value.as_basket()?;
                             let borrowed = basket.borrow();
                             if borrowed.elements.len() != 3 {
-                                return Err("offset must be a basket of 3 numbers [x, y, z]".to_string());
+                                return Err(
+                                    "offset must be a basket of 3 numbers [x, y, z]".to_string()
+                                );
                             }
                             let x = borrowed.elements[0].as_number()? as f32;
                             let y = borrowed.elements[1].as_number()? as f32;
@@ -393,9 +439,13 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                             if let Some(coord) = self.world.resolve_cell_id(id) {
                                 self.world.set_visual_offset_runtime(coord, offset);
                             } else {
-                                self.world.runtime_state.entry(id).or_default().visual_offset = Some(offset);
+                                self.world
+                                    .runtime_state
+                                    .entry(id)
+                                    .or_default()
+                                    .visual_offset = Some(offset);
                             }
-                            return Ok(());
+                            return Ok(true);
                         }
                         _ => {}
                     }
@@ -403,10 +453,16 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
             }
             _ => {}
         }
-        Ok(())
+        Ok(false)
     }
 
-    fn call_method(&mut self, _kind: HandleKind, _id: u64, _name: &str, _args: &[Value]) -> Result<Option<Value>, String> {
+    fn call_method(
+        &mut self,
+        _kind: HandleKind,
+        _id: u64,
+        _name: &str,
+        _args: &[Value],
+    ) -> Result<Option<Value>, String> {
         Ok(None)
     }
 
@@ -416,9 +472,19 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                 Value::Number(n) => AttributeValue::Number(n),
                 Value::Bool(b) => AttributeValue::Bool(b),
                 Value::String(s) => AttributeValue::String(s),
-                _ => return Err(format!("Cell attributes only support Number, Bool, or String. Got {}", value.type_name())),
+                _ => {
+                    return Err(format!(
+                        "Cell attributes only support Number, Bool, or String. Got {}",
+                        value.type_name()
+                    ));
+                }
             };
-            self.world.runtime_state.entry(id).or_default().attribute_overrides.insert(key, attr_val);
+            self.world
+                .runtime_state
+                .entry(id)
+                .or_default()
+                .attribute_overrides
+                .insert(key, attr_val);
             Ok(())
         } else {
             Err("invalid cell handle for attribute assignment".to_string())
@@ -435,15 +501,37 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
             Err("invalid cell handle for attribute removal".to_string())
         }
     }
+
+    fn cell_exists(&self, id: u64) -> bool {
+        self.world.get_effective_cell_by_id(id).is_some()
+    }
+
+    fn entity_exists(&self, id: u64) -> bool {
+        self.entity_manager.validate_handle(id)
+    }
+
+    fn get_script_property(&self, kind: HandleKind, id: u64, name: &str) -> Option<Value> {
+        self.dynamic_properties
+            .get(&(kind, id))
+            .and_then(|m| m.get(name))
+            .cloned()
+    }
+
+    fn set_script_property(&mut self, kind: HandleKind, id: u64, name: String, value: Value) {
+        self.dynamic_properties
+            .entry((kind, id))
+            .or_default()
+            .insert(name, value);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::cell::{AttributeValue, CellType};
-    use crate::world::WorldCoord;
-    use crate::scripting::value::{HandleKind, Value};
     use crate::scripting::api::EngineHost;
+    use crate::scripting::value::{HandleKind, Value};
+    use crate::world::WorldCoord;
+    use crate::world::cell::{AttributeValue, CellType};
 
     #[test]
     fn test_script_host_bridge_attributes_get() {
@@ -454,26 +542,44 @@ mod tests {
         let cell_id = world.set_cell(coord, CellType::Block);
 
         if let Some(cell) = world.get_mut(coord) {
-            cell.attributes.insert("health".to_string(), AttributeValue::Number(100.0));
-            cell.attributes.insert("is_boss".to_string(), AttributeValue::Bool(false));
-            cell.attributes.insert("tag".to_string(), AttributeValue::String("enemy".to_string()));
+            cell.attributes
+                .insert("health".to_string(), AttributeValue::Number(100.0));
+            cell.attributes
+                .insert("is_boss".to_string(), AttributeValue::Bool(false));
+            cell.attributes.insert(
+                "tag".to_string(),
+                AttributeValue::String("enemy".to_string()),
+            );
         }
 
+        let mut dynamic_properties = std::collections::HashMap::new();
         let bridge = ScriptHostBridge {
             entity_manager: &mut entity_manager,
             world: &mut world,
+            dynamic_properties: &mut dynamic_properties,
         };
 
-        let result = bridge.get_property(HandleKind::Cell, cell_id, "attributes").unwrap();
+        let result = bridge
+            .get_property(HandleKind::Cell, cell_id, "attributes")
+            .unwrap();
         let val = result.expect("attributes property should exist");
 
         let map_arc = val.as_map().expect("attributes should be a map");
         let map = map_arc.borrow();
 
         use crate::scripting::value::MapKey;
-        assert_eq!(map.get(&MapKey::String("health".to_string())), Some(&Value::Number(100.0)));
-        assert_eq!(map.get(&MapKey::String("is_boss".to_string())), Some(&Value::Bool(false)));
-        assert_eq!(map.get(&MapKey::String("tag".to_string())), Some(&Value::String("enemy".to_string())));
+        assert_eq!(
+            map.get(&MapKey::String("health".to_string())),
+            Some(&Value::Number(100.0))
+        );
+        assert_eq!(
+            map.get(&MapKey::String("is_boss".to_string())),
+            Some(&Value::Bool(false))
+        );
+        assert_eq!(
+            map.get(&MapKey::String("tag".to_string())),
+            Some(&Value::String("enemy".to_string()))
+        );
     }
 
     #[test]
@@ -485,36 +591,68 @@ mod tests {
         let cell_id = world.set_cell(coord, CellType::Block);
 
         if let Some(cell) = world.get_mut(coord) {
-            cell.attributes.insert("test".to_string(), AttributeValue::String("authored".to_string()));
+            cell.attributes.insert(
+                "test".to_string(),
+                AttributeValue::String("authored".to_string()),
+            );
         }
 
+        let mut dynamic_properties = std::collections::HashMap::new();
         let mut bridge = ScriptHostBridge {
             entity_manager: &mut entity_manager,
             world: &mut world,
+            dynamic_properties: &mut dynamic_properties,
         };
 
         // 1. Initial read should be authored value
-        let attrs = bridge.get_property(HandleKind::Cell, cell_id, "attributes").unwrap().unwrap();
+        let attrs = bridge
+            .get_property(HandleKind::Cell, cell_id, "attributes")
+            .unwrap()
+            .unwrap();
         let map_arc = attrs.as_map().unwrap();
-        assert_eq!(map_arc.borrow().get(&MapKey::String("test".to_string())), Some(&Value::String("authored".to_string())));
+        assert_eq!(
+            map_arc.borrow().get(&MapKey::String("test".to_string())),
+            Some(&Value::String("authored".to_string()))
+        );
 
         // 2. Runtime write
-        bridge.set_attribute(cell_id, "test".to_string(), Value::String("runtime".to_string())).unwrap();
+        bridge
+            .set_attribute(
+                cell_id,
+                "test".to_string(),
+                Value::String("runtime".to_string()),
+            )
+            .unwrap();
 
         // 3. Effective read should be runtime value
-        let attrs = bridge.get_property(HandleKind::Cell, cell_id, "attributes").unwrap().unwrap();
+        let attrs = bridge
+            .get_property(HandleKind::Cell, cell_id, "attributes")
+            .unwrap()
+            .unwrap();
         let map_arc = attrs.as_map().unwrap();
-        assert_eq!(map_arc.borrow().get(&MapKey::String("test".to_string())), Some(&Value::String("runtime".to_string())));
+        assert_eq!(
+            map_arc.borrow().get(&MapKey::String("test".to_string())),
+            Some(&Value::String("runtime".to_string()))
+        );
 
         // 4. Verify authored value in World is UNCHANGED
-        assert_eq!(bridge.world.get(coord).unwrap().attributes.get("test"), Some(&AttributeValue::String("authored".to_string())));
+        assert_eq!(
+            bridge.world.get(coord).unwrap().attributes.get("test"),
+            Some(&AttributeValue::String("authored".to_string()))
+        );
 
         // 5. Runtime removal
         bridge.remove_attribute(cell_id, "test").unwrap();
 
         // 6. Effective read should fall back to authored value
-        let attrs = bridge.get_property(HandleKind::Cell, cell_id, "attributes").unwrap().unwrap();
+        let attrs = bridge
+            .get_property(HandleKind::Cell, cell_id, "attributes")
+            .unwrap()
+            .unwrap();
         let map_arc = attrs.as_map().unwrap();
-        assert_eq!(map_arc.borrow().get(&MapKey::String("test".to_string())), Some(&Value::String("authored".to_string())));
+        assert_eq!(
+            map_arc.borrow().get(&MapKey::String("test".to_string())),
+            Some(&Value::String("authored".to_string()))
+        );
     }
 }

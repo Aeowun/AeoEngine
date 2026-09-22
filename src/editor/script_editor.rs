@@ -1,12 +1,12 @@
-use egui::{RichText, Color32};
-use std::path::PathBuf;
-use std::collections::HashMap;
 use crate::scripting::ast::Program;
 use crate::scripting::diagnostic::Diagnostics;
-use crate::scripting::source_map::SourceMap;
 use crate::scripting::lexer::Lexer;
 use crate::scripting::parser::Parser;
 use crate::scripting::source::SourceLocation;
+use crate::scripting::source_map::SourceMap;
+use egui::{Color32, RichText};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 pub struct ScriptDocument {
     pub path: PathBuf,
@@ -48,22 +48,31 @@ impl ScriptDocument {
                     }
                     Err(e) => {
                         self.program = None;
-                        let file_name = self.path.file_name().map(|n| n.to_string_lossy().into_owned());
-                        self.diagnostics.error(e.message, SourceLocation::new(file_name, e.span));
+                        let file_name = self
+                            .path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned());
+                        self.diagnostics
+                            .error(e.message, SourceLocation::new(file_name, e.span));
                     }
                 }
             }
             Err(e) => {
                 self.program = None;
-                let file_name = self.path.file_name().map(|n| n.to_string_lossy().into_owned());
+                let file_name = self
+                    .path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned());
                 // Lexer error doesn't have a span, just line/column. We'll have to approximate or update Lexer.
                 // For now, let's assume we can at least report it.
                 // Actually, LexerError has line and column. Diagnostic expects a span.
                 // We'll use a single-byte span at the calculated offset if possible, or just a dummy span.
                 // Since we have SourceMap, we can try to find the offset.
-                let offset = self.source_map.line_start(e.line).unwrap_or(0) + (e.column as u32).saturating_sub(1);
+                let offset = self.source_map.line_start(e.line).unwrap_or(0)
+                    + (e.column as u32).saturating_sub(1);
                 let span = crate::scripting::source::SourceSpan::single(offset);
-                self.diagnostics.error(e.message, SourceLocation::new(file_name, span));
+                self.diagnostics
+                    .error(e.message, SourceLocation::new(file_name, span));
             }
         }
     }
@@ -172,7 +181,8 @@ impl ScriptEditor {
         if let Some(path) = &self.active_document {
             if let Some(doc) = self.open_documents.get_mut(path) {
                 if let Err(e) = doc.save() {
-                    self.output_log.push(format!("Failed to save {:?}: {}", path, e));
+                    self.output_log
+                        .push(format!("Failed to save {:?}: {}", path, e));
                 }
             }
         }
@@ -182,7 +192,8 @@ impl ScriptEditor {
         for doc in self.open_documents.values_mut() {
             if doc.dirty {
                 if let Err(e) = doc.save() {
-                    self.output_log.push(format!("Failed to save {:?}: {}", doc.path, e));
+                    self.output_log
+                        .push(format!("Failed to save {:?}: {}", doc.path, e));
                 }
             }
         }
@@ -190,7 +201,9 @@ impl ScriptEditor {
 
     pub fn create_new_script(&mut self, project_path: &PathBuf, name: &str) {
         let name = name.trim();
-        if name.is_empty() { return; }
+        if name.is_empty() {
+            return;
+        }
 
         let mut filename = name.to_string();
         if !filename.ends_with(".aeo") {
@@ -199,17 +212,25 @@ impl ScriptEditor {
 
         let path = project_path.join("scripts").join(&filename);
         if path.exists() {
-            self.output_log.push(format!("File already exists: {:?}", path));
+            self.output_log
+                .push(format!("File already exists: {:?}", path));
             return;
         }
 
         let entity_name = name.split('.').next().unwrap_or("MyScript");
         // Sanitize entity name (basic)
-        let entity_name = entity_name.chars().filter(|c| c.is_alphanumeric()).collect::<String>();
-        let entity_name = if entity_name.is_empty() { "MyScript".to_string() } else { entity_name };
+        let entity_name = entity_name
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect::<String>();
+        let entity_name = if entity_name.is_empty() {
+            "MyScript".to_string()
+        } else {
+            entity_name
+        };
 
         let template = format!(
-"entity {} {{
+            "entity {} {{
 
     fn on_spawn() {{
     }}
@@ -223,10 +244,13 @@ impl ScriptEditor {
     fn on_destroy() {{
     }}
 }}
-", entity_name);
+",
+            entity_name
+        );
 
         if let Err(e) = std::fs::write(&path, &template) {
-            self.output_log.push(format!("Failed to create script: {}", e));
+            self.output_log
+                .push(format!("Failed to create script: {}", e));
         } else {
             self.refresh_scripts(&Some(project_path.clone()));
             self.open_file(path);
@@ -236,7 +260,8 @@ impl ScriptEditor {
     pub fn rename_script(&mut self, project_path: &PathBuf, old_path: PathBuf, new_name: &str) {
         let new_name = new_name.trim();
         if new_name.is_empty() {
-            self.output_log.push("Rename failed: Name cannot be empty.".to_string());
+            self.output_log
+                .push("Rename failed: Name cannot be empty.".to_string());
             return;
         }
 
@@ -246,14 +271,19 @@ impl ScriptEditor {
         }
 
         // Windows invalid characters check: \ / : * ? " < > |
-        if filename.chars().any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|')) {
-            self.output_log.push("Rename failed: Invalid characters in filename.".to_string());
+        if filename
+            .chars()
+            .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        {
+            self.output_log
+                .push("Rename failed: Invalid characters in filename.".to_string());
             return;
         }
 
         let new_path = project_path.join("scripts").join(&filename);
         if new_path.exists() {
-            self.output_log.push(format!("Rename failed: {:?} already exists.", new_path));
+            self.output_log
+                .push(format!("Rename failed: {:?} already exists.", new_path));
             return;
         }
 
@@ -284,7 +314,10 @@ impl ScriptEditor {
                 self.active_document = self.open_documents.keys().next().cloned();
             }
             self.refresh_scripts(project_path);
-            self.output_log.push(format!("Deleted {:?}", path.file_name().unwrap_or_default()));
+            self.output_log.push(format!(
+                "Deleted {:?}",
+                path.file_name().unwrap_or_default()
+            ));
         }
     }
 
@@ -346,7 +379,9 @@ impl ScriptEditor {
 
     pub fn perform_search(&mut self) {
         self.search_results.clear();
-        if self.search_query.is_empty() { return; }
+        if self.search_query.is_empty() {
+            return;
+        }
 
         for path in &self.scripts_list {
             if let Ok(source) = std::fs::read_to_string(path) {
@@ -363,7 +398,12 @@ impl ScriptEditor {
         }
     }
 
-    pub fn show_ui(&mut self, ctx: &egui::Context, project_path: &Option<PathBuf>, world: &mut crate::world::World) {
+    pub fn show_ui(
+        &mut self,
+        ctx: &egui::Context,
+        project_path: &Option<PathBuf>,
+        world: &mut crate::world::World,
+    ) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.style_mut().visuals.window_rounding = egui::Rounding::ZERO;
 
@@ -382,14 +422,18 @@ impl ScriptEditor {
                         ui.text_edit_singleline(&mut self.new_script_name);
                     });
                     ui.horizontal(|ui| {
-                        if ui.button("Create").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        if ui.button("Create").clicked()
+                            || ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        {
                             if let Some(root) = project_path {
                                 self.create_new_script(root, &self.new_script_name.clone());
                                 self.show_new_script_dialog = false;
                                 self.new_script_name.clear();
                             }
                         }
-                        if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        if ui.button("Cancel").clicked()
+                            || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                        {
                             self.show_new_script_dialog = false;
                         }
                     });
@@ -406,15 +450,21 @@ impl ScriptEditor {
                         ui.text_edit_singleline(&mut self.rename_new_name);
                     });
                     ui.horizontal(|ui| {
-                        if ui.button("Rename").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                            if let (Some(root), Some(target)) = (project_path, self.rename_target.clone()) {
+                        if ui.button("Rename").clicked()
+                            || ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        {
+                            if let (Some(root), Some(target)) =
+                                (project_path, self.rename_target.clone())
+                            {
                                 self.rename_script(root, target, &self.rename_new_name.clone());
                                 self.show_rename_dialog = false;
                                 self.rename_new_name.clear();
                                 self.rename_target = None;
                             }
                         }
-                        if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        if ui.button("Cancel").clicked()
+                            || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                        {
                             self.show_rename_dialog = false;
                             self.rename_target = None;
                         }
@@ -429,11 +479,17 @@ impl ScriptEditor {
                     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                     .collapsible(false)
                     .show(ctx, |ui| {
-                        ui.label(format!("Are you sure you want to delete {:?}?", path.file_name().unwrap_or_default()));
+                        ui.label(format!(
+                            "Are you sure you want to delete {:?}?",
+                            path.file_name().unwrap_or_default()
+                        ));
                         ui.add_space(10.0);
                         ui.horizontal(|ui| {
-                            if ui.button("Delete").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                                let is_dirty = self.open_documents.get(&path).map_or(false, |d| d.dirty);
+                            if ui.button("Delete").clicked()
+                                || ui.input(|i| i.key_pressed(egui::Key::Enter))
+                            {
+                                let is_dirty =
+                                    self.open_documents.get(&path).map_or(false, |d| d.dirty);
                                 if is_dirty {
                                     self.closing_path = Some(path.clone());
                                 } else {
@@ -441,7 +497,9 @@ impl ScriptEditor {
                                     self.deleting_path = None;
                                 }
                             }
-                            if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                            if ui.button("Cancel").clicked()
+                                || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                            {
                                 self.deleting_path = None;
                             }
                         });
@@ -474,7 +532,9 @@ impl ScriptEditor {
                     if ui.button("Don't Save").clicked() {
                         self.apply_dirty_response(project_path, path.clone(), false, false);
                     }
-                    if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    if ui.button("Cancel").clicked()
+                        || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                    {
                         self.apply_dirty_response(project_path, path.clone(), false, true);
                     }
                 });
@@ -482,7 +542,12 @@ impl ScriptEditor {
         }
     }
 
-    fn draw_workspace(&mut self, ui: &mut egui::Ui, project_path: &Option<PathBuf>, world: &mut crate::world::World) {
+    fn draw_workspace(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_path: &Option<PathBuf>,
+        world: &mut crate::world::World,
+    ) {
         let mut action_open = None;
         let mut action_close = None;
 
@@ -746,7 +811,12 @@ impl ScriptEditor {
         }
     }
 
-    fn draw_inspector(&mut self, ui: &mut egui::Ui, world: &mut crate::world::World, project_path: &Option<PathBuf>) {
+    fn draw_inspector(
+        &mut self,
+        ui: &mut egui::Ui,
+        world: &mut crate::world::World,
+        project_path: &Option<PathBuf>,
+    ) {
         ui.vertical(|ui| {
             ui.label(RichText::new("INSPECTOR").strong());
             ui.separator();
@@ -832,34 +902,52 @@ impl ScriptEditor {
                     ));
                 }
 
-                egui::ScrollArea::vertical().id_salt("problems_scroll").show(ui, |ui| {
-                    for info in diags_info {
-                        let (severity, file, line, col, message, offset) = info;
-                        let color = match severity {
-                            crate::scripting::diagnostic::DiagnosticSeverity::Error => egui::Color32::RED,
-                            crate::scripting::diagnostic::DiagnosticSeverity::Warning => egui::Color32::YELLOW,
-                            _ => egui::Color32::WHITE,
-                        };
-
-                        ui.horizontal(|ui| {
-                            ui.colored_label(color, format!("{:?}", severity));
-                            let msg = format!("{}:{}:{}  {}",
-                                file.as_deref().unwrap_or("unknown"),
-                                line, col, message);
-
-                            let row_resp = ui.selectable_label(false, msg);
-                            if row_resp.clicked() {
-                                if let Some(ref f) = file {
-                                    if let Some(p) = self.scripts_list.iter().find(|p| p.file_name().map_or(false, |n| n.to_string_lossy() == *f)).cloned() {
-                                        click_action = Some((p, offset));
-                                    }
-                                } else if let Some(p) = &self.active_document {
-                                    click_action = Some((p.clone(), offset));
+                egui::ScrollArea::vertical()
+                    .id_salt("problems_scroll")
+                    .show(ui, |ui| {
+                        for info in diags_info {
+                            let (severity, file, line, col, message, offset) = info;
+                            let color = match severity {
+                                crate::scripting::diagnostic::DiagnosticSeverity::Error => {
+                                    egui::Color32::RED
                                 }
-                            }
-                        });
-                    }
-                });
+                                crate::scripting::diagnostic::DiagnosticSeverity::Warning => {
+                                    egui::Color32::YELLOW
+                                }
+                                _ => egui::Color32::WHITE,
+                            };
+
+                            ui.horizontal(|ui| {
+                                ui.colored_label(color, format!("{:?}", severity));
+                                let msg = format!(
+                                    "{}:{}:{}  {}",
+                                    file.as_deref().unwrap_or("unknown"),
+                                    line,
+                                    col,
+                                    message
+                                );
+
+                                let row_resp = ui.selectable_label(false, msg);
+                                if row_resp.clicked() {
+                                    if let Some(ref f) = file {
+                                        if let Some(p) = self
+                                            .scripts_list
+                                            .iter()
+                                            .find(|p| {
+                                                p.file_name()
+                                                    .map_or(false, |n| n.to_string_lossy() == *f)
+                                            })
+                                            .cloned()
+                                        {
+                                            click_action = Some((p, offset));
+                                        }
+                                    } else if let Some(p) = &self.active_document {
+                                        click_action = Some((p.clone(), offset));
+                                    }
+                                }
+                            });
+                        }
+                    });
             }
         }
 
@@ -871,11 +959,13 @@ impl ScriptEditor {
 
     fn draw_output(&mut self, ui: &mut egui::Ui) {
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-        egui::ScrollArea::vertical().id_salt("output_scroll").show(ui, |ui| {
-            for line in &self.output_log {
-                ui.label(line);
-            }
-        });
+        egui::ScrollArea::vertical()
+            .id_salt("output_scroll")
+            .show(ui, |ui| {
+                for line in &self.output_log {
+                    ui.label(line);
+                }
+            });
     }
 }
 
@@ -888,7 +978,9 @@ mod tests {
     fn test_script_filenames_sorted() {
         let test_dir = PathBuf::from("TestProject_Scripts");
         let scripts_dir = test_dir.join("scripts");
-        if test_dir.exists() { fs::remove_dir_all(&test_dir).ok(); }
+        if test_dir.exists() {
+            fs::remove_dir_all(&test_dir).ok();
+        }
         fs::create_dir_all(&scripts_dir).unwrap();
 
         fs::write(scripts_dir.join("z.aeo"), "").unwrap();
@@ -939,7 +1031,9 @@ mod tests {
     fn test_save_behavior() {
         let test_dir = PathBuf::from("TestProject_Save");
         let scripts_dir = test_dir.join("scripts");
-        if test_dir.exists() { fs::remove_dir_all(&test_dir).ok(); }
+        if test_dir.exists() {
+            fs::remove_dir_all(&test_dir).ok();
+        }
         fs::create_dir_all(&scripts_dir).unwrap();
 
         let path = scripts_dir.join("save_test.aeo");
@@ -967,7 +1061,10 @@ mod tests {
         assert!(doc.diagnostics.has_errors());
 
         let diag = &doc.diagnostics.as_slice()[0];
-        assert_eq!(diag.severity, crate::scripting::diagnostic::DiagnosticSeverity::Error);
+        assert_eq!(
+            diag.severity,
+            crate::scripting::diagnostic::DiagnosticSeverity::Error
+        );
         assert!(diag.message.contains("Expected"));
     }
 
@@ -975,7 +1072,9 @@ mod tests {
     fn test_new_script_template() {
         let test_dir = PathBuf::from("TestProject_Template");
         let scripts_dir = test_dir.join("scripts");
-        if test_dir.exists() { fs::remove_dir_all(&test_dir).ok(); }
+        if test_dir.exists() {
+            fs::remove_dir_all(&test_dir).ok();
+        }
         fs::create_dir_all(&scripts_dir).unwrap();
 
         let mut editor = ScriptEditor::new();
@@ -998,7 +1097,9 @@ mod tests {
     fn test_search_results() {
         let test_dir = PathBuf::from("TestProject_Search");
         let scripts_dir = test_dir.join("scripts");
-        if test_dir.exists() { fs::remove_dir_all(&test_dir).ok(); }
+        if test_dir.exists() {
+            fs::remove_dir_all(&test_dir).ok();
+        }
         fs::create_dir_all(&scripts_dir).unwrap();
 
         fs::write(scripts_dir.join("one.aeo"), "hello world").unwrap();
@@ -1011,7 +1112,10 @@ mod tests {
         editor.perform_search();
 
         assert_eq!(editor.search_results.len(), 1);
-        assert_eq!(editor.search_results[0].path.file_name().unwrap(), "one.aeo");
+        assert_eq!(
+            editor.search_results[0].path.file_name().unwrap(),
+            "one.aeo"
+        );
 
         fs::remove_dir_all(&test_dir).ok();
     }
@@ -1028,8 +1132,12 @@ mod tests {
             if let crate::scripting::ast::Declaration::Entity(entity) = &program.declarations[0] {
                 for member in &entity.members {
                     if let crate::scripting::ast::EntityMember::Function(f) = member {
-                        if f.name == "on_spawn" { has_spawn = true; }
-                        if f.name == "on_destroy" { has_destroy = true; }
+                        if f.name == "on_spawn" {
+                            has_spawn = true;
+                        }
+                        if f.name == "on_destroy" {
+                            has_destroy = true;
+                        }
                     }
                 }
             }
@@ -1048,14 +1156,21 @@ mod tests {
             if let crate::scripting::ast::Declaration::Entity(entity) = &program.declarations[0] {
                 for member in &entity.members {
                     if let crate::scripting::ast::EntityMember::Function(f) = member {
-                        if f.name == "on_spawn" { has_spawn = true; }
-                        if f.name == "on_destroy" { has_destroy = true; }
+                        if f.name == "on_spawn" {
+                            has_spawn = true;
+                        }
+                        if f.name == "on_destroy" {
+                            has_destroy = true;
+                        }
                     }
                 }
             }
         }
         assert!(has_spawn);
-        assert!(!has_destroy, "on_destroy should be gone from parsed metadata");
+        assert!(
+            !has_destroy,
+            "on_destroy should be gone from parsed metadata"
+        );
     }
 
     #[test]

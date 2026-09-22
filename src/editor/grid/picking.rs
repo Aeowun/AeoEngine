@@ -142,7 +142,10 @@ pub fn raycast_world(
 
             // Lights are often set to visible=false, so we check eligibility first.
             // If it's a light and we are including lights, we hit it regardless of visibility flag.
-            if eligible && (world.is_cell_visible(map_pos) || cell.cell_type == crate::world::CellType::Light) {
+            if eligible
+                && (world.is_cell_visible(map_pos)
+                    || cell.cell_type == crate::world::CellType::Light)
+            {
                 return Some((map_pos, hit_normal));
             }
         }

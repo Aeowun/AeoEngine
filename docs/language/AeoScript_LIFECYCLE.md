@@ -47,6 +47,7 @@ The common lifecycle functions are:
 on_spawn
 on_ready
 update(dt)
+on_touch(cell)
 on_destroy
 ~~~
 
@@ -74,7 +75,34 @@ Later `update()` execution observes the persistent field value.
 
 ---
 
-# 5. `update(dt)`
+# 5. `on_touch(cell)`
+
+`on_touch(cell)` runs when a character (the player) contacts the scripted object.
+
+The `cell` argument is a handle to the contacted Cell.
+
+~~~aeoscript
+entity Trap {
+    fn on_touch(c) {
+        debug.log("Player hit trap!")
+        c.visible = false
+    }
+}
+~~~
+
+This event only dispatches if `collision_events_enabled` is true for that Cell (default: true).
+
+Global event handlers can also react to any contact:
+
+~~~aeoscript
+on on_touch(c) {
+    debug.log("Something was touched:", c.name)
+}
+~~~
+
+---
+
+# 6. `update(dt)`
 
 `update(dt)` is the normal per-frame script lifecycle entry point.
 

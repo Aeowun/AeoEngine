@@ -1,0 +1,62 @@
+debug.log("AeoScript API TEST START")
+
+const greens = find("Green")
+
+for green in greens {
+  
+    cell.delete(green)
+
+    debug.log("Green block deleted")
+}
+
+wait(1)
+
+const block = cell.new("Block")
+
+block.position = [-5, 18, 1]
+block.name = "RuntimeBlock"
+block.visible = true
+block.solid = true
+block.anchored = true
+block.color = [1, 0, 0]
+block.offset = [0, 0, 0]
+
+block.attributes["Name"] = "deletaBlock"
+block.attributes["testBool"] = true
+block.attributes["testNum"] = 42
+block.attributes["testString"] = "Runtime"
+block.name = "RuntimeBlockChanged"
+block.color = [0, 0, 1]
+block.attributes["testString"] = nil
+
+const values = [
+    "Alpha",
+    "Bravo",
+    "Charlie"
+]
+
+const testMap = {}
+
+testMap["name"] = block.name
+testMap["Name"] = block.attributes["Name"]
+testMap[1] = "numeric key"
+testMap["1"] = "string key"
+wait(1)
+
+cell.delete(block)
+
+cell.delete(block)
+
+const finalBlock = cell.new("Block")
+
+finalBlock.position = [-5, 18, 1]
+finalBlock.name = "FinalRuntimeBlock"
+finalBlock.visible = true
+finalBlock.solid = true
+finalBlock.anchored = true
+finalBlock.color = [1, 0, 0]
+finalBlock.attributes["Name"] = "deletaBlock"
+
+wait(1)
+
+debug.log("AeoScript API TEST COMPLETE")

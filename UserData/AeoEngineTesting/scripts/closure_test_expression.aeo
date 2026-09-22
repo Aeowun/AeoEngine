@@ -1,0 +1,8 @@
+value = 10
+
+const f = fn() {
+    value = value + 5
+    return value
+}
+
+result = f()

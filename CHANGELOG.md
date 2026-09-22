@@ -407,3 +407,48 @@ Verification: `cargo check` passed and the full test suite passed with **303 tes
 ### Notes
 
 Version `0.7.1` introduces temporary runtime data and dynamic object creation for AeoScript, while maintaining the absolute invariant that Play-mode execution never modifies authored project data.
+
+---
+
+## 0.7.2
+
+### Added
+
+* World Sky Environment system foundation.
+* Native OpenGL `GL_TEXTURE_CUBE_MAP` skybox rendering.
+* Support for single-asset horizontal cross layout cubemaps (4:3 aspect ratio).
+* Camera-locked skybox positioning to eliminate translation parallax.
+* 5 built-in sky presets: `Temperate`, `Tropical`, `Desert`, `Snowy`, `Mars`.
+* Persistent `SKY` configuration in world data.
+* Editor UI in the World panel for enabling sky and switching presets.
+* Asset routing for dedicated `.assets/skybox/` directory.
+
+### Changed
+
+* Optimized texture fallback system to support multiple asset subdirectories.
+* Updated world persistence format to include single-asset sky configuration.
+
+### Notes
+
+Version `0.7.2` establishes the foundation for environment rendering in AeoEngine with a seamless skybox system.
+
+---
+
+## 0.7.3
+
+### Added
+
+* `on_touch(cell)` event: AeoScript lifecycle/event function triggered when the player character contacts a scripted object.
+* Cell Collision Event Toggle: Persistent `collision_events_enabled` property to control whether a Cell dispatches contact events.
+* Script Enable/Disable: Ability to temporarily deactivate scripts from the Script Editor Inspector.
+* Persistence for new collision and script state settings.
+
+### Changed
+
+* `ScriptScene` now checks for script enablement before spawning entities or top-level fibers.
+* Global event handlers for `on_touch` are filtered based on script enablement.
+* Collision event dispatch is gated by the per-cell `collision_events_enabled` flag.
+
+### Notes
+
+Version `0.7.3` provides fine-grained control over script execution and object-level interactivity, enabling more complex gameplay scenarios and better debugging tools.

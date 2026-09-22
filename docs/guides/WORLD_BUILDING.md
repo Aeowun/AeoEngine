@@ -36,9 +36,9 @@ Block authoring can include:
 
 Light Cells can be authored directly in the World.
 
-World lighting also contains global lighting configuration.
+World lighting also contains global lighting configuration and Sky Environment settings.
 
-Use authored Lights for local scene lighting and the World lighting settings for scene-wide illumination behavior.
+Use authored Lights for local scene lighting. Use the World panel in the editor to configure global illumination and environment presets such as `Temperate`, `Tropical`, or `Snowy`.
 
 ---
 
@@ -92,6 +92,8 @@ Select a Cell and edit its authored properties through the Properties panel.
 ### Engine Properties
 
 Built-in properties describe how the engine treats the Cell (e.g., color, physics behavior).
+
+*   **Collision Events**: Controls whether the Cell dispatches the `on_touch(cell)` event to AeoScript when contacted by a character. Use this to optimize performance or disable interactions for specific geometry.
 
 ### Cell Attributes
 

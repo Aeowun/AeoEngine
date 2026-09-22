@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// Kinds of opaque engine handles.
@@ -99,6 +99,17 @@ pub enum Value {
         kind: HandleKind,
         id: u64,
     },
+
+    /// A reference to a function.
+    /// Stores the compiled instructions, the names of its parameters, and captured lexical scopes.
+    Function(
+        Arc<crate::scripting::ast::CompiledFunction>,
+        Vec<String>,
+        Vec<Scope>,
+    ),
+
+    /// Represents a built-in library namespace (e.g. math, cell).
+    Namespace(String),
 }
 
 impl Value {
@@ -111,6 +122,8 @@ impl Value {
             Self::Array(_) => "basket",
             Self::Map(_) => "map",
             Self::Handle { .. } => "handle",
+            Self::Function(..) => "function",
+            Self::Namespace(_) => "namespace",
         }
     }
 
@@ -186,12 +199,18 @@ impl Value {
         match self {
             Self::Number(n) => Ok(MapKey::Number(OrderedFloat(*n))),
             Self::String(s) => Ok(MapKey::String(s.clone())),
-            other => Err(format!("{} cannot be used as a map key (expected string or number)", other.type_name())),
+            other => Err(format!(
+                "{} cannot be used as a map key (expected string or number)",
+                other.type_name()
+            )),
         }
     }
 
     pub fn array(values: Vec<Value>) -> Self {
-        Self::Array(Arc::new(RefCell::new(BasketData { elements: values, frozen: false })))
+        Self::Array(Arc::new(RefCell::new(BasketData {
+            elements: values,
+            frozen: false,
+        })))
     }
 
     pub fn map(values: BTreeMap<MapKey, Value>) -> Self {
@@ -216,7 +235,8 @@ impl Value {
 
             Self::Array(values) => {
                 let borrowed = values.borrow();
-                let items = borrowed.elements
+                let items = borrowed
+                    .elements
                     .iter()
                     .map(Value::display_string)
                     .collect::<Vec<_>>()
@@ -239,6 +259,10 @@ impl Value {
             Self::Handle { kind, id } => {
                 format!("{}#{}", kind.name(), id)
             }
+
+            Self::Function(..) => "function".to_string(),
+
+            Self::Namespace(name) => format!("namespace:{}", name),
         }
     }
 }
@@ -274,6 +298,12 @@ impl PartialEq for Value {
                 },
             ) => left_kind == right_kind && left_id == right_id,
 
+            (
+                Self::Function(a_compiled, a_params, a_caps),
+                Self::Function(b_compiled, b_params, b_caps),
+            ) => Arc::ptr_eq(a_compiled, b_compiled) && a_params == b_params && a_caps == b_caps,
+
+            (Self::Namespace(a), Self::Namespace(b)) => a == b,
             _ => false,
         }
     }
@@ -290,58 +320,63 @@ impl std::fmt::Display for Value {
 /// A single lexical scope.
 #[derive(Clone, Debug, Default)]
 pub struct Scope {
-    values: BTreeMap<String, Value>,
-    constants: BTreeMap<String, ()>,
+    pub(crate) values: Arc<RefCell<BTreeMap<String, Value>>>,
+    pub(crate) constants: Arc<RefCell<BTreeMap<String, ()>>>,
 }
 
 impl Scope {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            values: Arc::new(RefCell::new(BTreeMap::new())),
+            constants: Arc::new(RefCell::new(BTreeMap::new())),
+        }
     }
 
     pub fn declare(
-        &mut self,
+        &self,
         name: impl Into<String>,
         value: Value,
         is_const: bool,
     ) -> Result<(), String> {
         let name = name.into();
+        let mut values = self.values.borrow_mut();
 
-        if self.values.contains_key(&name) {
+        if values.contains_key(&name) {
             return Err(format!(
                 "variable '{}' is already declared in this scope",
                 name
             ));
         }
 
-        self.values.insert(name.clone(), value);
+        values.insert(name.clone(), value);
 
         if is_const {
-            self.constants.insert(name, ());
+            self.constants.borrow_mut().insert(name, ());
         }
 
         Ok(())
     }
 
-    pub fn set_or_declare(&mut self, name: String, value: Value) -> Result<(), String> {
-        self.values.insert(name, value);
+    pub fn set_or_declare(&self, name: String, value: Value) -> Result<(), String> {
+        self.values.borrow_mut().insert(name, value);
         Ok(())
     }
 
     pub fn contains(&self, name: &str) -> bool {
-        self.values.contains_key(name)
+        self.values.borrow().contains_key(name)
     }
 
-    pub fn get(&self, name: &str) -> Option<&Value> {
-        self.values.get(name)
+    pub fn get(&self, name: &str) -> Option<Value> {
+        self.values.borrow().get(name).cloned()
     }
 
-    pub fn set(&mut self, name: &str, value: Value) -> Result<(), String> {
-        if self.constants.contains_key(name) {
+    pub fn set(&self, name: &str, value: Value) -> Result<(), String> {
+        if self.constants.borrow().contains_key(name) {
             return Err(format!("cannot assign to const variable '{}'", name));
         }
 
-        match self.values.get_mut(name) {
+        let mut values = self.values.borrow_mut();
+        match values.get_mut(name) {
             Some(existing) => {
                 *existing = value;
                 Ok(())
@@ -352,16 +387,24 @@ impl Scope {
     }
 
     pub fn is_const(&self, name: &str) -> bool {
-        self.constants.contains_key(name)
+        self.constants.borrow().contains_key(name)
     }
 }
 
+impl PartialEq for Scope {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.values, &other.values)
+    }
+}
+
+impl Eq for Scope {}
+
 #[cfg(test)]
 mod tests {
-    use super::{HandleKind, Scope, Value, MapKey, OrderedFloat};
+    use super::{HandleKind, MapKey, OrderedFloat, Scope, Value};
+    use std::cell::RefCell;
     use std::collections::BTreeMap;
     use std::sync::Arc;
-    use std::cell::RefCell;
 
     #[test]
     fn value_types_are_reported() {
@@ -375,7 +418,10 @@ mod tests {
 
         assert_eq!(Value::array(vec![Value::Number(1.0)]).type_name(), "basket");
 
-        assert_eq!(Value::Map(Arc::new(RefCell::new(BTreeMap::new()))).type_name(), "map");
+        assert_eq!(
+            Value::Map(Arc::new(RefCell::new(BTreeMap::new()))).type_name(),
+            "map"
+        );
 
         assert_eq!(
             Value::Handle {
@@ -404,10 +450,7 @@ mod tests {
 
     #[test]
     fn nil_is_falsey() {
-        assert_eq!(
-            Value::Nil.is_truthy().expect("nil should be valid"),
-            false
-        );
+        assert_eq!(Value::Nil.is_truthy().expect("nil should be valid"), false);
     }
 
     #[test]
@@ -458,13 +501,13 @@ mod tests {
 
         assert!(scope.contains("value"));
 
-        assert_eq!(scope.get("value"), Some(&Value::Number(10.0)));
+        assert_eq!(scope.get("value"), Some(Value::Number(10.0)));
 
         scope
             .set("value", Value::Number(15.0))
             .expect("variable should update");
 
-        assert_eq!(scope.get("value"), Some(&Value::Number(15.0)));
+        assert_eq!(scope.get("value"), Some(Value::Number(15.0)));
     }
 
     #[test]
@@ -480,7 +523,7 @@ mod tests {
         assert!(result.is_err());
         assert!(scope.is_const("limit"));
 
-        assert_eq!(scope.get("limit"), Some(&Value::Number(10.0)));
+        assert_eq!(scope.get("limit"), Some(Value::Number(10.0)));
     }
 
     #[test]
@@ -499,12 +542,30 @@ mod tests {
     #[test]
     fn map_keys_distinct() {
         let mut map = BTreeMap::new();
-        map.insert(MapKey::Number(OrderedFloat(1.0)), Value::String("number".to_string()));
-        map.insert(MapKey::String("1".to_string()), Value::String("string".to_string()));
+        map.insert(
+            MapKey::Number(OrderedFloat(1.0)),
+            Value::String("number".to_string()),
+        );
+        map.insert(
+            MapKey::String("1".to_string()),
+            Value::String("string".to_string()),
+        );
 
         assert_eq!(map.len(), 2);
-        assert_eq!(map.get(&MapKey::Number(OrderedFloat(1.0))).unwrap().as_string().unwrap(), "number");
-        assert_eq!(map.get(&MapKey::String("1".to_string())).unwrap().as_string().unwrap(), "string");
+        assert_eq!(
+            map.get(&MapKey::Number(OrderedFloat(1.0)))
+                .unwrap()
+                .as_string()
+                .unwrap(),
+            "number"
+        );
+        assert_eq!(
+            map.get(&MapKey::String("1".to_string()))
+                .unwrap()
+                .as_string()
+                .unwrap(),
+            "string"
+        );
     }
 
     #[test]

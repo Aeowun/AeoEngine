@@ -153,7 +153,12 @@ impl Editor {
         self.navigation_window.sync(coord);
     }
 
-    pub fn show_ui(&mut self, ctx: &egui::Context, world: &mut crate::world::World, project_path: &Option<std::path::PathBuf>) {
+    pub fn show_ui(
+        &mut self,
+        ctx: &egui::Context,
+        world: &mut crate::world::World,
+        project_path: &Option<std::path::PathBuf>,
+    ) {
         self.draw_menu_bar(ctx);
         self.draw_tool_bar(ctx);
 
@@ -302,7 +307,12 @@ impl Editor {
         });
     }
 
-    fn draw_right_panel(&mut self, ctx: &egui::Context, world: &mut crate::world::World, project_path: &Option<std::path::PathBuf>) {
+    fn draw_right_panel(
+        &mut self,
+        ctx: &egui::Context,
+        world: &mut crate::world::World,
+        project_path: &Option<std::path::PathBuf>,
+    ) {
         let show_prop = self.show_properties_window;
         let show_nav = self.navigation_window.is_open;
         let show_terminal = self.script_editor.show_output;
@@ -410,8 +420,7 @@ impl Editor {
                 });
         }
     }
-
-    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PropertyChange {
@@ -431,7 +440,11 @@ pub enum PropertyChange {
 }
 
 impl Editor {
-    pub fn apply_property_changes(&self, world: &mut crate::world::World, changes: &[PropertyChange]) {
+    pub fn apply_property_changes(
+        &self,
+        world: &mut crate::world::World,
+        changes: &[PropertyChange],
+    ) {
         if changes.is_empty() {
             return;
         }
@@ -440,16 +453,24 @@ impl Editor {
                 for change in changes {
                     match change {
                         PropertyChange::LightColor(color) => other_cell.light_color = *color,
-                        PropertyChange::LightIntensity(intensity) => other_cell.light_intensity = *intensity,
+                        PropertyChange::LightIntensity(intensity) => {
+                            other_cell.light_intensity = *intensity
+                        }
                         PropertyChange::LightRange(range) => other_cell.light_range = *range,
-                        PropertyChange::LightShadows(shadows) => other_cell.light_shadows = *shadows,
+                        PropertyChange::LightShadows(shadows) => {
+                            other_cell.light_shadows = *shadows
+                        }
                         PropertyChange::Solid(solid) => other_cell.solid = *solid,
                         PropertyChange::Anchored(anchored) => other_cell.anchored = *anchored,
                         PropertyChange::Visible(visible) => other_cell.visible = *visible,
                         PropertyChange::ColorRgb(color) => other_cell.color_rgb = *color,
                         PropertyChange::Texture(texture) => other_cell.texture = texture.clone(),
-                        PropertyChange::CollisionEventsEnabled(enabled) => other_cell.collision_events_enabled = *enabled,
-                        PropertyChange::EntityIdentity(identity) => other_cell.entity_identity = identity.clone(),
+                        PropertyChange::CollisionEventsEnabled(enabled) => {
+                            other_cell.collision_events_enabled = *enabled
+                        }
+                        PropertyChange::EntityIdentity(identity) => {
+                            other_cell.entity_identity = identity.clone()
+                        }
                         PropertyChange::AttributeSet(name, value) => {
                             other_cell.attributes.insert(name.clone(), value.clone());
                         }
@@ -462,7 +483,12 @@ impl Editor {
         }
     }
 
-    fn render_properties_content(&mut self, ui: &mut egui::Ui, world: &mut crate::world::World, project_path: &Option<std::path::PathBuf>) {
+    fn render_properties_content(
+        &mut self,
+        ui: &mut egui::Ui,
+        world: &mut crate::world::World,
+        project_path: &Option<std::path::PathBuf>,
+    ) {
         if self.selected_coord != self.last_selected_coord {
             self.attribute_add_name.clear();
             self.attribute_add_type = AttributeType::String;
@@ -889,13 +915,19 @@ impl Editor {
     fn render_navigation_content(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("X:");
-            ui.add(egui::TextEdit::singleline(&mut self.navigation_window.x_buf).desired_width(40.0));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.navigation_window.x_buf).desired_width(40.0),
+            );
             ui.add_space(4.0);
             ui.label("Y:");
-            ui.add(egui::TextEdit::singleline(&mut self.navigation_window.y_buf).desired_width(40.0));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.navigation_window.y_buf).desired_width(40.0),
+            );
             ui.add_space(4.0);
             ui.label("Z:");
-            ui.add(egui::TextEdit::singleline(&mut self.navigation_window.z_buf).desired_width(40.0));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.navigation_window.z_buf).desired_width(40.0),
+            );
             ui.add_space(8.0);
 
             if ui.button("Go").clicked() {
@@ -1103,6 +1135,29 @@ impl Editor {
                                 .range(0.0..=1.0),
                         );
                     });
+
+                    ui.separator();
+                    ui.checkbox(&mut world.sky.enabled, "Sky Enabled");
+                    ui.horizontal(|ui| {
+                        ui.label("Sky:");
+                        let mut current_preset = world.sky.preset.clone();
+                        egui::ComboBox::from_id_source("sky_preset_combo")
+                            .selected_text(&current_preset)
+                            .show_ui(ui, |ui| {
+                                for option in &["Temperate", "Tropical", "Desert", "Snowy", "Mars"]
+                                {
+                                    ui.selectable_value(
+                                        &mut current_preset,
+                                        option.to_string(),
+                                        *option,
+                                    );
+                                }
+                            });
+                        if current_preset != world.sky.preset {
+                            world.sky.preset = current_preset;
+                            world.sky.update_preset_textures();
+                        }
+                    });
                 });
 
             // --- PHYSICS ---
@@ -1160,15 +1215,24 @@ impl Editor {
                 .show(ctx, |ui| {
                     match target {
                         ColorTarget::Build => {
-                            let mut edit_color = [self.build_template.color_rgb.x, self.build_template.color_rgb.y, self.build_template.color_rgb.z];
-                            if egui::color_picker::color_edit_button_rgb(ui, &mut edit_color).changed() {
+                            let mut edit_color = [
+                                self.build_template.color_rgb.x,
+                                self.build_template.color_rgb.y,
+                                self.build_template.color_rgb.z,
+                            ];
+                            if egui::color_picker::color_edit_button_rgb(ui, &mut edit_color)
+                                .changed()
+                            {
                                 self.build_template.color_rgb = glam::Vec3::from_array(edit_color);
                             }
                         }
                         ColorTarget::PropertyColor(coord) => {
                             if let Some(cell) = world.get_mut(coord) {
-                                let mut edit_color = [cell.color_rgb.x, cell.color_rgb.y, cell.color_rgb.z];
-                                if egui::color_picker::color_edit_button_rgb(ui, &mut edit_color).changed() {
+                                let mut edit_color =
+                                    [cell.color_rgb.x, cell.color_rgb.y, cell.color_rgb.z];
+                                if egui::color_picker::color_edit_button_rgb(ui, &mut edit_color)
+                                    .changed()
+                                {
                                     let new_color = glam::Vec3::from_array(edit_color);
                                     cell.color_rgb = new_color;
                                     for &c in &self.selected_coords {
@@ -1186,8 +1250,11 @@ impl Editor {
                         }
                         ColorTarget::PropertyLight(coord) => {
                             if let Some(cell) = world.get_mut(coord) {
-                                let mut edit_color = [cell.light_color.x, cell.light_color.y, cell.light_color.z];
-                                if egui::color_picker::color_edit_button_rgb(ui, &mut edit_color).changed() {
+                                let mut edit_color =
+                                    [cell.light_color.x, cell.light_color.y, cell.light_color.z];
+                                if egui::color_picker::color_edit_button_rgb(ui, &mut edit_color)
+                                    .changed()
+                                {
                                     let new_color = glam::Vec3::from_array(edit_color);
                                     cell.light_color = new_color;
                                     for &c in &self.selected_coords {
@@ -1221,7 +1288,7 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::{World, WorldCoord, CellType};
+    use crate::world::{CellType, World, WorldCoord};
     use glam::Vec3;
 
     #[test]
@@ -1245,14 +1312,25 @@ mod tests {
         let cell_id = world.set_cell(coord, crate::world::CellType::Player);
 
         // Initially no binding
-        let binding = world.script_bindings.iter().find(|b| b.target_identity == cell_id);
+        let binding = world
+            .script_bindings
+            .iter()
+            .find(|b| b.target_identity == cell_id);
         assert!(binding.is_none());
 
         // Add a binding
-        world.script_bindings.push(crate::scripting::binding::ScriptBinding::new(cell_id, "scripts/test.aeo"));
+        world
+            .script_bindings
+            .push(crate::scripting::binding::ScriptBinding::new(
+                cell_id,
+                "scripts/test.aeo",
+            ));
 
         // Lookup again
-        let binding = world.script_bindings.iter().find(|b| b.target_identity == cell_id);
+        let binding = world
+            .script_bindings
+            .iter()
+            .find(|b| b.target_identity == cell_id);
         assert!(binding.is_some());
         assert_eq!(binding.unwrap().script_path, "scripts/test.aeo");
     }
@@ -1263,16 +1341,35 @@ mod tests {
         let cell_id = 12345678; // Dummy ID for test
 
         // 1. Setup binding
-        world.script_bindings.push(crate::scripting::binding::ScriptBinding::new(cell_id, "scripts/nonexistent.aeo"));
-        assert!(world.script_bindings.iter().any(|b| b.target_identity == cell_id));
+        world
+            .script_bindings
+            .push(crate::scripting::binding::ScriptBinding::new(
+                cell_id,
+                "scripts/nonexistent.aeo",
+            ));
+        assert!(
+            world
+                .script_bindings
+                .iter()
+                .any(|b| b.target_identity == cell_id)
+        );
 
         // 2. Perform removal (emulating the UI button logic)
-        if let Some(idx) = world.script_bindings.iter().position(|b| b.target_identity == cell_id) {
+        if let Some(idx) = world
+            .script_bindings
+            .iter()
+            .position(|b| b.target_identity == cell_id)
+        {
             world.script_bindings.remove(idx);
         }
 
         // 3. Verify it's gone
-        assert!(!world.script_bindings.iter().any(|b| b.target_identity == cell_id));
+        assert!(
+            !world
+                .script_bindings
+                .iter()
+                .any(|b| b.target_identity == cell_id)
+        );
     }
 
     #[test]
@@ -1414,9 +1511,7 @@ mod tests {
         editor.selected_coords = vec![coord_a];
         editor.selected_coord = Some(coord_a);
 
-        let single_changes = vec![
-            PropertyChange::Texture("single_tex".to_string()),
-        ];
+        let single_changes = vec![PropertyChange::Texture("single_tex".to_string())];
         editor.apply_property_changes(&mut world, &single_changes);
 
         assert_eq!(world.get(coord_a).unwrap().texture, "single_tex");

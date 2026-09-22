@@ -153,6 +153,14 @@ The default gravity is:
 
 The World stores authored lighting configuration including global lighting, direction, color, intensity, ambient intensity, and shadow-related state.
 
+### Sky Environment
+
+The World contains a `SKY` configuration that defines the environmental background.
+
+*   **Enabled State**: Controls whether the skybox is rendered.
+*   **Asset Path**: Path to a single horizontal cross cubemap asset (4:3 aspect ratio).
+*   **Presets**: Built-in environment profiles such as `Temperate`, `Tropical`, `Desert`, `Snowy`, and `Mars`.
+
 ---
 
 # 9. Script Bindings

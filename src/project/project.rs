@@ -131,7 +131,9 @@ mod tests {
         };
 
         let project_name = "NewProject";
-        let project_path = manager.create_project(project_name).expect("Should create project");
+        let project_path = manager
+            .create_project(project_name)
+            .expect("Should create project");
 
         let scripts_dir = project_path.join("scripts");
         assert!(scripts_dir.exists(), "Scripts directory should be created");
@@ -166,7 +168,10 @@ mod tests {
         assert!(success, "Should open existing project");
 
         let scripts_dir = project_path.join("scripts");
-        assert!(scripts_dir.exists(), "Scripts directory should be created on open");
+        assert!(
+            scripts_dir.exists(),
+            "Scripts directory should be created on open"
+        );
         assert!(scripts_dir.is_dir(), "Scripts path should be a directory");
 
         fs::remove_dir_all(&test_dir).ok();

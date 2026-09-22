@@ -158,6 +158,52 @@ pub enum AssignmentOperator {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum Instruction {
+    EnterScope,
+    ExitScope,
+    Variable {
+        name: String,
+        initializer: Option<Expression>,
+        is_const: bool,
+    },
+    Assignment {
+        target: Expression,
+        operator: AssignmentOperator,
+        value: Expression,
+    },
+    Evaluate(Expression),
+    Jump {
+        target: usize,
+    },
+    JumpIfFalse {
+        condition: Expression,
+        target: usize,
+    },
+    ForInit {
+        name: String,
+        iterable: Expression,
+        end: usize,
+    },
+    ForNext {
+        body_start: usize,
+        end: usize,
+    },
+    CallUserFunction {
+        name: String,
+        arguments: Vec<Expression>,
+    },
+    Wait {
+        arguments: Vec<Expression>,
+    },
+    Return(Option<Expression>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledFunction {
+    pub instructions: Vec<Instruction>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Expression {
     pub span: SourceSpan,
     pub kind: ExpressionKind,
@@ -207,6 +253,12 @@ pub enum ExpressionKind {
     Array(Vec<Expression>),
 
     Map(Vec<(Expression, Expression)>),
+
+    AnonymousFunction {
+        parameters: Vec<Parameter>,
+        return_type: Option<Type>,
+        body: Block,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
