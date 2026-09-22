@@ -24,6 +24,8 @@ use glam::Vec3;
 pub fn generate_character_mesh(
     pose: &EvaluatedPose,
     appearance: &AppearanceCustomization,
+    has_gun: bool,
+    mesh_type: &str,
 ) -> Vec<f32> {
     let mut vertices = Vec::new();
 
@@ -520,6 +522,60 @@ pub fn generate_character_mesh(
         8,
         detail_color,
     );
+
+    if has_gun || mesh_type == "soldier" {
+        // Left hand glove on Joint 8
+        add_cube(
+            &mut vertices,
+            8,
+            Vec3::new(-0.06, -0.72, -0.06),
+            Vec3::new(0.06, -0.66, 0.06),
+            detail_color,
+        );
+
+        // Right hand glove on Joint 9
+        add_cube(
+            &mut vertices,
+            9,
+            Vec3::new(-0.06, -0.72, -0.06),
+            Vec3::new(0.06, -0.66, 0.06),
+            detail_color,
+        );
+
+        // Sci-Fi Rifle on Joint 9 (Right Arm/Hand)
+        let gun_color = [0.15, 0.18, 0.16, 1.0];
+        let barrel_color = [0.08, 0.30, 0.34, 1.0];
+
+        // Rifle receiver/body
+        add_cube(
+            &mut vertices,
+            9,
+            Vec3::new(-0.05, -0.75, -0.15),
+            Vec3::new(0.05, -0.62, 0.35),
+            gun_color,
+        );
+
+        // Rifle barrel
+        add_cylinder(
+            &mut vertices,
+            9,
+            0.025,
+            0.025,
+            0.35,
+            0.65,
+            8,
+            barrel_color,
+        );
+
+        // Magazine/grip
+        add_cube(
+            &mut vertices,
+            9,
+            Vec3::new(-0.03, -0.85, 0.0),
+            Vec3::new(0.03, -0.72, 0.12),
+            gun_color,
+        );
+    }
 
     // ------------------------------------------------------------
     // 7. HIP-MOUNTED JET NOZZLE

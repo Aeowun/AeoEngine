@@ -176,7 +176,7 @@ impl Editor {
 
         self.draw_status_bar(ctx);
 
-        self.draw_left_panel(ctx, world);
+        self.draw_left_panel(ctx, world, project_path);
         self.draw_right_panel(ctx, world, project_path);
 
         self.draw_dialogs(ctx, world);
@@ -988,7 +988,12 @@ impl Editor {
         });
     }
 
-    fn draw_left_panel(&mut self, ctx: &egui::Context, world: &mut crate::world::World) {
+    fn draw_left_panel(
+        &mut self,
+        ctx: &egui::Context,
+        world: &mut crate::world::World,
+        project_path: &Option<std::path::PathBuf>,
+    ) {
         if self.show_world_window {
             egui::SidePanel::left("left_panel")
                 .resizable(true)
@@ -1012,12 +1017,17 @@ impl Editor {
                     });
                     ui.separator();
 
-                    self.render_world_content(ui, world);
+                    self.render_world_content(ui, world, project_path);
                 });
         }
     }
 
-    fn render_world_content(&mut self, ui: &mut egui::Ui, world: &mut crate::world::World) {
+    fn render_world_content(
+        &mut self,
+        ui: &mut egui::Ui,
+        world: &mut crate::world::World,
+        project_path: &Option<std::path::PathBuf>,
+    ) {
         let active = world.active_blocks();
 
         let mut blocks = Vec::new();
@@ -1177,6 +1187,65 @@ impl Editor {
                         ui.add(egui::DragValue::new(&mut world.gravity.z).speed(0.1));
                     });
                 });
+
+            // --- CHARACTER ---
+            egui::CollapsingHeader::new("CHARACTER")
+                .default_open(true)
+                .show(ui, |ui| {
+                    let available = if let Some(path) = project_path {
+                        crate::project::discover_characters(path)
+                    } else {
+                        vec!["custom".to_string()]
+                    };
+
+                    ui.horizontal(|ui| {
+                        ui.label("Character:");
+                        let mut current = world.selected_character.clone();
+                        let mut changed = false;
+
+                        egui::ComboBox::from_id_salt("world_character_combo")
+                            .selected_text(&current)
+                            .show_ui(ui, |ui| {
+                                for char_name in available {
+                                    if ui
+                                        .selectable_value(
+                                            &mut current,
+                                            char_name.clone(),
+                                            &char_name,
+                                        )
+                                        .clicked()
+                                    {
+                                        changed = true;
+                                    }
+                                }
+                            });
+
+                        if changed {
+                            world.selected_character = current;
+                            self.needs_save = true;
+                        }
+                    });
+
+                    ui.add_space(4.0);
+
+                    if ui.button("Import Character...").clicked() {
+                        if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+                            if let Some(project_dir) = project_path {
+                                let char_name = folder
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("imported_char");
+                                let dest_dir = project_dir.join("characters").join(char_name);
+                                if let Err(e) = copy_dir_all(&folder, &dest_dir) {
+                                    eprintln!("Failed to import character: {}", e);
+                                } else {
+                                    world.selected_character = char_name.to_string();
+                                    self.needs_save = true;
+                                }
+                            }
+                        }
+                    }
+                });
         });
     }
 
@@ -1286,6 +1355,20 @@ impl Editor {
             }
         }
     }
+}
+
+fn copy_dir_all(src: impl AsRef<std::path::Path>, dst: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+    std::fs::create_dir_all(&dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir_all(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        } else {
+            std::fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

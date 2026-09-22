@@ -63,6 +63,8 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
         writeln!(file, "DISABLED_SCRIPT {}", path)?;
     }
 
+    writeln!(file, "SELECTED_CHARACTER {}", world.selected_character)?;
+
     for coord in world.active_blocks() {
         if let Some(cell) = world.get(coord) {
             match cell.cell_type {
@@ -314,6 +316,11 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
         if parts[0] == "DISABLED_SCRIPT" && parts.len() >= 2 {
             world.disabled_scripts.push(parts[1].to_string());
+            continue;
+        }
+
+        if parts[0] == "SELECTED_CHARACTER" && parts.len() >= 2 {
+            world.selected_character = parts[1].to_string();
             continue;
         }
 

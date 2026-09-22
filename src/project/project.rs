@@ -76,6 +76,7 @@ impl ProjectManager {
         if !scripts_path.exists() {
             fs::create_dir_all(&scripts_path).ok();
         }
+        ensure_project_characters(&project_path);
 
         self.add_recent(project_path.clone());
         self.current_project = Some(project_path.clone());
@@ -88,6 +89,7 @@ impl ProjectManager {
             if !scripts_path.exists() {
                 fs::create_dir_all(&scripts_path).ok();
             }
+            ensure_project_characters(&path);
 
             self.add_recent(path.clone());
             self.current_project = Some(path);
@@ -109,6 +111,72 @@ impl ProjectManager {
         }
         projects
     }
+}
+
+pub fn ensure_project_characters(project_path: &std::path::Path) {
+    let chars_dir = project_path.join("characters");
+    if !chars_dir.exists() {
+        let _ = fs::create_dir_all(&chars_dir);
+    }
+
+    let custom_dir = chars_dir.join("custom");
+    if !custom_dir.exists() {
+        let _ = fs::create_dir_all(&custom_dir);
+        let pkg = r#"{
+  "name": "custom",
+  "mesh_type": "robot",
+  "has_gun": false,
+  "appearance": {
+    "skin_color": [0.70, 0.71, 0.70, 1.0],
+    "armor_color": [0.46, 0.47, 0.45, 1.0],
+    "cloth_color": [0.10, 0.10, 0.10, 1.0],
+    "detail_color": [0.12, 0.13, 0.15, 1.0],
+    "accessory_color": [0.08, 0.30, 0.34, 1.0],
+    "show_accessory": true
+  }
+}"#;
+        let _ = fs::write(custom_dir.join("package.json"), pkg);
+    }
+
+    let soldier_dir = chars_dir.join("custom_soldier");
+    if !soldier_dir.exists() {
+        let _ = fs::create_dir_all(&soldier_dir);
+        let pkg = r#"{
+  "name": "custom_soldier",
+  "mesh_type": "soldier",
+  "has_gun": true,
+  "appearance": {
+    "skin_color": [0.90, 0.70, 0.10, 1.0],
+    "armor_color": [0.22, 0.35, 0.20, 1.0],
+    "cloth_color": [0.08, 0.08, 0.09, 1.0],
+    "detail_color": [0.15, 0.18, 0.16, 1.0],
+    "accessory_color": [0.80, 0.30, 0.00, 1.0],
+    "show_accessory": true
+  }
+}"#;
+        let _ = fs::write(soldier_dir.join("package.json"), pkg);
+    }
+}
+
+pub fn discover_characters(project_path: &std::path::Path) -> Vec<String> {
+    ensure_project_characters(project_path);
+    let mut names = Vec::new();
+    let chars_dir = project_path.join("characters");
+    if let Ok(entries) = fs::read_dir(&chars_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    names.push(name.to_string());
+                }
+            }
+        }
+    }
+    names.sort();
+    if names.is_empty() {
+        names.push("custom".to_string());
+    }
+    names
 }
 
 #[cfg(test)]

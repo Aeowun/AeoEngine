@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn test_spawn_no_points_returns_none() {
         let world = World::new();
-        let result = spawn_at_random_point(&world, 1);
+        let result = spawn_at_random_point(&world, 1, None);
         assert!(result.is_none());
     }
 
@@ -88,7 +88,7 @@ mod tests {
         // Default spawn point is solid.
 
         let id = 123;
-        let character = spawn_at_random_point(&world, id).expect("Should spawn character");
+        let character = spawn_at_random_point(&world, id, None).expect("Should spawn character");
 
         assert_eq!(character.id, id);
         // Should be at (10, 1, 10) because block is at (10, 0, 10) and is solid.
@@ -105,7 +105,7 @@ mod tests {
             cell.solid = false;
         }
 
-        let character = spawn_at_random_point(&world, 1).expect("Should spawn character");
+        let character = spawn_at_random_point(&world, 1, None).expect("Should spawn character");
         // Should be at (5, 5, 5) because block is non-solid.
         assert_eq!(character.transform.position, Vec3::new(5.0, 5.0, 5.0));
     }
@@ -119,7 +119,7 @@ mod tests {
         // Place a solid block exactly where the character would spawn (0, 1, 0)
         world.set_cell(WorldCoord::new(0, 1, 0), CellType::Block);
 
-        let character = spawn_at_random_point(&world, 1).expect("Should find alternative spawn");
+        let character = spawn_at_random_point(&world, 1, None).expect("Should find alternative spawn");
         // Should not be at (0, 1, 0)
         assert_ne!(character.transform.position, Vec3::new(0.0, 1.0, 0.0));
         // It should have found a valid spot within the search radius.

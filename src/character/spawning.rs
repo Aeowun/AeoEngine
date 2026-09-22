@@ -2,8 +2,13 @@ use super::character::Character;
 use super::collision::CharacterCollision;
 use crate::world::{CellType, World, WorldCoord};
 use glam::Vec3;
+use std::path::Path;
 
-pub fn spawn_at_random_point(world: &World, next_id: u64) -> Option<Character> {
+pub fn spawn_at_random_point(
+    world: &World,
+    next_id: u64,
+    package_dir: Option<&Path>,
+) -> Option<Character> {
     let spawn_points: Vec<WorldCoord> = world
         .active_blocks()
         .iter()
@@ -19,9 +24,6 @@ pub fn spawn_at_random_point(world: &World, next_id: u64) -> Option<Character> {
         return None;
     }
 
-    // Keep the current deterministic behavior for now.
-    // Spawn selection can become random later without changing the
-    // clearance rules used to validate a candidate position.
     let coord = spawn_points[0];
 
     let spawn_y = if let Some(_cell) = world.get(coord) {
@@ -39,12 +41,9 @@ pub fn spawn_at_random_point(world: &World, next_id: u64) -> Option<Character> {
     let base_position = Vec3::new(coord.x as f32, spawn_y, coord.z as f32);
 
     if has_character_clearance(world, base_position, &collision) {
-        return Some(Character::new(next_id, base_position));
+        return Some(Character::new_from_package(next_id, base_position, package_dir));
     }
 
-    // Search outward for the closest available position.
-    // The character keeps the same spawn height while searching nearby
-    // X and Z positions for enough room for its collision shape.
     for radius in 1..=10 {
         let radius = radius as i32;
 
@@ -61,7 +60,7 @@ pub fn spawn_at_random_point(world: &World, next_id: u64) -> Option<Character> {
                 );
 
                 if has_character_clearance(world, candidate, &collision) {
-                    return Some(Character::new(next_id, candidate));
+                    return Some(Character::new_from_package(next_id, candidate, package_dir));
                 }
             }
         }

@@ -497,3 +497,213 @@ pub fn create_walk_clip() -> AnimationClip {
         tracks,
     }
 }
+
+/// Creates a distinct Soldier Idle loop with gun lowered in ready position.
+pub fn create_soldier_idle_clip() -> AnimationClip {
+    let mut tracks = Vec::new();
+    let duration = 2.0;
+
+    // Hips track - subtle combat stance breathing
+    tracks.push(TransformTrack {
+        joint_index: 1,
+        translations: vec![
+            Keyframe {
+                time: 0.0,
+                value: Vec3::new(0.0, 0.8, 0.0),
+            },
+            Keyframe {
+                time: 1.0,
+                value: Vec3::new(0.0, 0.78, 0.0),
+            },
+            Keyframe {
+                time: 2.0,
+                value: Vec3::new(0.0, 0.8, 0.0),
+            },
+        ],
+        rotations: vec![
+            Keyframe {
+                time: 0.0,
+                value: Quat::from_rotation_y(0.05),
+            },
+            Keyframe {
+                time: 2.0,
+                value: Quat::from_rotation_y(0.05),
+            },
+        ],
+        scales: vec![Keyframe {
+            time: 0.0,
+            value: Vec3::ONE,
+        }],
+    });
+
+    // Right Arm (joint 9) - gun lowered to ready position
+    tracks.push(TransformTrack {
+        joint_index: 9,
+        translations: vec![Keyframe {
+            time: 0.0,
+            value: Vec3::new(0.28, 0.22, 0.05),
+        }],
+        rotations: vec![
+            Keyframe {
+                time: 0.0,
+                value: Quat::from_euler(glam::EulerRot::XYZ, -0.65, -0.35, 0.15),
+            },
+            Keyframe {
+                time: 1.0,
+                value: Quat::from_euler(glam::EulerRot::XYZ, -0.62, -0.35, 0.15),
+            },
+            Keyframe {
+                time: 2.0,
+                value: Quat::from_euler(glam::EulerRot::XYZ, -0.65, -0.35, 0.15),
+            },
+        ],
+        scales: vec![Keyframe {
+            time: 0.0,
+            value: Vec3::ONE,
+        }],
+    });
+
+    // Left Arm (joint 8) - supporting gun barrel in ready position
+    tracks.push(TransformTrack {
+        joint_index: 8,
+        translations: vec![Keyframe {
+            time: 0.0,
+            value: Vec3::new(-0.28, 0.22, 0.05),
+        }],
+        rotations: vec![
+            Keyframe {
+                time: 0.0,
+                value: Quat::from_euler(glam::EulerRot::XYZ, -0.55, 0.45, -0.15),
+            },
+            Keyframe {
+                time: 1.0,
+                value: Quat::from_euler(glam::EulerRot::XYZ, -0.52, 0.45, -0.15),
+            },
+            Keyframe {
+                time: 2.0,
+                value: Quat::from_euler(glam::EulerRot::XYZ, -0.55, 0.45, -0.15),
+            },
+        ],
+        scales: vec![Keyframe {
+            time: 0.0,
+            value: Vec3::ONE,
+        }],
+    });
+
+    AnimationClip {
+        name: "Idle".to_string(),
+        duration,
+        tracks,
+    }
+}
+
+/// Creates a distinct Soldier Walk loop with gun pointed upward and forward while moving.
+pub fn create_soldier_walk_clip() -> AnimationClip {
+    let mut tracks = Vec::new();
+    let duration = 1.0;
+
+    // Hips walking stride
+    tracks.push(TransformTrack {
+        joint_index: 1,
+        translations: vec![
+            Keyframe {
+                time: 0.0,
+                value: Vec3::new(0.0, 0.78, 0.0),
+            },
+            Keyframe {
+                time: 0.25,
+                value: Vec3::new(0.0, 0.81, 0.0),
+            },
+            Keyframe {
+                time: 0.5,
+                value: Vec3::new(0.0, 0.78, 0.0),
+            },
+            Keyframe {
+                time: 0.75,
+                value: Vec3::new(0.0, 0.81, 0.0),
+            },
+            Keyframe {
+                time: 1.0,
+                value: Vec3::new(0.0, 0.78, 0.0),
+            },
+        ],
+        rotations: vec![
+            Keyframe {
+                time: 0.0,
+                value: Quat::IDENTITY,
+            },
+            Keyframe {
+                time: 0.5,
+                value: Quat::from_rotation_y(0.03),
+            },
+            Keyframe {
+                time: 1.0,
+                value: Quat::IDENTITY,
+            },
+        ],
+        scales: vec![Keyframe {
+            time: 0.0,
+            value: Vec3::ONE,
+        }],
+    });
+
+    // Right Arm (joint 9) - gun pointed upward and forward while moving
+    tracks.push(TransformTrack {
+        joint_index: 9,
+        translations: vec![Keyframe {
+            time: 0.0,
+            value: Vec3::new(0.28, 0.28, 0.08),
+        }],
+        rotations: vec![
+            Keyframe {
+                time: 0.0,
+                value: Quat::from_euler(glam::EulerRot::XYZ, -1.05, -0.25, 0.10),
+            },
+            Keyframe {
+                time: 0.5,
+                value: Quat::from_euler(glam::EulerRot::XYZ, -0.98, -0.25, 0.10),
+            },
+            Keyframe {
+                time: 1.0,
+                value: Quat::from_euler(glam::EulerRot::XYZ, -1.05, -0.25, 0.10),
+            },
+        ],
+        scales: vec![Keyframe {
+            time: 0.0,
+            value: Vec3::ONE,
+        }],
+    });
+
+    // Left Arm (joint 8) - supporting gun barrel held upward
+    tracks.push(TransformTrack {
+        joint_index: 8,
+        translations: vec![Keyframe {
+            time: 0.0,
+            value: Vec3::new(-0.28, 0.28, 0.08),
+        }],
+        rotations: vec![
+            Keyframe {
+                time: 0.0,
+                value: Quat::from_euler(glam::EulerRot::XYZ, -0.95, 0.35, -0.10),
+            },
+            Keyframe {
+                time: 0.5,
+                value: Quat::from_euler(glam::EulerRot::XYZ, -0.88, 0.35, -0.10),
+            },
+            Keyframe {
+                time: 1.0,
+                value: Quat::from_euler(glam::EulerRot::XYZ, -0.95, 0.35, -0.10),
+            },
+        ],
+        scales: vec![Keyframe {
+            time: 0.0,
+            value: Vec3::ONE,
+        }],
+    });
+
+    AnimationClip {
+        name: "Walk".to_string(),
+        duration,
+        tracks,
+    }
+}

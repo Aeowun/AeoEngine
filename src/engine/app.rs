@@ -738,7 +738,9 @@ impl App {
 
                 self.physics_world.register_from_world(&self.world);
 
-                let spawned_id = self.character_system.spawn_player(&self.world);
+                let spawned_id = self
+                    .character_system
+                    .spawn_player(&self.world, self.project_manager.current_project.as_deref());
 
                 self.start_scripting();
 

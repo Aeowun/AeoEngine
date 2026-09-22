@@ -30,11 +30,21 @@ pub struct CharacterAnimationController {
 
 impl CharacterAnimationController {
     pub fn new() -> Self {
+        Self::new_for_character(None, "robot")
+    }
+
+    pub fn new_for_character(_dir: Option<&std::path::Path>, mesh_type: &str) -> Self {
         let skeleton = create_default_skeleton();
         let joint_count = skeleton.joints.len();
 
-        let idle_clip = create_idle_clip();
-        let walk_clip = create_walk_clip();
+        let (idle_clip, walk_clip) = if mesh_type == "soldier" {
+            (
+                super::animation::create_soldier_idle_clip(),
+                super::animation::create_soldier_walk_clip(),
+            )
+        } else {
+            (create_idle_clip(), create_walk_clip())
+        };
 
         Self {
             skeleton,

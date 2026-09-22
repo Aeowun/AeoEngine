@@ -22,8 +22,13 @@ impl CharacterSystem {
     }
 
     /// Spawns exactly one player character if a valid spawn point exists.
-    pub fn spawn_player(&mut self, world: &World) -> Option<u64> {
-        if let Some(character) = spawn_at_random_point(world, self.next_id) {
+    pub fn spawn_player(
+        &mut self,
+        world: &World,
+        project_path: Option<&std::path::Path>,
+    ) -> Option<u64> {
+        let pkg_dir = project_path.map(|p| p.join("characters").join(&world.selected_character));
+        if let Some(character) = spawn_at_random_point(world, self.next_id, pkg_dir.as_deref()) {
             let id = character.id;
             self.characters.insert(id, character);
             self.next_id += 1;
@@ -278,7 +283,7 @@ mod tests {
         let mut world = World::new();
         world.set_cell(WorldCoord::new(0, 0, 0), CellType::SpawnPoint);
 
-        system.spawn_player(&world);
+        system.spawn_player(&world, None);
         assert!(system.has_characters());
         assert_eq!(system.get_active_characters().count(), 1);
     }
@@ -290,10 +295,10 @@ mod tests {
         world.set_cell(WorldCoord::new(0, 0, 0), CellType::SpawnPoint);
         world.set_cell(WorldCoord::new(5, 0, 5), CellType::SpawnPoint);
 
-        system.spawn_player(&world);
+        system.spawn_player(&world, None);
         let id1 = system.get_active_characters().next().unwrap().id;
 
-        system.spawn_player(&world);
+        system.spawn_player(&world, None);
         let id2 = system
             .get_active_characters()
             .find(|c| c.id != id1)
@@ -309,7 +314,7 @@ mod tests {
         let mut world = World::new();
         world.set_cell(WorldCoord::new(0, 0, 0), CellType::SpawnPoint);
 
-        system.spawn_player(&world);
+        system.spawn_player(&world, None);
         assert!(system.has_characters());
 
         system.clear();

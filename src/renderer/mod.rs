@@ -862,6 +862,8 @@ impl Renderer {
                     let vertices = crate::character_custom::generate_character_mesh(
                         &character.current_pose,
                         &character.appearance,
+                        character.has_gun,
+                        &character.mesh_type,
                     );
 
                     let model = Mat4::from_scale_rotation_translation(

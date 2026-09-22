@@ -2,8 +2,11 @@ use super::animation::CharacterAnimation;
 use super::collision::CharacterCollision;
 use super::movement::CharacterMovement;
 use super::transform::CharacterTransform;
-use crate::character_custom::{AppearanceCustomization, CharacterAnimationController};
+use crate::character_custom::{
+    AppearanceCustomization, CharacterAnimationController, CharacterPackageConfig,
+};
 use glam::Vec3;
+use std::path::Path;
 
 pub struct Character {
     pub id: u64,
@@ -13,6 +16,9 @@ pub struct Character {
     pub animation: CharacterAnimation,
 
     // --- Custom Character Package Integration ---
+    pub package_name: String,
+    pub mesh_type: String,
+    pub has_gun: bool,
     /// Manages high-level animation state and pose evaluation.
     pub animation_controller: CharacterAnimationController,
     /// Stores the character's visual color settings.
@@ -23,7 +29,27 @@ pub struct Character {
 
 impl Character {
     pub fn new(id: u64, position: Vec3) -> Self {
-        let mut controller = CharacterAnimationController::new();
+        Self::new_from_package(id, position, None)
+    }
+
+    pub fn new_from_package(id: u64, position: Vec3, package_dir: Option<&Path>) -> Self {
+        let (config, controller) = if let Some(dir) = package_dir {
+            let cfg = CharacterPackageConfig::load_from_dir(dir);
+            let ctrl = CharacterAnimationController::new_for_character(Some(dir), &cfg.mesh_type);
+            (cfg, ctrl)
+        } else {
+            (
+                CharacterPackageConfig {
+                    name: "custom".to_string(),
+                    mesh_type: "robot".to_string(),
+                    has_gun: false,
+                    appearance: AppearanceCustomization::new(),
+                },
+                CharacterAnimationController::new(),
+            )
+        };
+
+        let mut controller = controller;
         let pose = controller.evaluate_pose();
 
         Self {
@@ -32,8 +58,11 @@ impl Character {
             movement: CharacterMovement::new(),
             collision: CharacterCollision::new(),
             animation: CharacterAnimation::new(),
+            package_name: config.name,
+            mesh_type: config.mesh_type,
+            has_gun: config.has_gun,
             animation_controller: controller,
-            appearance: AppearanceCustomization::new(),
+            appearance: config.appearance,
             current_pose: pose,
         }
     }

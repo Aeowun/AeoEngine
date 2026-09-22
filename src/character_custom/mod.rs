@@ -5,7 +5,7 @@ pub mod collision;
 pub mod geometry;
 pub mod rig;
 
-pub use appearance::{AppearanceCustomization, MaterialSlot};
+pub use appearance::{AppearanceCustomization, CharacterPackageConfig, MaterialSlot};
 pub use blend::{CharacterAnimationController, TargetAnimation};
 pub use collision::CharacterCollision;
 pub use geometry::generate_character_mesh;

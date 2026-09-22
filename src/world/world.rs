@@ -97,6 +97,9 @@ pub struct World {
 
     /// Paths to script files that are globally disabled.
     pub disabled_scripts: Vec<String>,
+
+    /// Selected character package name for spawning.
+    pub selected_character: String,
 }
 
 impl World {
@@ -115,6 +118,7 @@ impl World {
             sky: SkySettings::default(),
             script_bindings: Vec::new(),
             disabled_scripts: Vec::new(),
+            selected_character: "custom".to_string(),
         }
     }
 

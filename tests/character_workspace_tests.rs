@@ -89,7 +89,7 @@ fn test_geometry_vertex_buffer_format() {
     let pose = controller.evaluate_pose();
     let appearance = AppearanceCustomization::default();
 
-    let vertex_buffer = generate_character_mesh(&pose, &appearance);
+    let vertex_buffer = generate_character_mesh(&pose, &appearance, false, "robot");
 
     assert!(
         !vertex_buffer.is_empty(),
