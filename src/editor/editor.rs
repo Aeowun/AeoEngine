@@ -83,6 +83,7 @@ pub struct Editor {
 
     /// The central area of the editor screen not covered by side or top/bottom panels.
     pub viewport_rect: egui::Rect,
+    pub viewport_ppp: f32,
 
     pub history: History,
 
@@ -134,6 +135,7 @@ impl Editor {
             build_template: crate::world::Cell::new_block(),
             active_color_target: None,
             viewport_rect: egui::Rect::NOTHING,
+            viewport_ppp: 1.0,
             history: History::new(),
 
             terminal_output: String::new(),
@@ -184,6 +186,7 @@ impl Editor {
         // Capture the remaining central area for the engine viewport using the remaining
         // screen space after panels are placed. This does not claim pointer interaction.
         self.viewport_rect = ctx.available_rect();
+        self.viewport_ppp = ctx.pixels_per_point();
     }
 
     fn draw_menu_bar(&mut self, ctx: &egui::Context) {

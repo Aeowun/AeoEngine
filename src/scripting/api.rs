@@ -52,6 +52,23 @@ pub trait EngineHost {
     fn move_runtime_cell(&mut self, id: u64, x: i32, y: i32, z: i32) -> Result<(), String>;
     fn delete_cell(&mut self, id: u64) -> Result<(), String>;
 
+    // Runtime UI support
+    fn create_ui_element(&mut self, _element_type: &str) -> Result<u64, String> {
+        Err("Runtime UI is not supported by this host".to_string())
+    }
+    fn delete_ui_element(&mut self, _id: u64) -> Result<(), String> {
+        Err("Runtime UI is not supported by this host".to_string())
+    }
+    fn get_ui_property(&self, _id: u64, _name: &str) -> Result<Option<Value>, String> {
+        Ok(None)
+    }
+    fn set_ui_property(&mut self, _id: u64, _name: &str, _value: Value) -> Result<bool, String> {
+        Ok(false)
+    }
+    fn drain_ui_clicks(&mut self) -> Vec<u64> {
+        Vec::new()
+    }
+
     // Runtime script management, event firing, and test orchestration
     fn enable_script(&mut self, _path: &str) {}
     fn disable_script(&mut self, _path: &str) {}
@@ -383,6 +400,10 @@ pub fn resolve_host_member_property(
     handle_id: u64,
     property_name: &str,
 ) -> Result<Option<Value>, String> {
+    if handle_kind == HandleKind::Ui {
+        return context.engine.get_ui_property(handle_id, property_name);
+    }
+
     if let Some(value) = context
         .engine
         .get_property(handle_kind, handle_id, property_name)?
@@ -435,6 +456,14 @@ pub fn set_host_member_property(
     property_name: &str,
     value: Value,
 ) -> Result<(), String> {
+    if handle_kind == HandleKind::Ui {
+        if context.engine.set_ui_property(handle_id, property_name, value)? {
+            return Ok(());
+        } else {
+            return Err(format!("failed to set UI property '{}'", property_name));
+        }
+    }
+
     if context
         .engine
         .set_property(handle_kind, handle_id, property_name, value.clone())?
@@ -595,5 +624,7 @@ pub fn call_host_member(
 
             _ => Ok(None),
         },
+
+        HandleKind::Ui => Ok(None),
     }
 }

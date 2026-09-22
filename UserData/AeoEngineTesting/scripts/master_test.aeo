@@ -50,6 +50,7 @@ run_single_test("scripts/test_world.aeo", "world")
 run_single_test("scripts/test_handles.aeo", "handles")
 run_single_test("scripts/test_callbacks.aeo", "callbacks")
 run_single_test("scripts/test_math.aeo", "math")
+run_single_test("scripts/test_ui.aeo", "ui")
 
 const summary = test.summary()
 debug.log("========================================")

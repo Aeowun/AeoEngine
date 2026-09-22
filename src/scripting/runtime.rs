@@ -239,6 +239,32 @@ impl ScriptRuntime {
         Ok(task_id)
     }
 
+    pub fn spawn_callable(
+        &mut self,
+        compiled: std::sync::Arc<super::ast::CompiledFunction>,
+        param_names: Vec<String>,
+        arguments: Vec<Value>,
+        function_name: String,
+        captured_scopes: Vec<super::value::Scope>,
+    ) -> Result<ScriptTaskId, String> {
+        let instance = ScriptInstance::new_empty();
+        let fiber = self.interpreter.start_direct_fiber(
+            instance,
+            compiled,
+            param_names,
+            arguments,
+            None,
+            function_name,
+            captured_scopes,
+        )?;
+
+        let task_id = self.scheduler.spawn();
+
+        self.fibers.insert(task_id, fiber);
+
+        Ok(task_id)
+    }
+
     /// Advances runtime time and executes the fibers that were ready for this
     /// tick.
     ///

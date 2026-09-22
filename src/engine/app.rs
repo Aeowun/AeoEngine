@@ -90,6 +90,7 @@ pub struct App {
     pub script_pending_disable: Vec<String>,
     pub authored_disabled_scripts: Vec<String>,
     pub entity_manager: EntityManager,
+    pub runtime_ui: crate::engine::ui::RuntimeUi,
 }
 
 impl App {
@@ -108,6 +109,7 @@ impl App {
             new_project_name: String::new(),
             show_open_project_dialog: false,
             show_unsaved_scripts_dialog: false,
+            runtime_ui: crate::engine::ui::RuntimeUi::new(),
             is_right_mouse_down: false,
             is_middle_mouse_down: false,
             last_cursor_pos: None,
@@ -563,12 +565,31 @@ impl App {
     }
 
     fn update_hover(&mut self) {
-        if !self.editor.plane_picking {
-            let hit = crate::editor::grid::picking::raycast_world(
+        let ppp = self.editor.viewport_ppp.max(1.0);
+        let rect = self.editor.viewport_rect;
+        let (mx, my, vp_w, vp_h) = if rect.width() > 1.0 && rect.height() > 1.0 {
+            let vp_x = rect.min.x * ppp;
+            let vp_y = rect.min.y * ppp;
+            let vp_w = rect.width() * ppp;
+            let vp_h = rect.height() * ppp;
+            let mx = self.mouse_pos.0 as f32 - vp_x;
+            let my = self.mouse_pos.1 as f32 - vp_y;
+            (mx, my, vp_w, vp_h)
+        } else {
+            (
                 self.mouse_pos.0 as f32,
                 self.mouse_pos.1 as f32,
                 self.renderer.width(),
                 self.renderer.height(),
+            )
+        };
+
+        if !self.editor.plane_picking {
+            let hit = crate::editor::grid::picking::raycast_world(
+                mx,
+                my,
+                vp_w,
+                vp_h,
                 &self.editor.camera,
                 &self.world,
                 self.editor.mode == crate::engine::EditorMode::Editor,
@@ -604,10 +625,10 @@ impl App {
         }
 
         self.editor.hovered_cell = crate::editor::grid::picking::update_hover(
-            self.mouse_pos.0 as f32,
-            self.mouse_pos.1 as f32,
-            self.renderer.width(),
-            self.renderer.height(),
+            mx,
+            my,
+            vp_w,
+            vp_h,
             &self.editor.camera,
             self.editor.anchor,
         );
@@ -760,6 +781,7 @@ impl App {
                         test_results: &mut self.script_test_results,
                         pending_enable_scripts: &mut self.script_pending_enable,
                         pending_disable_scripts: &mut self.script_pending_disable,
+                        runtime_ui: &mut self.runtime_ui,
                     };
 
                     let mut context = HostContext {
@@ -902,6 +924,7 @@ impl App {
                         test_results: &mut self.script_test_results,
                         pending_enable_scripts: &mut self.script_pending_enable,
                         pending_disable_scripts: &mut self.script_pending_disable,
+                        runtime_ui: &mut self.runtime_ui,
                     };
                     let mut context = HostContext {
                         delta_time: frame_time as f64,
@@ -1042,6 +1065,7 @@ impl App {
 
     fn start_scripting(&mut self) {
         self.script_contacted_last_frame.clear();
+        self.runtime_ui.clear();
         self.authored_disabled_scripts = self.world.disabled_scripts.clone();
         let Some(project_path) = &self.project_manager.current_project else {
             return;
@@ -1106,6 +1130,7 @@ impl App {
         self.script_pending_enable.clear();
         self.script_pending_disable.clear();
         self.script_dynamic_properties.clear();
+        self.runtime_ui.clear();
         self.world.disabled_scripts = std::mem::take(&mut self.authored_disabled_scripts);
 
         em.clear();
@@ -1125,6 +1150,7 @@ impl App {
                 test_results: &mut self.script_test_results,
                 pending_enable_scripts: &mut self.script_pending_enable,
                 pending_disable_scripts: &mut self.script_pending_disable,
+                runtime_ui: &mut self.runtime_ui,
             };
 
             let mut context = HostContext {
@@ -1175,6 +1201,8 @@ impl App {
             self.editor
                 .show_ui(ctx, &mut self.world, &self.project_manager.current_project);
 
+            self.render_runtime_ui(ctx);
+
             if self.show_unsaved_scripts_dialog {
                 egui::Window::new("Unsaved Script Changes")
                     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -1207,6 +1235,82 @@ impl App {
 
         if let Some(view) = next_view {
             self.view = view;
+        }
+    }
+
+    fn render_runtime_ui(&mut self, ctx: &egui::Context) {
+        if self.editor.mode != EditorMode::Play {
+            return;
+        }
+
+        let rect = self.editor.viewport_rect;
+        if rect.width() <= 1.0 || rect.height() <= 1.0 {
+            return;
+        }
+
+        for (&id, element) in &self.runtime_ui.elements {
+            let common = element.common();
+            if !common.visible {
+                continue;
+            }
+
+            let pos = egui::pos2(
+                rect.min.x + common.position[0],
+                rect.min.y + common.position[1],
+            );
+            let size = egui::vec2(common.size[0], common.size[1]);
+            let color = egui::Color32::from_rgba_unmultiplied(
+                (common.color[0] * 255.0).clamp(0.0, 255.0) as u8,
+                (common.color[1] * 255.0).clamp(0.0, 255.0) as u8,
+                (common.color[2] * 255.0).clamp(0.0, 255.0) as u8,
+                (common.color[3] * 255.0).clamp(0.0, 255.0) as u8,
+            );
+
+            let area_id = egui::Id::new("runtime_ui_element").with(id);
+
+            match element {
+                crate::engine::ui::UiElement::Panel(_) => {
+                    egui::Area::new(area_id)
+                        .fixed_pos(pos)
+                        .order(egui::Order::Middle)
+                        .show(ctx, |ui| {
+                            ui.set_clip_rect(rect);
+                            let (r, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                            ui.painter().rect_filled(r, 4.0, color);
+                        });
+                }
+                crate::engine::ui::UiElement::Text(t) => {
+                    egui::Area::new(area_id)
+                        .fixed_pos(pos)
+                        .order(egui::Order::Middle)
+                        .show(ctx, |ui| {
+                            ui.set_clip_rect(rect);
+                            ui.add(egui::Label::new(
+                                egui::RichText::new(&t.text).color(color),
+                            ));
+                        });
+                }
+                crate::engine::ui::UiElement::Button(b) => {
+                    let mut clicked = false;
+                    egui::Area::new(area_id)
+                        .fixed_pos(pos)
+                        .order(egui::Order::Middle)
+                        .show(ctx, |ui| {
+                            ui.set_clip_rect(rect);
+                            let btn = egui::Button::new(
+                                egui::RichText::new(&b.text).color(color),
+                            );
+                            let response = ui.add_enabled(common.enabled, btn);
+                            if response.clicked() {
+                                clicked = true;
+                            }
+                        });
+
+                    if clicked {
+                        self.runtime_ui.pending_clicks.push(id);
+                    }
+                }
+            }
         }
     }
 

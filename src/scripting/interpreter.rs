@@ -2792,6 +2792,7 @@ impl Interpreter {
             || name == "event"
             || name == "test"
             || name == "time"
+            || name == "ui"
         {
             return Ok(Value::Namespace(name.to_string()));
         }

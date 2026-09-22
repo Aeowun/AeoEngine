@@ -454,6 +454,22 @@ impl ScriptScene {
             let _ = self.dispatch_event(&event_name, args, host);
         }
 
+        // Drain pending UI button clicks and invoke on_click callbacks
+        let clicked_ui_ids = host.engine.drain_ui_clicks();
+        for ui_id in clicked_ui_ids {
+            if let Ok(Some(Value::Function(compiled, params, captures))) =
+                host.engine.get_ui_property(ui_id, "on_click")
+            {
+                let _ = self.runtime.spawn_callable(
+                    compiled,
+                    params,
+                    vec![],
+                    "on_click".to_string(),
+                    captures,
+                );
+            }
+        }
+
         let tick_results = self.runtime.tick(self.current_time, host)?;
 
         for (task_id, result) in tick_results {
@@ -3667,6 +3683,7 @@ entity Test {
         let mut test_results = std::collections::BTreeMap::new();
         let mut pending_enable_scripts = Vec::new();
         let mut pending_disable_scripts = Vec::new();
+        let mut runtime_ui = crate::engine::ui::RuntimeUi::new();
         let mut bridge = crate::scripting::host::ScriptHostBridge {
             entity_manager: &mut th.entity_manager,
             world: &mut th.world,
@@ -3675,6 +3692,7 @@ entity Test {
             test_results: &mut test_results,
             pending_enable_scripts: &mut pending_enable_scripts,
             pending_disable_scripts: &mut pending_disable_scripts,
+            runtime_ui: &mut runtime_ui,
         };
         let effective = bridge
             .get_property(
@@ -4438,6 +4456,7 @@ entity Trigger {
         authored_disabled_scripts = world.disabled_scripts.clone();
 
         // 2. Play mode mutations
+        let mut runtime_ui = crate::engine::ui::RuntimeUi::new();
         {
             let mut bridge = crate::scripting::host::ScriptHostBridge {
                 entity_manager: &mut em,
@@ -4447,6 +4466,7 @@ entity Trigger {
                 test_results: &mut test_results,
                 pending_enable_scripts: &mut pending_enable,
                 pending_disable_scripts: &mut pending_disable,
+                runtime_ui: &mut runtime_ui,
             };
             bridge.complete_test("leak_test", true);
             bridge.fire_event("leak_event", vec![]);
@@ -4511,6 +4531,7 @@ entity Trigger {
             .unwrap();
 
             let mut completed = false;
+            let mut runtime_ui = crate::engine::ui::RuntimeUi::new();
             for _ in 0..1000 {
                 {
                     let mut bridge = crate::scripting::host::ScriptHostBridge {
@@ -4521,6 +4542,7 @@ entity Trigger {
                         test_results: &mut test_results,
                         pending_enable_scripts: &mut pending_enable,
                         pending_disable_scripts: &mut pending_disable,
+                        runtime_ui: &mut runtime_ui,
                     };
 
                     let mut host = HostContext {

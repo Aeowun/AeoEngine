@@ -19,6 +19,36 @@ pub fn call_stdlib_function(
     _host: &mut HostContext,
 ) -> Result<Option<Value>, String> {
     match object_name {
+        "ui" => {
+            match method_name {
+                "new" => {
+                    if args.len() != 1 {
+                        return Err("ui.new expects exactly 1 argument (element_type)".to_string());
+                    }
+                    let element_type = args[0].as_string()?;
+                    let id = _host.engine.create_ui_element(element_type)?;
+                    Ok(Some(Value::Handle {
+                        kind: HandleKind::Ui,
+                        id,
+                    }))
+                }
+                "delete" => {
+                    if args.len() != 1 {
+                        return Err("ui.delete expects exactly 1 argument (handle)".to_string());
+                    }
+                    let (kind, id) = args[0].as_handle()?;
+                    if kind != HandleKind::Ui {
+                        return Err(format!(
+                            "ui.delete expects a Ui handle, got {}",
+                            kind.name()
+                        ));
+                    }
+                    _host.engine.delete_ui_element(id)?;
+                    Ok(Some(Value::Nil))
+                }
+                _ => Err(format!("unknown function 'ui.{}'", method_name)),
+            }
+        }
         "math" => {
             let res = match method_name {
                 "abs" => {

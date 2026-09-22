@@ -17,6 +17,7 @@ pub struct ScriptHostBridge<'a> {
     pub test_results: &'a mut std::collections::BTreeMap<String, bool>,
     pub pending_enable_scripts: &'a mut Vec<String>,
     pub pending_disable_scripts: &'a mut Vec<String>,
+    pub runtime_ui: &'a mut crate::engine::ui::RuntimeUi,
 }
 
 fn norm_path(path: &str) -> String {
@@ -590,6 +591,26 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
             .or_default()
             .insert(name, value);
     }
+
+    fn create_ui_element(&mut self, element_type: &str) -> Result<u64, String> {
+        self.runtime_ui.allocate(element_type)
+    }
+
+    fn delete_ui_element(&mut self, id: u64) -> Result<(), String> {
+        self.runtime_ui.delete(id)
+    }
+
+    fn get_ui_property(&self, id: u64, name: &str) -> Result<Option<Value>, String> {
+        self.runtime_ui.get_property(id, name)
+    }
+
+    fn set_ui_property(&mut self, id: u64, name: &str, value: Value) -> Result<bool, String> {
+        self.runtime_ui.set_property(id, name, value)
+    }
+
+    fn drain_ui_clicks(&mut self) -> Vec<u64> {
+        self.runtime_ui.drain_pending_clicks()
+    }
 }
 
 #[cfg(test)]
@@ -624,6 +645,7 @@ mod tests {
         let mut test_results = std::collections::BTreeMap::new();
         let mut pending_enable_scripts = Vec::new();
         let mut pending_disable_scripts = Vec::new();
+        let mut runtime_ui = crate::engine::ui::RuntimeUi::new();
         let bridge = ScriptHostBridge {
             entity_manager: &mut entity_manager,
             world: &mut world,
@@ -632,6 +654,7 @@ mod tests {
             test_results: &mut test_results,
             pending_enable_scripts: &mut pending_enable_scripts,
             pending_disable_scripts: &mut pending_disable_scripts,
+            runtime_ui: &mut runtime_ui,
         };
 
         let result = bridge
@@ -677,6 +700,7 @@ mod tests {
         let mut test_results = std::collections::BTreeMap::new();
         let mut pending_enable_scripts = Vec::new();
         let mut pending_disable_scripts = Vec::new();
+        let mut runtime_ui = crate::engine::ui::RuntimeUi::new();
         let mut bridge = ScriptHostBridge {
             entity_manager: &mut entity_manager,
             world: &mut world,
@@ -685,6 +709,7 @@ mod tests {
             test_results: &mut test_results,
             pending_enable_scripts: &mut pending_enable_scripts,
             pending_disable_scripts: &mut pending_disable_scripts,
+            runtime_ui: &mut runtime_ui,
         };
 
         // 1. Initial read should be authored value

@@ -470,6 +470,15 @@ Version `0.7.3` expands AeoScript event and execution control while incorporatin
 
 AeoScript will gain a small runtime UI system for creating panels, text, and interactive buttons directly from scripts. The first version will stay intentionally simple while providing the foundation for in-game interfaces without introducing a large UI framework.
 
+#### Runtime UI Design
+
+Runtime UI will use dedicated `UiHandle` values backed by runtime UI state while reusing the existing AeoScript property and callback mechanisms. UI objects remain separate from Cell and Entity handles, and the public API remains intentionally small: `ui.new()`, ordinary property access, callbacks, and `ui.delete()`.
+
+The first UI primitives are `Panel`, `Text`, and `Button`. Runtime UI is session-only and is discarded when Play mode stops.
+
+The public AeoScript API will remain stable and minimal while the underlying runtime implementation remains free to evolve.
+
+
 #### Input System
 
 AeoScript will gain direct access to keyboard and mouse input, including button states, mouse position, and mouse movement. The API is designed to stay small and composable rather than introducing large collections of specialized input functions.

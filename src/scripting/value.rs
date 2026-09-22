@@ -12,6 +12,7 @@ pub enum HandleKind {
     Entity,
     Light,
     Cell,
+    Ui,
 }
 
 impl HandleKind {
@@ -20,6 +21,7 @@ impl HandleKind {
             Self::Entity => "Entity",
             Self::Light => "Light",
             Self::Cell => "Cell",
+            Self::Ui => "Ui",
         }
     }
 }

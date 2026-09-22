@@ -383,7 +383,25 @@ impl Renderer {
             target = editor.camera.target;
         }
 
-        let aspect_ratio = self.width / self.height.max(1.0);
+        let ppp = editor.viewport_ppp.max(1.0);
+        let rect = editor.viewport_rect;
+
+        let (vp_x, vp_y, vp_w, vp_h, aspect_ratio) = if rect.width() > 1.0 && rect.height() > 1.0 {
+            let x = (rect.min.x * ppp) as i32;
+            let w = (rect.width() * ppp) as i32;
+            let h = (rect.height() * ppp) as i32;
+            let y = (self.height as i32) - ((rect.max.y * ppp) as i32);
+            let aspect = w as f32 / h.max(1) as f32;
+            (x, y, w, h, aspect)
+        } else {
+            (
+                0,
+                0,
+                self.width as i32,
+                self.height as i32,
+                self.width / self.height.max(1.0),
+            )
+        };
 
         let projection = glam::camera::rh::proj::opengl::perspective(
             60.0_f32.to_radians(),
@@ -518,7 +536,9 @@ impl Renderer {
 
             gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 
-            gl::Viewport(0, 0, self.width as i32, self.height as i32);
+            gl::Viewport(vp_x, vp_y, vp_w, vp_h);
+            gl::Enable(gl::SCISSOR_TEST);
+            gl::Scissor(vp_x, vp_y, vp_w, vp_h);
 
             gl::ClearColor(0.0, 0.0, 0.0, 1.0);
 
@@ -1120,6 +1140,8 @@ impl Renderer {
                     gl::BindVertexArray(self.grid_vao_xy);
                 }
             }
+
+            gl::Disable(gl::SCISSOR_TEST);
         }
     }
 
