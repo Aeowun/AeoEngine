@@ -81,7 +81,9 @@ impl ScriptEntity {
 pub struct ScriptScene {
     runtime: ScriptRuntime,
     pub(crate) entities: Vec<ScriptEntity>,
-    disabled_scripts: Vec<String>,
+    pub disabled_scripts: Vec<String>,
+    pub loaded_scripts: HashMap<String, Program>,
+    pub top_level_spawned: HashSet<String>,
     current_time: f64,
 }
 
@@ -267,11 +269,14 @@ impl ScriptScene {
             scene.runtime.add_event_handlers(path.clone(), program);
         }
 
+        let mut top_level_spawned = HashSet::new();
+
         // Spawn top-level fibers for each script.
         for (path, program) in &loaded_scripts {
             if world.disabled_scripts.contains(path) {
                 continue;
             }
+            top_level_spawned.insert(path.clone());
             if let Err(e) = scene
                 .runtime
                 .spawn_top_level_custom(path.clone(), &program.statements)
@@ -282,6 +287,9 @@ impl ScriptScene {
                 ));
             }
         }
+
+        scene.loaded_scripts = loaded_scripts.clone();
+        scene.top_level_spawned = top_level_spawned;
 
         // Lifecycle hook warnings for unattached entities.
         let bound_entities: HashSet<(String, String)> = valid_bindings
@@ -367,6 +375,8 @@ impl ScriptScene {
             runtime,
             entities,
             disabled_scripts: Vec::new(),
+            loaded_scripts: HashMap::new(),
+            top_level_spawned: HashSet::new(),
             current_time: 0.0,
         })
     }
@@ -379,12 +389,69 @@ impl ScriptScene {
         Ok(())
     }
 
+    pub fn normalize_script_path(path: &str) -> String {
+        let clean = path.replace("\\", "/");
+        if clean.starts_with("scripts/") {
+            clean
+        } else {
+            format!("scripts/{}", clean)
+        }
+    }
+
+    pub fn enable_script(&mut self, path: &str) {
+        let norm = Self::normalize_script_path(path);
+        self.disabled_scripts.retain(|s| s != &norm);
+        eprintln!("[RUNTIME] script enabled: {}", norm);
+
+        if !self.top_level_spawned.contains(&norm) {
+            if let Some(program) = self.loaded_scripts.get(&norm).cloned() {
+                self.top_level_spawned.insert(norm.clone());
+                if let Err(e) = self
+                    .runtime
+                    .spawn_top_level_custom(norm.clone(), &program.statements)
+                {
+                    self.runtime.interpreter_mut().log_error(format!(
+                        "Failed to spawn top-level fiber for {}: {}",
+                        norm, e
+                    ));
+                }
+            }
+        }
+    }
+
+    pub fn disable_script(&mut self, path: &str) {
+        let norm = Self::normalize_script_path(path);
+        if !self.disabled_scripts.contains(&norm) {
+            self.disabled_scripts.push(norm.clone());
+        }
+        eprintln!("[RUNTIME] script disabled: {}", norm);
+        self.runtime.cancel_fibers_for_script(&norm);
+    }
+
+    pub fn sync_script_states(&mut self, host: &mut HostContext) {
+        let enabled = host.engine.drain_enabled_scripts();
+        for path in enabled {
+            self.enable_script(&path);
+        }
+
+        let disabled = host.engine.drain_disabled_scripts();
+        for path in disabled {
+            self.disable_script(&path);
+        }
+    }
+
     /// Advances the scene time and executes script fibers.
     pub fn update(&mut self, dt: f32, host: &mut HostContext) -> Result<(), String> {
         self.current_time += dt as f64;
 
-        // We need to clean up dynamic properties for deleted objects occasionally.
-        // For now, we'll just let them grow or rely on stop() cleaning them.
+        // Sync runtime enable/disable requests
+        self.sync_script_states(host);
+
+        // Drain and dispatch pending script events (e.g. from event.fire or fire_event)
+        let pending = host.engine.drain_pending_events();
+        for (event_name, args) in pending {
+            let _ = self.dispatch_event(&event_name, args, host);
+        }
 
         let tick_results = self.runtime.tick(self.current_time, host)?;
 
@@ -600,6 +667,10 @@ impl ScriptScene {
         arguments: Vec<Value>,
         host: &mut HostContext,
     ) -> Result<(), String> {
+        eprintln!(
+            "[RUNTIME] dispatching event '{}' (disabled_scripts: {:?})",
+            name, self.disabled_scripts
+        );
         self.runtime
             .dispatch_event(name, arguments, host, &self.disabled_scripts)
     }
@@ -3592,10 +3663,18 @@ entity Test {
 
         // Effective read should now be authored values again for all types
         let mut dynamic_properties = std::collections::HashMap::new();
+        let mut pending_events = Vec::new();
+        let mut test_results = std::collections::BTreeMap::new();
+        let mut pending_enable_scripts = Vec::new();
+        let mut pending_disable_scripts = Vec::new();
         let mut bridge = crate::scripting::host::ScriptHostBridge {
             entity_manager: &mut th.entity_manager,
             world: &mut th.world,
             dynamic_properties: &mut dynamic_properties,
+            pending_events: &mut pending_events,
+            test_results: &mut test_results,
+            pending_enable_scripts: &mut pending_enable_scripts,
+            pending_disable_scripts: &mut pending_disable_scripts,
         };
         let effective = bridge
             .get_property(

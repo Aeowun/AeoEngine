@@ -102,10 +102,37 @@ impl ScriptRuntime {
             .collect();
 
         for (path, handler) in matching {
+            if let Some(ref p) = path {
+                eprintln!(
+                    "[RUNTIME] dispatching event '{}' candidate handler: {}",
+                    name, p
+                );
+            }
             self.start_event_fiber(path, handler, arguments.clone())?;
         }
 
         Ok(())
+    }
+
+    pub fn cancel_fibers_for_script(&mut self, script_path: &str) {
+        let norm = script_path.replace("\\", "/");
+        let to_cancel: Vec<ScriptTaskId> = self
+            .fibers
+            .iter()
+            .filter_map(|(id, fiber)| {
+                if let Some(ref path) = fiber.script_path {
+                    if path.replace("\\", "/") == norm {
+                        return Some(*id);
+                    }
+                }
+                None
+            })
+            .collect();
+
+        for task_id in to_cancel {
+            self.fibers.remove(&task_id);
+            let _ = self.scheduler.cancel(task_id);
+        }
     }
 
     fn start_event_fiber(

@@ -51,6 +51,30 @@ pub trait EngineHost {
     fn create_runtime_cell(&mut self, cell_type: &str) -> Result<(HandleKind, u64), String>;
     fn move_runtime_cell(&mut self, id: u64, x: i32, y: i32, z: i32) -> Result<(), String>;
     fn delete_cell(&mut self, id: u64) -> Result<(), String>;
+
+    // Runtime script management, event firing, and test orchestration
+    fn enable_script(&mut self, _path: &str) {}
+    fn disable_script(&mut self, _path: &str) {}
+    fn is_script_enabled(&self, _path: &str) -> bool {
+        true
+    }
+    fn drain_enabled_scripts(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+    fn drain_disabled_scripts(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+    fn fire_event(&mut self, _event_name: &str, _args: Vec<Value>) {}
+    fn drain_pending_events(&mut self) -> Vec<(String, Vec<Value>)> {
+        Vec::new()
+    }
+    fn complete_test(&mut self, _test_name: &str, _passed: bool) {}
+    fn is_test_completed(&self, _test_name: &str) -> Option<bool> {
+        None
+    }
+    fn get_test_results(&self) -> (usize, usize, usize) {
+        (0, 0, 0)
+    }
 }
 
 /// A simple implementation of EngineHost that just wraps an EntityManager.
@@ -247,6 +271,86 @@ pub fn call_host_function(
                 .map(|(kind, id)| Value::Handle { kind, id })
                 .collect();
             Ok(Some(Value::array(handles)))
+        }
+
+        "enable_script" => {
+            if arguments.len() != 1 {
+                return Err("enable_script expects 1 argument (path)".to_string());
+            }
+            let path = arguments[0].as_string()?;
+            context.engine.enable_script(path);
+            Ok(Some(Value::Nil))
+        }
+
+        "disable_script" => {
+            if arguments.len() != 1 {
+                return Err("disable_script expects 1 argument (path)".to_string());
+            }
+            let path = arguments[0].as_string()?;
+            context.engine.disable_script(path);
+            Ok(Some(Value::Nil))
+        }
+
+        "is_script_enabled" => {
+            if arguments.len() != 1 {
+                return Err("is_script_enabled expects 1 argument (path)".to_string());
+            }
+            let path = arguments[0].as_string()?;
+            let enabled = context.engine.is_script_enabled(path);
+            Ok(Some(Value::Bool(enabled)))
+        }
+
+        "fire_event" => {
+            if arguments.is_empty() {
+                return Err("fire_event expects at least 1 argument (event_name)".to_string());
+            }
+            let event_name = arguments[0].as_string()?;
+            let event_args = arguments[1..].to_vec();
+            context.engine.fire_event(event_name, event_args);
+            Ok(Some(Value::Nil))
+        }
+
+        "complete_test" => {
+            if arguments.len() < 2 {
+                return Err("complete_test expects 2 arguments (test_name, passed)".to_string());
+            }
+            let test_name = arguments[0].as_string()?;
+            let passed = arguments[1].as_bool()?;
+            context.engine.complete_test(test_name, passed);
+            Ok(Some(Value::Nil))
+        }
+
+        "is_test_completed" => {
+            if arguments.len() != 1 {
+                return Err("is_test_completed expects 1 argument (test_name)".to_string());
+            }
+            let test_name = arguments[0].as_string()?;
+            if let Some(_passed) = context.engine.is_test_completed(test_name) {
+                Ok(Some(Value::Bool(true)))
+            } else {
+                Ok(Some(Value::Bool(false)))
+            }
+        }
+
+        "test_passed" => {
+            if arguments.len() != 1 {
+                return Err("test_passed expects 1 argument (test_name)".to_string());
+            }
+            let test_name = arguments[0].as_string()?;
+            if let Some(passed) = context.engine.is_test_completed(test_name) {
+                Ok(Some(Value::Bool(passed)))
+            } else {
+                Ok(Some(Value::Nil))
+            }
+        }
+
+        "test_summary" => {
+            let (p, f, t) = context.engine.get_test_results();
+            Ok(Some(Value::array(vec![
+                Value::Number(p as f64),
+                Value::Number(f as f64),
+                Value::Number(t as f64),
+            ])))
         }
 
         _ => Ok(None),

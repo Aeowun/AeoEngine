@@ -13,9 +13,76 @@ pub struct ScriptHostBridge<'a> {
         (HandleKind, u64),
         std::collections::BTreeMap<String, Value>,
     >,
+    pub pending_events: &'a mut Vec<(String, Vec<Value>)>,
+    pub test_results: &'a mut std::collections::BTreeMap<String, bool>,
+    pub pending_enable_scripts: &'a mut Vec<String>,
+    pub pending_disable_scripts: &'a mut Vec<String>,
+}
+
+fn norm_path(path: &str) -> String {
+    let clean = path.replace("\\", "/");
+    if clean.starts_with("scripts/") {
+        clean
+    } else {
+        format!("scripts/{}", clean)
+    }
 }
 
 impl<'a> EngineHost for ScriptHostBridge<'a> {
+    fn enable_script(&mut self, path: &str) {
+        let norm = norm_path(path);
+        self.world.disabled_scripts.retain(|s| s != &norm);
+        if !self.pending_enable_scripts.contains(&norm) {
+            self.pending_enable_scripts.push(norm);
+        }
+    }
+
+    fn disable_script(&mut self, path: &str) {
+        let norm = norm_path(path);
+        if !self.world.disabled_scripts.contains(&norm) {
+            self.world.disabled_scripts.push(norm.clone());
+        }
+        if !self.pending_disable_scripts.contains(&norm) {
+            self.pending_disable_scripts.push(norm);
+        }
+    }
+
+    fn is_script_enabled(&self, path: &str) -> bool {
+        let norm = norm_path(path);
+        !self.world.disabled_scripts.contains(&norm)
+    }
+
+    fn drain_enabled_scripts(&mut self) -> Vec<String> {
+        std::mem::take(self.pending_enable_scripts)
+    }
+
+    fn drain_disabled_scripts(&mut self) -> Vec<String> {
+        std::mem::take(self.pending_disable_scripts)
+    }
+
+    fn fire_event(&mut self, event_name: &str, args: Vec<Value>) {
+        self.pending_events.push((event_name.to_string(), args));
+    }
+
+    fn drain_pending_events(&mut self) -> Vec<(String, Vec<Value>)> {
+        std::mem::take(self.pending_events)
+    }
+
+    fn complete_test(&mut self, test_name: &str, passed: bool) {
+        self.test_results.insert(test_name.to_string(), passed);
+    }
+
+    fn is_test_completed(&self, test_name: &str) -> Option<bool> {
+        self.test_results.get(test_name).copied()
+    }
+
+    fn get_test_results(&self) -> (usize, usize, usize) {
+        let passed = self.test_results.values().filter(|&&v| v).count();
+        let total = self.test_results.len();
+        let failed = total - passed;
+        (passed, failed, total)
+    }
+
     fn entity_manager(&self) -> &EntityManager {
         self.entity_manager
     }
@@ -553,10 +620,18 @@ mod tests {
         }
 
         let mut dynamic_properties = std::collections::HashMap::new();
+        let mut pending_events = Vec::new();
+        let mut test_results = std::collections::BTreeMap::new();
+        let mut pending_enable_scripts = Vec::new();
+        let mut pending_disable_scripts = Vec::new();
         let bridge = ScriptHostBridge {
             entity_manager: &mut entity_manager,
             world: &mut world,
             dynamic_properties: &mut dynamic_properties,
+            pending_events: &mut pending_events,
+            test_results: &mut test_results,
+            pending_enable_scripts: &mut pending_enable_scripts,
+            pending_disable_scripts: &mut pending_disable_scripts,
         };
 
         let result = bridge
@@ -598,10 +673,18 @@ mod tests {
         }
 
         let mut dynamic_properties = std::collections::HashMap::new();
+        let mut pending_events = Vec::new();
+        let mut test_results = std::collections::BTreeMap::new();
+        let mut pending_enable_scripts = Vec::new();
+        let mut pending_disable_scripts = Vec::new();
         let mut bridge = ScriptHostBridge {
             entity_manager: &mut entity_manager,
             world: &mut world,
             dynamic_properties: &mut dynamic_properties,
+            pending_events: &mut pending_events,
+            test_results: &mut test_results,
+            pending_enable_scripts: &mut pending_enable_scripts,
+            pending_disable_scripts: &mut pending_disable_scripts,
         };
 
         // 1. Initial read should be authored value

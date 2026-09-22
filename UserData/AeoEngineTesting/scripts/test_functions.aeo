@@ -1,0 +1,29 @@
+fn add(a, b) {
+    return a + b
+}
+
+fn multiply(a, b) {
+    return a * b
+}
+
+on run_test() {
+    debug.log("[TEST] test_functions START")
+    ok: bool = true
+
+    const sum = add(10, 20)
+    if sum != 30 { ok = false }
+
+    const nested = multiply(add(2, 3), 4)
+    if nested != 20 { ok = false }
+
+    const func_val = add
+    if func_val(5, 5) != 10 { ok = false }
+
+    if ok {
+        debug.log("[TEST] test_functions PASS")
+    } else {
+        debug.log("[TEST] test_functions FAIL")
+    }
+
+    test.complete("functions", ok)
+}

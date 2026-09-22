@@ -1,0 +1,33 @@
+on run_test() {
+    debug.log("[TEST] test_control_flow START")
+    ok: bool = true
+
+    branch: number = 0
+    if 10 > 5 {
+        branch = 1
+    } else {
+        branch = 2
+    }
+    if branch != 1 { ok = false }
+
+    count: number = 0
+    while count < 5 {
+        count = count + 1
+    }
+    if count != 5 { ok = false }
+
+    sum: number = 0
+    const items = [10, 20, 30]
+    for x in items {
+        sum = sum + x
+    }
+    if sum != 60 { ok = false }
+
+    if ok {
+        debug.log("[TEST] test_control_flow PASS")
+    } else {
+        debug.log("[TEST] test_control_flow FAIL")
+    }
+
+    test.complete("control_flow", ok)
+}

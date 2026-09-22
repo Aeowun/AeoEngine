@@ -1,0 +1,31 @@
+on run_test() {
+    debug.log("[TEST] test_cells START")
+    ok: bool = true
+
+    const new_cell = cell.new("Block")
+    if new_cell == nil {
+        ok = false
+    } else {
+        const id = new_cell.id
+        if !cell.exists(id) { ok = false }
+
+        new_cell.visible = false
+        if new_cell.visible != false { ok = false }
+
+        new_cell.solid = true
+        if new_cell.solid != true { ok = false }
+
+        new_cell.position = [1, 2, 3]
+
+        cell.delete(new_cell)
+        if cell.exists(id) { ok = false }
+    }
+
+    if ok {
+        debug.log("[TEST] test_cells PASS")
+    } else {
+        debug.log("[TEST] test_cells FAIL")
+    }
+
+    test.complete("cells", ok)
+}

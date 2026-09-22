@@ -1,0 +1,59 @@
+fn log_header(title) {
+    debug.log("========================================")
+    debug.log("AEOENGINE INTEGRATION SUITE:", title)
+    debug.log("========================================")
+}
+
+fn run_single_test(script_path, test_name) {
+    debug.log("[MASTER] Enabling script:", script_path)
+    script.enable(script_path)
+
+    debug.log("[MASTER] Waiting 0.5s activation delay...")
+    wait(0.5)
+
+    debug.log("[MASTER] Firing 'run_test' event against:", test_name)
+    event.fire("run_test")
+
+    while !test.is_completed(test_name) {
+        wait(0.1)
+    }
+
+    if test.passed(test_name) {
+        debug.log("[MASTER] PASS ->", test_name)
+    } else {
+        debug.log("[MASTER] FAIL ->", test_name)
+    }
+
+    debug.log("[MASTER] Disabling script:", script_path)
+    script.disable(script_path)
+
+    event.fire("run_test")
+    wait(0.2)
+}
+
+log_header("STARTING SUITE")
+
+run_single_test("scripts/test_language.aeo", "language")
+run_single_test("scripts/test_control_flow.aeo", "control_flow")
+run_single_test("scripts/test_arrays.aeo", "arrays")
+run_single_test("scripts/test_maps.aeo", "maps")
+run_single_test("scripts/test_strings.aeo", "strings")
+run_single_test("scripts/test_functions.aeo", "functions")
+run_single_test("scripts/test_closures.aeo", "closures")
+run_single_test("scripts/test_wait.aeo", "wait")
+run_single_test("scripts/test_cells.aeo", "cells")
+run_single_test("scripts/test_attributes.aeo", "attributes")
+run_single_test("scripts/test_entities.aeo", "entities")
+run_single_test("scripts/test_lights.aeo", "lights")
+run_single_test("scripts/test_world.aeo", "world")
+run_single_test("scripts/test_handles.aeo", "handles")
+run_single_test("scripts/test_callbacks.aeo", "callbacks")
+run_single_test("scripts/test_math.aeo", "math")
+
+const summary = test.summary()
+debug.log("========================================")
+debug.log("MASTER TEST SUITE COMPLETE")
+debug.log("PASSED:", summary[0])
+debug.log("FAILED:", summary[1])
+debug.log("TOTAL: ", summary[2])
+debug.log("========================================")

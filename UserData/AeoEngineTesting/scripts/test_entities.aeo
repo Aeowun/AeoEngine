@@ -1,0 +1,24 @@
+on run_test() {
+    debug.log("[TEST] test_entities START")
+    ok: bool = true
+
+    const matches = find("Doors")
+
+    if matches.len() > 0 {
+        const e = matches[0]
+
+        if !e.is_valid() { ok = false }
+
+        const name = e.name()
+        e.set_position(0, 0, 0)
+        e.translate(1, 0, 0)
+    }
+
+    if ok {
+        debug.log("[TEST] test_entities PASS")
+    } else {
+        debug.log("[TEST] test_entities FAIL")
+    }
+
+    test.complete("entities", ok)
+}

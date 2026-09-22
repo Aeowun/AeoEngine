@@ -84,6 +84,10 @@ pub struct App {
         std::collections::BTreeMap<String, crate::scripting::value::Value>,
     >,
     pub script_contacted_last_frame: std::collections::HashSet<u64>,
+    pub script_pending_events: Vec<(String, Vec<crate::scripting::value::Value>)>,
+    pub script_test_results: std::collections::BTreeMap<String, bool>,
+    pub script_pending_enable: Vec<String>,
+    pub script_pending_disable: Vec<String>,
     pub entity_manager: EntityManager,
 }
 
@@ -119,6 +123,10 @@ impl App {
             script_scene: None,
             script_dynamic_properties: std::collections::HashMap::new(),
             script_contacted_last_frame: std::collections::HashSet::new(),
+            script_pending_events: Vec::new(),
+            script_test_results: std::collections::BTreeMap::new(),
+            script_pending_enable: Vec::new(),
+            script_pending_disable: Vec::new(),
             entity_manager: EntityManager::new(),
         }
     }
@@ -746,6 +754,10 @@ impl App {
                         entity_manager: em,
                         world,
                         dynamic_properties: &mut self.script_dynamic_properties,
+                        pending_events: &mut self.script_pending_events,
+                        test_results: &mut self.script_test_results,
+                        pending_enable_scripts: &mut self.script_pending_enable,
+                        pending_disable_scripts: &mut self.script_pending_disable,
                     };
 
                     let mut context = HostContext {
@@ -884,6 +896,10 @@ impl App {
                         entity_manager: em,
                         world: world_mut,
                         dynamic_properties: &mut self.script_dynamic_properties,
+                        pending_events: &mut self.script_pending_events,
+                        test_results: &mut self.script_test_results,
+                        pending_enable_scripts: &mut self.script_pending_enable,
+                        pending_disable_scripts: &mut self.script_pending_disable,
                     };
                     let mut context = HostContext {
                         delta_time: frame_time as f64,
@@ -1095,6 +1111,10 @@ impl App {
                 entity_manager: em,
                 world,
                 dynamic_properties: &mut self.script_dynamic_properties,
+                pending_events: &mut self.script_pending_events,
+                test_results: &mut self.script_test_results,
+                pending_enable_scripts: &mut self.script_pending_enable,
+                pending_disable_scripts: &mut self.script_pending_disable,
             };
 
             let mut context = HostContext {

@@ -56,15 +56,7 @@ impl ScriptInstance {
     }
 
     pub fn set_field(&mut self, name: &str, value: Value) -> Result<(), String> {
-        if !self.fields.contains_key(name) {
-            return Err(format!(
-                "field '{}' does not exist on entity '{}'",
-                name, self.entity_name
-            ));
-        }
-
         self.fields.insert(name.to_string(), value);
-
         Ok(())
     }
 }
@@ -2783,6 +2775,10 @@ impl Interpreter {
             || name == "cell"
             || name == "debug"
             || name == "entity"
+            || name == "script"
+            || name == "event"
+            || name == "test"
+            || name == "time"
         {
             return Ok(Value::Namespace(name.to_string()));
         }

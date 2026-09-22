@@ -501,6 +501,100 @@ pub fn call_stdlib_function(
             };
             return Ok(Some(res));
         }
+        "script" => {
+            let res = match method_name {
+                "enable" => {
+                    if args.len() != 1 {
+                        return Err("script.enable expects 1 argument (path)".to_string());
+                    }
+                    let path = args[0].as_string()?;
+                    _host.engine.enable_script(path);
+                    Value::Nil
+                }
+                "disable" => {
+                    if args.len() != 1 {
+                        return Err("script.disable expects 1 argument (path)".to_string());
+                    }
+                    let path = args[0].as_string()?;
+                    _host.engine.disable_script(path);
+                    Value::Nil
+                }
+                "is_enabled" => {
+                    if args.len() != 1 {
+                        return Err("script.is_enabled expects 1 argument (path)".to_string());
+                    }
+                    let path = args[0].as_string()?;
+                    let enabled = _host.engine.is_script_enabled(path);
+                    Value::Bool(enabled)
+                }
+                _ => return Ok(None),
+            };
+            return Ok(Some(res));
+        }
+        "event" => {
+            let res = match method_name {
+                "fire" => {
+                    if args.is_empty() {
+                        return Err(
+                            "event.fire expects at least 1 argument (event_name)".to_string()
+                        );
+                    }
+                    let event_name = args[0].as_string()?;
+                    let event_args = args[1..].to_vec();
+                    _host.engine.fire_event(event_name, event_args);
+                    Value::Nil
+                }
+                _ => return Ok(None),
+            };
+            return Ok(Some(res));
+        }
+        "test" => {
+            let res = match method_name {
+                "complete" => {
+                    if args.len() < 2 {
+                        return Err(
+                            "test.complete expects 2 arguments (test_name, passed)".to_string()
+                        );
+                    }
+                    let test_name = args[0].as_string()?;
+                    let passed = args[1].as_bool()?;
+                    _host.engine.complete_test(test_name, passed);
+                    Value::Nil
+                }
+                "is_completed" => {
+                    if args.len() != 1 {
+                        return Err("test.is_completed expects 1 argument (test_name)".to_string());
+                    }
+                    let test_name = args[0].as_string()?;
+                    if let Some(_passed) = _host.engine.is_test_completed(test_name) {
+                        Value::Bool(true)
+                    } else {
+                        Value::Bool(false)
+                    }
+                }
+                "passed" => {
+                    if args.len() != 1 {
+                        return Err("test.passed expects 1 argument (test_name)".to_string());
+                    }
+                    let test_name = args[0].as_string()?;
+                    if let Some(passed) = _host.engine.is_test_completed(test_name) {
+                        Value::Bool(passed)
+                    } else {
+                        Value::Nil
+                    }
+                }
+                "summary" => {
+                    let (p, f, t) = _host.engine.get_test_results();
+                    Value::array(vec![
+                        Value::Number(p as f64),
+                        Value::Number(f as f64),
+                        Value::Number(t as f64),
+                    ])
+                }
+                _ => return Ok(None),
+            };
+            return Ok(Some(res));
+        }
         _ => Ok(None),
     }
 }

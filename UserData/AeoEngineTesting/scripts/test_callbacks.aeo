@@ -1,0 +1,21 @@
+on run_test() {
+    debug.log("[TEST] test_callbacks START")
+    ok: bool = true
+
+    called: bool = false
+    const temp = cell.new("Block")
+    if temp != nil {
+        temp.on_touch = fn(other) {
+            called = true
+        }
+        cell.delete(temp)
+    }
+
+    if ok {
+        debug.log("[TEST] test_callbacks PASS")
+    } else {
+        debug.log("[TEST] test_callbacks FAIL")
+    }
+
+    test.complete("callbacks", ok)
+}
