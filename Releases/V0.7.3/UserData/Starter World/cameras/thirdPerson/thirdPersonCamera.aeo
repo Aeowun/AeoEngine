@@ -16,7 +16,7 @@ entity ThirdPersonCamera {
         if player == nil { return }
 
         const orbit_delta = input.get_orbit_delta()
-        yaw = yaw - orbit_delta[0] * 0.005
+        yaw = yaw - orbit_delta[0] * 0.025
         pitch = math.clamp(pitch + orbit_delta[1] * 0.005, -0.3, 1.4)
 
         const char_pos = player.position

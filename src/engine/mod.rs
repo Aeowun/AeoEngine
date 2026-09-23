@@ -5,6 +5,7 @@ pub mod ui;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum View {
+    Splash,
     Home,
     Editor,
 }

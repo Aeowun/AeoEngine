@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod character;
 mod character_custom;
 mod editor;
@@ -23,7 +25,7 @@ use winit::event::{DeviceEvent, Event, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::raw_window_handle::HasWindowHandle;
 
-use winit::window::{CursorGrabMode, WindowAttributes};
+use winit::window::{CursorGrabMode, Fullscreen, WindowAttributes};
 
 use engine::app::App;
 
@@ -43,8 +45,8 @@ fn main() {
     let event_loop = EventLoop::new().expect("Failed to create event loop");
 
     let window_attributes = WindowAttributes::default()
-        .with_title("AeoEngine")
-        .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 720.0));
+        .with_title(concat!("AeoEngine V", env!("CARGO_PKG_VERSION")))
+        .with_fullscreen(Some(Fullscreen::Borderless(None)));
 
     let display_builder = DisplayBuilder::new().with_window_attributes(Some(window_attributes));
 
@@ -196,7 +198,10 @@ fn main() {
                 egui_state.egui_ctx().begin_pass(input);
 
                 app.update_ui(egui_state.egui_ctx());
-
+                if app.exit_requested {
+                    elwt.exit();
+                    return;
+                }
                 let full_output = egui_state.egui_ctx().end_pass();
                 egui_state.handle_platform_output(&window, full_output.platform_output);
 

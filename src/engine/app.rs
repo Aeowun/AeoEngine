@@ -40,6 +40,10 @@ const RMB_GUARD_EDGE_SCROLL_SPEED: f32 = 500.0;
 /// Application state shared by the window, editor, renderer, world, project
 /// system, input handling, and runtime physics.
 pub struct App {
+    // probably not neccassary to list it first
+    // but i feel like it should be first ??
+    pub splash_started: Instant,
+
     pub view: View,
     pub renderer: Renderer,
     pub editor: Editor,
@@ -88,6 +92,8 @@ pub struct App {
     pub script_test_results: std::collections::BTreeMap<String, bool>,
     pub script_pending_enable: Vec<String>,
     pub script_pending_disable: Vec<String>,
+    pub show_exit_confirmation_dialog: bool,
+    pub exit_requested: bool,
     pub authored_disabled_scripts: Vec<String>,
     pub entity_manager: EntityManager,
     pub runtime_ui: crate::engine::ui::RuntimeUi,
@@ -95,15 +101,18 @@ pub struct App {
     pub camera_object: Option<crate::scripting::value::Value>,
     pub orbit_delta: [f32; 2],
 }
-
+// Initialise all the bs here
 impl App {
     pub fn new(width: f32, height: f32) -> Self {
         Self {
-            view: View::Home,
+            view: View::Splash,
+            show_exit_confirmation_dialog: false,
+            exit_requested: false,
             renderer: Renderer::new(width, height),
             editor: Editor::new(),
             world: World::new(),
             project_manager: ProjectManager::new(),
+            splash_started: Instant::now(),
             last_frame_instant: Instant::now(),
             physics_clock: physics::PhysicsClock::new(),
             physics_world: physics::PhysicsWorld::new(),
@@ -341,7 +350,11 @@ impl App {
                             }
 
                             KeyCode::Escape => {
-                                if self.editor.mode == EditorMode::Play {
+                                if self.view == View::Splash {
+                                        self.view = View::Home;
+                                } else if self.view == View::Home {
+                                    self.show_exit_confirmation_dialog = true;
+                                } else if self.editor.mode == EditorMode::Play {
                                     self.editor.mode = EditorMode::Editor;
                                 } else if self.view == View::Editor {
                                     if self.is_left_mouse_down {
@@ -353,6 +366,12 @@ impl App {
                                     } else {
                                         self.exit_to_home();
                                     }
+                                }
+                            }
+
+                            KeyCode::Enter => {
+                                if self.view == View::Splash {
+                                    self.view = View::Home;
                                 }
                             }
 
@@ -1345,16 +1364,194 @@ impl App {
 
         self.view = View::Home;
     }
+    fn draw_splash_screen(&mut self, ctx: &egui::Context) {
+        ctx.request_repaint();
 
+        let elapsed = self.splash_started.elapsed().as_secs_f32();
+        let rect = ctx.screen_rect();
+        let painter = ctx.layer_painter(egui::LayerId::background());
+
+        painter.rect_filled(rect, 0.0, COLOR_VOID);
+
+        // ------------------------------------------------------------
+        // AEOWUN PRESENTS...
+        // ------------------------------------------------------------
+
+        let presents_start = 0.25;
+        let presents_fade_in = 0.35;
+        let presents_fade_out_start = 1.15;
+        let presents_fade_out = 0.45;
+
+        let mut presents_alpha = 0.0;
+
+        if elapsed >= presents_start {
+            presents_alpha = ((elapsed - presents_start) / presents_fade_in).clamp(0.0, 1.0);
+        }
+
+        if elapsed >= presents_fade_out_start {
+            presents_alpha *=
+                (1.0 - (elapsed - presents_fade_out_start) / presents_fade_out).clamp(0.0, 1.0);
+        }
+
+        if presents_alpha > 0.0 {
+            let color = egui::Color32::from_rgba_unmultiplied(
+                COLOR_TEXT_DIM.r(),
+                COLOR_TEXT_DIM.g(),
+                COLOR_TEXT_DIM.b(),
+                (presents_alpha * 255.0) as u8,
+            );
+
+            painter.text(
+                rect.center() + egui::vec2(0.0, -18.0),
+                egui::Align2::CENTER_CENTER,
+                "AEOWUN PRESENTS...",
+                egui::FontId::monospace(14.0),
+                color,
+            );
+        }
+
+        // ------------------------------------------------------------
+        // AEOENGINE
+        // ------------------------------------------------------------
+
+        let title_start = 1.45;
+        let stagger = 0.12;
+        let reveal_duration = 0.38;
+
+        let title = "AEOENGINE";
+        let font = egui::FontId::monospace(52.0);
+
+        let char_width = painter
+            .layout_no_wrap("M".to_string(), font.clone(), COLOR_TEXT_BRIGHT)
+            .size()
+            .x;
+
+        let total_width = char_width * title.chars().count() as f32;
+
+        let start_x = rect.center().x - total_width * 0.5 + char_width * 0.5;
+        let base_y = rect.center().y + 20.0;
+
+        for (index, character) in title.chars().enumerate() {
+            let char_start = title_start + index as f32 * stagger;
+            let progress =
+                ((elapsed - char_start) / reveal_duration).clamp(0.0, 1.0);
+
+            if progress <= 0.0 {
+                continue;
+            }
+
+            let eased = 1.0 - (1.0 - progress).powi(3);
+
+            let x = start_x
+                + index as f32 * char_width
+                - (1.0 - eased) * 28.0;
+
+            let y = base_y;
+
+            let alpha = (eased * 255.0) as u8;
+
+            let color = egui::Color32::from_rgba_unmultiplied(
+                COLOR_TEXT_BRIGHT.r(),
+                COLOR_TEXT_BRIGHT.g(),
+                COLOR_TEXT_BRIGHT.b(),
+                alpha,
+            );
+
+            painter.text(
+                egui::pos2(x, y),
+                egui::Align2::CENTER_CENTER,
+                character.to_string(),
+                font.clone(),
+                color,
+            );
+
+            // Small deterministic dust trail as each letter settles.
+            if progress < 1.0 {
+                for dust_index in 0..4 {
+                    let seed = index as f32 * 17.0 + dust_index as f32 * 9.0;
+
+                    let drift =
+                        (elapsed * 7.0 + seed).sin() * 8.0;
+
+                    let dust_x =
+                        x - (1.0 - eased) * 24.0 - dust_index as f32 * 4.0;
+
+                    let dust_y =
+                        y + drift + (dust_index as f32 - 1.5) * 3.0;
+
+                    let dust_alpha =
+                        ((1.0 - progress) * 45.0) as u8;
+
+                    painter.circle_filled(
+                        egui::pos2(dust_x, dust_y),
+                        1.0 + (dust_index as f32 * 0.25),
+                        egui::Color32::from_rgba_unmultiplied(
+                            180,
+                            180,
+                            180,
+                            dust_alpha,
+                        ),
+                    );
+                }
+            }
+        }
+
+        // Let the finished title sit for a moment.
+        if elapsed >= 4.15 {
+            self.view = View::Home;
+        }
+    }
     pub fn update_ui(&mut self, ctx: &egui::Context) {
-        let mut next_view = None;
 
-        if self.view == View::Home {
+        let mut next_view = None;
+        if self.view == View::Splash {
+                self.draw_splash_screen(ctx);
+        } else if self.view == View::Home {
             self.draw_home_screen(ctx, &mut next_view);
         } else if self.view == View::Editor {
             self.editor
                 .show_ui(ctx, &mut self.world, &self.project_manager.current_project);
+                if self.editor.mode == EditorMode::Editor
+                    && !self.editor.show_script_workspace
+                {
+                    let viewport = self.editor.viewport_rect;
 
+                    egui::Area::new("editor_navigation_help".into())
+                        .order(egui::Order::Foreground)
+                        .fixed_pos(egui::pos2(viewport.right() - 156.0, viewport.top() + 12.0))
+                        .show(ctx, |ui| {
+                            egui::Frame::none()
+                                .fill(egui::Color32::from_rgba_unmultiplied(10, 12, 15, 210))
+                                .stroke(egui::Stroke::new(
+                                    1.0,
+                                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 25),
+                                ))
+                                .rounding(4.0)
+                                .inner_margin(egui::Margin::symmetric(8.0, 6.0))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new("RMB + WASD   MOVE")
+                                            .monospace()
+                                            .size(10.0),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new("RMB + Q/E    UP / DOWN")
+                                            .monospace()
+                                            .size(10.0),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new("MMB + MOUSE  ORBIT")
+                                            .monospace()
+                                            .size(10.0),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new("SCROLL       ZOOM")
+                                            .monospace()
+                                            .size(10.0),
+                                    );
+                                });
+                        });
+                }
             self.render_runtime_ui(ctx);
 
             if self.show_unsaved_scripts_dialog {
@@ -1601,30 +1798,49 @@ impl App {
         );
     }
 
-    fn draw_home_header(&self, ui: &mut egui::Ui) {
+    fn draw_home_header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new("AEOENGINE")
+                RichText::new("AEOWUN")
                     .monospace()
                     .strong()
                     .color(COLOR_TEXT_BRIGHT)
                     .size(15.0),
             );
 
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if self.draw_home_link(ui, "GITHUB").clicked() {
-                    ui.ctx().open_url(egui::OpenUrl::new_tab(
-                        "https://github.com/Aeowun/AeoEngine",
-                    ));
-                }
+            ui.with_layout(
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    let exit_button = egui::Button::new(
+                        RichText::new("×")
+                            .strong()
+                            .size(18.0)
+                            .color(COLOR_TEXT_BRIGHT),
+                    )
+                    .min_size(egui::vec2(28.0, 28.0))
+                    .fill(COLOR_ACCENT_RED)
+                    .stroke(egui::Stroke::new(1.0, COLOR_ACCENT_ORANGE));
 
-                ui.add_space(20.0);
+                    if ui.add(exit_button).clicked() {
+                        self.show_exit_confirmation_dialog = true;
+                    }
 
-                if self.draw_home_link(ui, "DOCUMENTATION").clicked() {
-                    ui.ctx()
-                        .open_url(egui::OpenUrl::new_tab("https://www.aeowun.com/docs/"));
-                }
-            });
+                    ui.add_space(14.0);
+
+                    if self.draw_home_link(ui, "GITHUB").clicked() {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(
+                            "https://github.com/Aeowun/AeoEngine",
+                        ));
+                    }
+
+                    ui.add_space(20.0);
+
+                    if self.draw_home_link(ui, "DOCUMENTATION").clicked() {
+                        ui.ctx()
+                            .open_url(egui::OpenUrl::new_tab("https://www.aeowun.com/docs/"));
+                    }
+                },
+            );
         });
     }
 
@@ -2326,10 +2542,71 @@ impl App {
                     ui.add_space(8.0);
                 });
         }
+        if self.show_exit_confirmation_dialog {
+            egui::Window::new("Exit AeoEngine?")
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .collapsible(false)
+                .resizable(false)
+                .frame(
+                    egui::Frame::window(&ctx.style())
+                        .fill(COLOR_VOID_ELEVATED)
+                        .stroke(egui::Stroke::new(1.0_f32, COLOR_BORDER)),
+                )
+                .show(ctx, |ui| {
+                    ui.label(
+                        RichText::new("Are you sure you want to exit?")
+                            .monospace()
+                            .color(COLOR_TEXT),
+                    );
+
+                    ui.add_space(14.0);
+
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("YES")
+                                        .monospace()
+                                        .strong()
+                                        .color(COLOR_VOID),
+                                )
+                                .min_size(egui::vec2(70.0, 28.0))
+                                .fill(COLOR_ACCENT_ORANGE),
+                            )
+                            .clicked()
+                        {
+                            self.show_exit_confirmation_dialog = false;
+                            self.exit_requested = true;
+                        }
+
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("NO")
+                                        .monospace()
+                                        .color(COLOR_TEXT),
+                                )
+                                .min_size(egui::vec2(70.0, 28.0))
+                                .fill(COLOR_VOID_PANEL)
+                                .stroke(egui::Stroke::new(1.0, COLOR_BORDER)),
+                            )
+                            .clicked()
+                        {
+                            self.show_exit_confirmation_dialog = false;
+                        }
+                    });
+                });
+        }
     }
 
     pub fn render(&self) {
+
         match self.view {
+
+            View::Splash => {
+                    self.renderer.render_home();
+                }
+
             View::Home => {
                 self.renderer.render_home();
             }
@@ -2439,3 +2716,4 @@ fn get_timestamp() -> String {
 
     format!("{:02}:{:02}:{:02}", hours, mins, secs)
 }
+

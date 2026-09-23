@@ -1,5 +1,5 @@
 // Find every Door in the level.
-const doors = find("Door")
+const doors = find("Doors")
 
 // Give every Door the same touch behavior.
 for door in doors {

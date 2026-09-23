@@ -14,24 +14,40 @@ AeoEngine is being developed as a general-purpose foundation for building small 
 * [Core Model](#core-model)
 * [Current Features](#current-features)
 * [Getting Started](#getting-started)
-    * [Requirements](#requirements)
-    * [Build and Run](#build-and-run)
+
+  * [Requirements](#requirements)
+  * [Build and Run](#build-and-run)
+* [Help](#help)
+
+  * [Your First Project](#your-first-project)
+  * [How Projects Are Organized](#how-projects-are-organized)
+  * [How to Add a Controller](#how-to-add-a-controller)
+  * [How to Add a Camera](#how-to-add-a-camera)
+  * [How to Write AeoScript](#how-to-write-aeoscript)
+  * [How to Add Textures](#how-to-add-textures)
+  * [How to Customize a Character](#how-to-customize-a-character)
+  * [Understanding Play Mode](#understanding-play-mode)
+  * [Common Problems](#common-problems)
+  * [Where to Go Next](#where-to-go-next)
 * [Documentation](#documentation)
-    * [Getting Started and Guides](#getting-started-and-guides)
-    * [AeoScript](#aeoscript)
-    * [Architecture](#architecture)
-    * [Development](#development)
-    * [Changelog](#changelog)
+
+  * [Getting Started and Guides](#getting-started-and-guides)
+  * [AeoScript](#aeoscript)
+  * [Architecture](#architecture)
+  * [Development](#development)
+  * [Changelog](#changelog)
 * [Project Status](#project-status)
-    * [AeoScript](#aeoscript-1)
-    * [Integration Testing](#integration-testing)
+
+  * [AeoScript Support](#aeoscript-support)
+  * [Integration Testing](#integration-testing)
 * [Performance](#performance)
-    * [World Rendering](#world-rendering)
-    * [Static Physics Synchronization](#static-physics-synchronization)
-    * [Dynamic Physics](#dynamic-physics)
-    * [Continuous Collision Detection](#continuous-collision-detection)
-    * [Runtime Mesh Resources](#runtime-mesh-resources)
-    * [Performance Work](#performance-work)
+
+  * [World Rendering](#world-rendering)
+  * [Static Physics Synchronization](#static-physics-synchronization)
+  * [Dynamic Physics](#dynamic-physics)
+  * [Continuous Collision Detection](#continuous-collision-detection)
+  * [Runtime Mesh Resources](#runtime-mesh-resources)
+  * [Performance Work](#performance-work)
 * [Versioning](#versioning)
 
 ---
@@ -152,22 +168,537 @@ cargo run
 
 ---
 
+# Help
+
+The technical documentation contains detailed engine and language information, but you do not need to understand all of it before making something in AeoEngine.
+
+The recommended approach is:
+
+1. Start with the Starter World.
+2. Copy an existing working example.
+3. Change one thing at a time.
+4. Use the technical documentation when you need to understand a specific system.
+
+AeoEngine is still under active development, so some systems are easier to customize than others.
+
+---
+
+## Your First Project
+
+The easiest way to start is with the included Starter World.
+
+Instead of building every project folder manually, copy the Starter World and use it as the starting point for your own game.
+
+The Starter World provides simple working examples of:
+
+* A third-person controller
+* A third-person camera
+* A first-person camera
+* Character setup
+* AeoScript files
+* World data
+* Project textures
+* Runtime systems
+
+> [!NOTE]
+> The Starter World is primarily a reference and learning project. Some examples are still under active development and may have rough edges.
+
+
+The Starter World is intended to be understandable and modifiable rather than treated as a black box.
+
+A good first exercise is to make a copy and change one thing:
+
+* Change camera sensitivity.
+* Change movement speed.
+* Change the camera distance.
+* Change a texture.
+* Add a simple scripted object.
+* Add a runtime UI element.
+
+Once that works, begin replacing the provided pieces with your own.
+
+---
+
+## How Projects Are Organized
+
+A typical AeoEngine project looks roughly like this:
+
+```text
+UserData/
+└── MyProject/
+    ├── world.dat
+    ├── camera.dat
+    ├── scripts/
+    ├── controllers/
+    ├── cameras/
+    ├── characters/
+    └── .assets/
+        ├── textures/
+        └── ...
+```
+
+The important directories are:
+
+| Directory      | Purpose                                 |
+| -------------- | --------------------------------------- |
+| `scripts/`     | General AeoScript gameplay and behavior |
+| `controllers/` | Script-defined player controllers       |
+| `cameras/`     | Script-defined gameplay cameras         |
+| `characters/`  | Character packages and character data   |
+| `.assets/`     | Project-owned textures and other assets |
+
+For most beginners, the first places to work are:
+
+```text
+scripts/
+controllers/
+cameras/
+```
+
+---
+
+## How to Add a Controller
+
+The easiest way to create a new controller is to copy an existing one.
+
+The Starter World contains:
+
+```text
+UserData/Starter World/controllers/thirdPerson_Controller/
+```
+
+Copy that entire directory into your own project:
+
+```text
+UserData/MyProject/controllers/
+```
+
+Then rename the copied controller directory to something descriptive, for example:
+
+```text
+UserData/MyProject/controllers/myController/
+```
+
+Inside the controller package, modify the existing `.aeo` script rather than starting from an empty file.
+
+This gives you a known-working controller structure and keeps the package configuration correct.
+
+The controller can then be changed to implement your own gameplay behavior.
+
+For example, you can change:
+
+* Movement speed
+* Jump behavior
+* Camera-relative movement
+* Facing behavior
+* Animation selection
+* Input behavior
+
+The engine still owns gravity, collision, grounded state, and physics integration.
+
+### Selecting the Controller
+
+The selected controller is referenced by the project configuration.
+
+The Starter World uses:
+
+```text
+SELECTED_CONTROLLER thirdPerson_Controller
+```
+
+When creating a new controller, update the project selection to reference your new controller package.
+
+The exact project data format is documented in the engine documentation and can be studied directly from the Starter World.
+
+---
+
+## How to Add a Camera
+
+Cameras use the same general workflow as controllers.
+
+The Starter World includes:
+
+```text
+UserData/Starter World/cameras/thirdPerson/
+UserData/Starter World/cameras/firstPerson/
+```
+
+Copy one of these directories into your own project:
+
+```text
+UserData/MyProject/cameras/
+```
+
+Rename it and modify the included `.aeo` script.
+
+For example:
+
+```text
+UserData/MyProject/cameras/myCamera/
+```
+
+Starting from an existing camera is recommended because the folder structure, package configuration, and script interface are already known to work.
+
+A camera script can control things such as:
+
+* Follow distance
+* Camera height
+* Look height
+* Orbit sensitivity
+* Yaw
+* Pitch
+* Camera positioning
+* Camera collision behavior
+
+The engine provides the underlying camera and rendering systems.
+
+The script controls the gameplay behavior.
+
+### Selecting the Camera
+
+The selected camera is referenced by the project configuration.
+
+The Starter World provides examples such as:
+
+```text
+SELECTED_CAMERA thirdPerson
+```
+
+or:
+
+```text
+SELECTED_CAMERA firstPerson
+```
+
+When creating a new camera, update the project selection to reference the new camera package.
+
+---
+
+## How to Write AeoScript
+
+AeoScript is the gameplay language used by AeoEngine.
+
+You do **not** need to learn the entire language before writing useful scripts.
+
+Start by copying a small working script and changing it.
+
+AeoScript supports:
+
+* Variables
+* Constants
+* Functions
+* Conditionals
+* Loops
+* Arrays / baskets
+* Maps
+* Functions as values
+* Closures
+* Runtime handles
+* Events
+* Input
+* Runtime UI
+* World interaction
+
+A useful beginner workflow is:
+
+```text
+Copy working script
+      ↓
+Change one value
+      ↓
+Run the game
+      ↓
+Observe result
+      ↓
+Change behavior
+      ↓
+Repeat
+```
+
+For example, a controller might contain a value such as:
+
+```aeoscript
+speed = 5.0
+```
+
+Changing it to:
+
+```aeoscript
+speed = 8.0
+```
+
+changes the controller's movement speed without changing the Rust engine.
+
+### Where Scripts Go
+
+General gameplay scripts go into:
+
+```text
+UserData/MyProject/scripts/
+```
+
+Controllers go into:
+
+```text
+UserData/MyProject/controllers/
+```
+
+Cameras go into:
+
+```text
+UserData/MyProject/cameras/
+```
+
+The Script Editor can be used to inspect and modify AeoScript while working on the project.
+
+### Where to Learn the Language
+
+Start with:
+
+* [AeoScript Overview](./docs/language/AeoScript.md)
+* [AeoScript Examples](./docs/language/AeoScript_EXAMPLES.md)
+* [AeoScript API](./docs/language/AeoScript_API.md)
+
+Use the grammar, VM, lifecycle, and type documentation when you need deeper information about how the language works.
+
+---
+
+## How to Add Textures
+
+Project textures are stored in the project's asset directory.
+
+For example:
+
+```text
+UserData/MyProject/.assets/textures/
+```
+
+The current texture naming convention avoids spaces.
+
+Examples:
+
+```text
+brick.png
+brick_1.png
+grass_1.png
+roof_1.png
+tile_1.png
+wood_1.png
+logo.png
+debug.png
+lightbulb.png
+```
+
+When creating new textures, use simple filenames without spaces.
+
+This makes world data and asset references easier to work with.
+
+After adding a texture, reference its filename from the appropriate World data or script system.
+
+The engine loads project-owned textures at runtime and caches loaded texture resources.
+
+---
+
+## How to Customize a Character
+
+**Full custom character authoring is not supported yet.**
+
+Character behavior is currently further along than character customization, but the character system is still being expanded.
+
+You can currently work with the existing character system and script-defined controller/camera systems.
+
+A fully script-defined character workflow is planned and is not far off, but it should not be treated as a supported authoring workflow in this release.
+
+Until that work is complete, use the existing character packages and focus customization work on:
+
+* Controller behavior
+* Camera behavior
+* Input
+* Gameplay scripts
+* Animation selection
+* Runtime interactions
+
+This distinction is temporary and will change as the Character System work is completed.
+
+---
+
+## Understanding Play Mode
+
+Play mode creates the temporary runtime state used to simulate the game.
+
+During Play mode the engine can create or modify things such as:
+
+* Physics bodies
+* Character movement state
+* Runtime Cell state
+* Runtime property overrides
+* Script state
+* Camera state
+* Runtime UI
+
+When Play mode stops, those runtime changes are discarded.
+
+The authored World remains unchanged.
+
+This means:
+
+> If you want something to become part of the saved project, author it in the World rather than relying on runtime changes.
+
+Runtime scripting is intended for gameplay behavior, not as a replacement for authored project data.
+
+---
+
+## Common Problems
+
+### My texture does not load
+
+Check that:
+
+1. The file exists inside the project's asset directory.
+2. The filename matches the World reference exactly.
+3. The filename follows the current naming convention.
+4. The file does not accidentally contain spaces or an old filename.
+
+For example:
+
+```text
+grass_4.png
+```
+
+is preferable to:
+
+```text
+Grass 4 - 128x128.png
+```
+
+---
+
+### My controller does not appear
+
+Check that:
+
+1. The controller directory is inside the project's `controllers/` directory.
+2. The copied package contains its required files.
+3. The controller's name matches the project selection.
+4. The `.aeo` script is inside the package.
+5. You started from a known-working controller such as the Starter World third-person controller.
+
+---
+
+### My camera does not appear
+
+Check the same things as the controller.
+
+Start by copying:
+
+```text
+UserData/Starter World/cameras/thirdPerson/
+```
+
+or:
+
+```text
+UserData/Starter World/cameras/firstPerson/
+```
+
+Then modify the copy.
+
+This is currently the safest way to create a new camera package.
+
+---
+
+### Why did my changes disappear?
+
+Play mode changes are runtime changes.
+
+They are discarded when Play mode stops.
+
+This is expected behavior.
+
+If the change needs to persist between sessions, it belongs in authored World data or another persistent project resource.
+
+---
+
+### The game is running slowly
+
+The current voxel renderer is not yet optimized for large dense worlds.
+
+Very dense Worlds can therefore become expensive.
+
+Start with a smaller test area and avoid unnecessarily filling large regions with blocks until the planned voxel rendering improvements are available.
+
+---
+
+### A script is difficult to understand
+
+Start with one of the examples in the Starter World rather than reading the entire AeoScript implementation documentation.
+
+The technical documentation describes the engine in detail, but it is not intended to be the first thing a new game developer reads cover to cover.
+
+Use it as a reference when a specific question comes up.
+
+---
+
+## Where to Go Next
+
+A practical learning path is:
+
+### Beginner
+
+Start with:
+
+1. Create or copy a Starter World.
+2. Change a texture.
+3. Change a controller value.
+4. Change camera sensitivity.
+5. Add a small script.
+6. Run the game and observe the result.
+
+### Intermediate
+
+Next learn:
+
+* Entity and Cell handles
+* Input
+* Runtime Cells
+* Attributes
+* Events
+* Runtime UI
+* Closures
+* Script control
+
+### Advanced
+
+Then move into:
+
+* AeoScript lifecycle behavior
+* Runtime architecture
+* Physics integration
+* Character systems
+* Rendering architecture
+* Engine development
+
+The technical documentation remains available for all of these systems.
+
+The important thing is that you do not need to understand the entire engine before you can start building with it.
+
+---
+
 # Documentation
 
 The `docs/` directory contains the engine, architecture, development, gameplay, and AeoScript documentation.
 
+The documentation is intentionally detailed, but it is primarily technical reference material.
+
+For a new developer, start with the **Help** section above and then move into the relevant guide.
+
 ## Getting Started and Guides
 
-| Document                                                  | Description                                      |
-| --------------------------------------------------------- | ------------------------------------------------ |
-| [Getting Started](./docs/guides/GETTING_STARTED.md)       | Initial engine setup and basic workflow          |
-| [World Building](./docs/guides/WORLD_BUILDING.md)         | Creating and editing authored voxel worlds       |
-| [Building a Game](./docs/guides/BUILDING_A_GAME.md)       | Building a complete game workflow with AeoEngine |
-| [Physics Gameplay](./docs/guides/PHYSICS_GAMEPLAY.md)     | Using runtime physics in gameplay                |
-| [Character Gameplay](./docs/guides/CHARACTER_GAMEPLAY.md) | Character movement and gameplay behavior         |
-| [Scripting](./docs/guides/SCRIPTING.md)                   | Using AeoScript in gameplay                      |
-| [Textures](./docs/guides/TEXTURES.md)                     | Project-owned texture workflows                  |
-| [Debugging](./docs/guides/DEBUGGING.md)                   | Debugging engine and gameplay issues             |
+| Document                                            | Description                                      |
+| --------------------------------------------------- | ------------------------------------------------ |
+| [Getting Started](./docs/guides/GETTING_STARTED.md) | Initial engine setup and basic workflow          |
+| [World Building](./docs/guides/WORLD_BUILDING.md)   | Creating and editing authored voxel worlds       |
+| [Building a Game](./docs/guides/BUILDING_A_GAME.md) | Building a complete game workflow with AeoEngine |
 
 ## AeoScript
 
@@ -240,7 +771,7 @@ Current 0.7.3 work includes:
 
 ---
 
-## AeoScript
+## AeoScript Support
 
 AeoScript currently supports:
 

@@ -2,14 +2,14 @@ const panel = ui.new("Panel")
 const title = ui.new("Text")
 const button = ui.new("Button")
 
-panel.position = [100, 100]
-panel.size = [400, 200]
+panel.position = [50, 50]
+panel.size = [250, 125]
 
-title.text = "Hello World"
-title.position = [120, 120]
+title.text = "Hello Welcome to AeoEngine V0.7.3!"
+title.position = [60, 80]
 
 button.text = "Close"
-button.position = [120, 180]
+button.position = [150, 100]
 
 button.on_click = fn() {
     debug.log("clicked")
