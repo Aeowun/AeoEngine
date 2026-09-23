@@ -222,6 +222,18 @@ pub fn call_stdlib_function(
                     _host.engine.delete_ui_element(id)?;
                     Ok(Some(Value::Nil))
                 }
+                "get_viewport_size" => {
+                    if !args.is_empty() {
+                        return Err("ui.get_viewport_size expects no arguments".to_string());
+                    }
+
+                    let [width, height] = _host.engine.get_viewport_size();
+
+                    Ok(Some(Value::array(vec![
+                        Value::Number(width as f64),
+                        Value::Number(height as f64),
+                    ])))
+                }
                 _ => Err(format!("unknown function 'ui.{}'", method_name)),
             }
         }

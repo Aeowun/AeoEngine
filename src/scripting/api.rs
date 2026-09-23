@@ -68,7 +68,9 @@ pub trait EngineHost {
     fn drain_ui_clicks(&mut self) -> Vec<u64> {
         Vec::new()
     }
-
+    fn get_viewport_size(&self) -> [f32; 2] {
+        [0.0, 0.0]
+    }
     // Generic Gameplay, Input, Camera, Physics APIs
     fn get_input_move_vector(&self) -> [f32; 2] { [0.0, 0.0] }
     fn is_input_jump_pressed(&self) -> bool { false }

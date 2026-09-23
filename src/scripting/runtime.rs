@@ -4,26 +4,59 @@ use super::api::HostContext;
 use super::ast::{Declaration, EventDecl, Program, Statement};
 use super::execution::{FiberResult, ScriptScheduler, ScriptTaskId};
 use super::interpreter::{Interpreter, ScriptFiber, ScriptInstance};
-use super::value::Value;
-
 use super::log::LogRecord;
+use super::value::{Scope, Value};
 
 /// Runtime owner for all live AeoScript execution.
 ///
 /// The runtime connects the interpreter's persistent fibers to the cooperative
 /// scheduler. It remains single-threaded and never blocks the engine thread.
+///
+/// IMPORTANT:
+/// A top-level script gets its own persistent `Scope`.
+///
+/// Example:
+///
+///     health = 100
+///
+/// That variable lives in the top-level scope belonging to that script.
+/// Event handlers from the same script are given a clone of that Scope.
+///
+/// `Scope` internally uses shared backing storage, so cloning the Scope does
+/// NOT copy the variables. Both sides refer to the same variable storage.
 #[derive(Debug)]
 pub struct ScriptRuntime {
     interpreter: Interpreter,
     scheduler: ScriptScheduler,
     fibers: HashMap<ScriptTaskId, ScriptFiber>,
+
+    /// Every event handler is associated with the script that declared it.
+    ///
+    /// `None` is used by the older single-program runtime path.
     event_handlers: Vec<(Option<String>, EventDecl)>,
+
+    /// Persistent lexical scope for each top-level script.
+    ///
+    /// Example:
+    ///     "scripts/game_hud.aeo" -> Scope containing:
+    ///         hud_width
+    ///         hud_height
+    ///         hud_margin
+    ///         health
+    ///         gold
+    ///
+    /// Event handlers use the same shared Scope so they can read/write the
+    /// script's top-level variables.
+    top_level_scopes: HashMap<String, Scope>,
 }
 
 impl ScriptRuntime {
     pub fn new(program: Program) -> Self {
-        // Since we don't have file association in Program yet (unless I add it),
-        // we'll assume None for now. But load_from_bindings will set it later.
+        // This constructor is the older single-program runtime path.
+        //
+        // Since Program does not carry a script path here, event handlers are
+        // registered with `None`. The binding-based scene loader uses
+        // `add_event_handlers()` instead so events retain their source path.
         let event_handlers = program
             .declarations
             .iter()
@@ -41,9 +74,15 @@ impl ScriptRuntime {
             scheduler: ScriptScheduler::new(),
             fibers: HashMap::new(),
             event_handlers,
+            top_level_scopes: HashMap::new(),
         }
     }
 
+    /// Registers all event handlers declared by a specific script file.
+    ///
+    /// Keeping the script path here is critical because later, when the event
+    /// fires, we use that same path to find the script's persistent top-level
+    /// Scope.
     pub fn add_event_handlers(&mut self, script_path: String, program: &Program) {
         for decl in &program.declarations {
             if let Declaration::Event(event) = decl {
@@ -76,6 +115,7 @@ impl ScriptRuntime {
             scheduler: ScriptScheduler::new(),
             fibers: HashMap::new(),
             event_handlers,
+            top_level_scopes: HashMap::new(),
         }
     }
 
@@ -96,18 +136,13 @@ impl ScriptRuntime {
                         return false;
                     }
                 }
+
                 h.name == name
             })
             .cloned()
             .collect();
 
         for (path, handler) in matching {
-            if let Some(ref p) = path {
-                eprintln!(
-                    "[RUNTIME] dispatching event '{}' candidate handler: {}",
-                    name, p
-                );
-            }
             self.start_event_fiber(path, handler, arguments.clone())?;
         }
 
@@ -116,6 +151,7 @@ impl ScriptRuntime {
 
     pub fn cancel_fibers_for_script(&mut self, script_path: &str) {
         let norm = script_path.replace("\\", "/");
+
         let to_cancel: Vec<ScriptTaskId> = self
             .fibers
             .iter()
@@ -125,6 +161,7 @@ impl ScriptRuntime {
                         return Some(*id);
                     }
                 }
+
                 None
             })
             .collect();
@@ -135,25 +172,110 @@ impl ScriptRuntime {
         }
     }
 
+    /// Creates an event fiber.
+    ///
+    /// IMPORTANT DIAGNOSTIC POINT:
+    ///
+    /// The event's script path is used to locate the persistent top-level
+    /// Scope. We intentionally perform that lookup BEFORE moving `script_path`
+    /// into the ScriptInstance.
+    ///
+    /// We also check whether the Scope already contains `health`.
+    ///
+    /// If:
+    ///
+    ///     captured_scope = true
+    ///     health = true
+    ///
+    /// then the event handler is seeing the HUD's actual top-level scope.
+    ///
+    /// If:
+    ///
+    ///     captured_scope = true
+    ///     health = false
+    ///
+    /// then the correct Scope exists, but the HUD top-level code has not yet
+    /// declared/initialized `health`.
+    ///
+    /// If:
+    ///
+    ///     captured_scope = false
+    ///
+    /// then the event path does not match the registered top-level scope.
     fn start_event_fiber(
         &mut self,
         script_path: Option<String>,
         handler: EventDecl,
         arguments: Vec<Value>,
     ) -> Result<ScriptTaskId, String> {
-        let mut instance = ScriptInstance::new_empty();
-        instance.script_path = script_path;
+        // -------------------------------------------------------------
+        // STEP 1:
+        // Find the persistent top-level Scope belonging to this script.
+        // -------------------------------------------------------------
+        let captured_scope = script_path
+            .as_ref()
+            .and_then(|path| self.top_level_scopes.get(path));
 
+        // Clone the Scope handle.
+        //
+        // This does NOT copy the actual variable storage. Scope uses shared
+        // Arc<RefCell<...>> backing, so the event handler and top-level script
+        // share the same variables.
+        let captured_scopes: Vec<Scope> = captured_scope
+            .cloned()
+            .into_iter()
+            .collect();
+
+        // -------------------------------------------------------------
+        // STEP 2:
+        // Create the event's ScriptInstance.
+        //
+        // Do this AFTER looking up the Scope because assigning
+        // `script_path` into the instance moves the Option<String>.
+        // -------------------------------------------------------------
+        let mut instance = ScriptInstance::new_empty();
+
+        instance.script_path = script_path.clone();
+
+        // -------------------------------------------------------------
+        // STEP 3:
+        // Start the actual interpreter fiber.
+        //
+        // The captured_scopes argument is what allows the event handler to
+        // resolve top-level variables such as `health`.
+        // -------------------------------------------------------------
         let fiber = self
             .interpreter
-            .start_event_fiber(instance, handler, arguments)?;
+            .start_event_fiber(
+                instance,
+                handler.clone(),
+                arguments,
+                captured_scopes,
+            )?;
+
+        // -------------------------------------------------------------
+        // STEP 4:
+        // Register the fiber with the scheduler.
+        // -------------------------------------------------------------
         let task_id = self.scheduler.spawn();
+
         self.fibers.insert(task_id, fiber);
+
         Ok(task_id)
     }
 
-    pub fn spawn_top_level(&mut self, script_path: String) -> Result<Option<ScriptTaskId>, String> {
+    /// Spawns the older single-program top-level fiber.
+    ///
+    /// NOTE:
+    /// `spawn_top_level_custom()` is the binding-aware path used by the
+    /// current ScriptScene loader. That path creates and stores the
+    /// persistent top-level Scope needed by events.
+    pub fn spawn_top_level(
+        &mut self,
+        script_path: String,
+    ) -> Result<Option<ScriptTaskId>, String> {
         let statements = self.interpreter.program().statements.clone();
+
         if statements.is_empty() {
             return Ok(None);
         }
@@ -164,11 +286,25 @@ impl ScriptRuntime {
         let fiber = self
             .interpreter
             .start_top_level_fiber(instance, &statements)?;
+
         let task_id = self.scheduler.spawn();
+
         self.fibers.insert(task_id, fiber);
+
         Ok(Some(task_id))
     }
 
+    /// Spawns a top-level fiber for one specific script file.
+    ///
+    /// This is the important path for the current multi-script scene system.
+    ///
+    /// Each script gets:
+    ///
+    ///     1. Its own Scope.
+    ///     2. That Scope stored in `top_level_scopes`.
+    ///     3. A top-level fiber using that exact Scope.
+    ///
+    /// Later, an event from the same script can retrieve the Scope by path.
     pub fn spawn_top_level_custom(
         &mut self,
         script_path: String,
@@ -178,14 +314,32 @@ impl ScriptRuntime {
             return Ok(None);
         }
 
-        let mut instance = ScriptInstance::new_empty();
-        instance.script_path = Some(script_path);
+        // Create the persistent scope that will hold the script's globals.
+        let top_level_scope = Scope::new();
 
+        // Store the Scope BEFORE creating the fiber so the runtime can retrieve
+        // this exact shared environment later when an event fires.
+        self.top_level_scopes
+            .insert(script_path.clone(), top_level_scope.clone());
+
+        // Create the ScriptInstance for the top-level script.
+        let mut instance = ScriptInstance::new_empty();
+        instance.script_path = Some(script_path.clone());
+
+        // Start the top-level fiber using the persistent Scope.
         let fiber = self
             .interpreter
-            .start_top_level_fiber(instance, statements)?;
+            .start_top_level_fiber_with_scope(
+                instance,
+                statements,
+                top_level_scope,
+            )?;
+
+        // Schedule the top-level fiber.
         let task_id = self.scheduler.spawn();
+
         self.fibers.insert(task_id, fiber);
+
         Ok(Some(task_id))
     }
 
@@ -239,6 +393,9 @@ impl ScriptRuntime {
         Ok(task_id)
     }
 
+    /// Spawns a callable closure/function value.
+    ///
+    /// The captured scopes are supplied directly by the caller.
     pub fn spawn_callable(
         &mut self,
         compiled: std::sync::Arc<super::ast::CompiledFunction>,
@@ -248,13 +405,14 @@ impl ScriptRuntime {
         captured_scopes: Vec<super::value::Scope>,
     ) -> Result<ScriptTaskId, String> {
         let instance = ScriptInstance::new_empty();
+
         let fiber = self.interpreter.start_direct_fiber(
             instance,
             compiled,
             param_names,
             arguments,
             None,
-            function_name,
+            function_name.clone(),
             captured_scopes,
         )?;
 
@@ -285,7 +443,6 @@ impl ScriptRuntime {
         for _ in 0..ready_count {
             let task_id = match self.scheduler.pop_ready() {
                 Some(task_id) => task_id,
-
                 None => break,
             };
 
@@ -334,9 +491,13 @@ mod tests {
     use crate::scripting::value::{HandleKind, Value};
 
     fn runtime(source: &str) -> ScriptRuntime {
-        let tokens = Lexer::new(source).tokenize().expect("lexer should succeed");
+        let tokens = Lexer::new(source)
+            .tokenize()
+            .expect("lexer should succeed");
 
-        let program = Parser::new(tokens).parse().expect("parser should succeed");
+        let program = Parser::new(tokens)
+            .parse()
+            .expect("parser should succeed");
 
         ScriptRuntime::new(program)
     }
@@ -359,6 +520,7 @@ entity Test {
 
         let mut runtime = runtime(source);
         let mut em = test_host();
+
         let mut host = HostContext {
             delta_time: 1.0,
             engine: &mut em,
@@ -397,6 +559,7 @@ entity Test {
 
         let mut runtime = runtime(source);
         let mut em = test_host();
+
         let mut host = HostContext {
             delta_time: 1.0,
             engine: &mut em,
@@ -417,7 +580,10 @@ entity Test {
 
         assert_eq!(
             results,
-            vec![(task_id, FiberResult::Yield(YieldReason::WaitSeconds(1.0)))]
+            vec![(
+                task_id,
+                FiberResult::Yield(YieldReason::WaitSeconds(1.0))
+            )]
         );
 
         assert_eq!(
@@ -484,6 +650,7 @@ entity Test {
 
         let mut runtime = runtime(source);
         let mut em = test_host();
+
         let mut host = HostContext {
             delta_time: 1.0,
             engine: &mut em,
@@ -498,7 +665,9 @@ entity Test {
             .spawn(instance, "update", vec![Value::Number(1.0)])
             .expect("fiber should spawn");
 
-        let results = runtime.tick(0.0, &mut host).expect("tick should succeed");
+        let results = runtime
+            .tick(0.0, &mut host)
+            .expect("tick should succeed");
 
         assert_eq!(results, vec![(task_id, FiberResult::Complete)]);
     }
@@ -519,6 +688,7 @@ entity Test {
 
         let mut runtime = runtime(source);
         let mut em = test_host();
+
         let mut host = HostContext {
             delta_time: 1.0,
             engine: &mut em,
@@ -542,7 +712,9 @@ entity Test {
             .spawn(second_instance, "update", vec![Value::Number(1.0)])
             .expect("second fiber should spawn");
 
-        let results = runtime.tick(0.0, &mut host).expect("tick should succeed");
+        let results = runtime
+            .tick(0.0, &mut host)
+            .expect("tick should succeed");
 
         assert_eq!(results.len(), 2);
 
@@ -581,6 +753,7 @@ entity Test {
 
         let mut runtime = runtime(source);
         let mut em = test_host();
+
         let mut host = HostContext {
             delta_time: 1.0,
             engine: &mut em,
@@ -607,9 +780,7 @@ entity Test {
                 id,
                 FiberResult::Failed(ref message)
             ) if id == task_id
-                && message.contains(
-                    "greater than zero"
-                )
+                && message.contains("greater than zero")
         ));
 
         assert_eq!(
@@ -634,6 +805,7 @@ entity Test {
 
         let mut runtime = runtime(source);
         let mut em = test_host();
+
         let mut host = HostContext {
             delta_time: 1.0,
             engine: &mut em,
@@ -686,13 +858,16 @@ entity Test {
         let source = r#"
 entity Test {
     value: number = 0
+
     fn main() {
         value = 100
     }
 }
 "#;
+
         let mut runtime = runtime(source);
         let mut em = test_host();
+
         let mut host = HostContext {
             delta_time: 1.0,
             engine: &mut em,
@@ -703,8 +878,13 @@ entity Test {
             .instantiate_entity("Test", 1, &mut host)
             .unwrap();
 
-        let task_id = runtime.spawn(instance, "main", vec![]).unwrap();
-        let results = runtime.tick(0.0, &mut host).unwrap();
+        let task_id = runtime
+            .spawn(instance, "main", vec![])
+            .unwrap();
+
+        let results = runtime
+            .tick(0.0, &mut host)
+            .unwrap();
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, task_id);
@@ -729,8 +909,10 @@ entity Test {
     }
 }
 "#;
+
         let mut runtime = runtime(source);
         let mut em = test_host();
+
         let mut host = HostContext {
             delta_time: 1.0,
             engine: &mut em,
@@ -741,10 +923,16 @@ entity Test {
             .instantiate_entity("Test", 1, &mut host)
             .unwrap();
 
-        let task_id = runtime.spawn(instance, "fail", vec![]).unwrap();
-        let results = runtime.tick(0.0, &mut host).unwrap();
+        let task_id = runtime
+            .spawn(instance, "fail", vec![])
+            .unwrap();
+
+        let results = runtime
+            .tick(0.0, &mut host)
+            .unwrap();
 
         assert_eq!(results.len(), 1);
+
         match &results[0].1 {
             FiberResult::Failed(msg) => {
                 assert!(msg.contains("division by zero"));
@@ -765,9 +953,12 @@ on PlayerSpawned(player) {
     debug.log("Spawned:", player.name)
 }
 "#;
+
         let mut runtime = runtime(source);
         let mut em = test_host();
-        em.create_entity("Player"); // id 1
+
+        em.create_entity("Player");
+
         let mut host = HostContext {
             delta_time: 1.0,
             engine: &mut em,
@@ -777,12 +968,16 @@ on PlayerSpawned(player) {
             kind: HandleKind::Entity,
             id: 1,
         }];
+
         runtime
             .dispatch_event("PlayerSpawned", args, &mut host, &[])
             .unwrap();
 
         assert_eq!(runtime.task_count(), 1);
-        runtime.tick(0.0, &mut host).unwrap();
+
+        runtime
+            .tick(0.0, &mut host)
+            .unwrap();
 
         assert!(
             runtime

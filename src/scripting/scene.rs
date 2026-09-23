@@ -3756,6 +3756,7 @@ entity Test {
             move_input: glam::Vec2::ZERO,
             jump_requested: false,
             orbit_delta: [0.0, 0.0],
+            viewport_size: [0.0, 0.0],
             character_system: None,
             gameplay_camera: None,
         };
@@ -4535,6 +4536,7 @@ entity Trigger {
                 move_input: glam::Vec2::ZERO,
                 jump_requested: false,
                 orbit_delta: [0.0, 0.0],
+                viewport_size: [0.0, 0.0],
                 character_system: None,
                 gameplay_camera: None,
             };

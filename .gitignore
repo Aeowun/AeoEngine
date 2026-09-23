@@ -1,1 +1,14 @@
 /target
+/shelf/
+/workspace.xml
+
+# Generated / local assets
+.assets
+
+# Release builds
+Releases
+
+# Development starter world
+Dev/
+# Local user data
+UserData/
