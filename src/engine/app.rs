@@ -91,6 +91,9 @@ pub struct App {
     pub authored_disabled_scripts: Vec<String>,
     pub entity_manager: EntityManager,
     pub runtime_ui: crate::engine::ui::RuntimeUi,
+    pub controller_object: Option<crate::scripting::value::Value>,
+    pub camera_object: Option<crate::scripting::value::Value>,
+    pub orbit_delta: [f32; 2],
 }
 
 impl App {
@@ -110,6 +113,9 @@ impl App {
             show_open_project_dialog: false,
             show_unsaved_scripts_dialog: false,
             runtime_ui: crate::engine::ui::RuntimeUi::new(),
+            controller_object: None,
+            camera_object: None,
+            orbit_delta: [0.0, 0.0],
             is_right_mouse_down: false,
             is_middle_mouse_down: false,
             last_cursor_pos: None,
@@ -560,6 +566,7 @@ impl App {
 
     pub fn on_mouse_motion(&mut self, dx: f64, dy: f64) {
         if self.view == View::Editor && self.editor.mode == EditorMode::Play {
+            self.orbit_delta = [dx as f32, dy as f32];
             self.gameplay_camera.orbit(dx as f32, dy as f32);
         }
     }
@@ -786,6 +793,11 @@ impl App {
                         pending_enable_scripts: &mut self.script_pending_enable,
                         pending_disable_scripts: &mut self.script_pending_disable,
                         runtime_ui: &mut self.runtime_ui,
+                        move_input: glam::Vec2::ZERO,
+                        jump_requested: false,
+                        orbit_delta: [0.0, 0.0],
+                        character_system: Some(&mut self.character_system),
+                        gameplay_camera: Some(&mut self.gameplay_camera),
                     };
 
                     let mut context = HostContext {
@@ -896,10 +908,54 @@ impl App {
                     glam::Vec2::ZERO
                 };
 
-                let character_system = &mut self.character_system;
-
                 let mut contacted_this_frame = std::collections::HashSet::new();
+                let scene_opt = &mut self.script_scene;
+                let ctrl_opt = &self.controller_object;
+                let cam_opt = &self.camera_object;
+                let em = &mut self.entity_manager;
+                let world_mut = &mut self.world;
+                let dynamic_properties = &mut self.script_dynamic_properties;
+                let pending_events = &mut self.script_pending_events;
+                let test_results = &mut self.script_test_results;
+                let pending_enable = &mut self.script_pending_enable;
+                let pending_disable = &mut self.script_pending_disable;
+                let runtime_ui = &mut self.runtime_ui;
+                let character_system = &mut self.character_system;
+                let gameplay_camera = &mut self.gameplay_camera;
+                let jump_requested = self.jump_requested;
+
+                let orbit_delta = self.orbit_delta;
+                self.orbit_delta = [0.0, 0.0];
+
                 self.physics_clock.update(frame_time, |dt| {
+                    if let (Some(scene), Some(ctrl_obj)) = (scene_opt.as_mut(), ctrl_opt) {
+                        let mut bridge = ScriptHostBridge {
+                            entity_manager: em,
+                            world: world_mut,
+                            dynamic_properties,
+                            pending_events,
+                            test_results,
+                            pending_enable_scripts: pending_enable,
+                            pending_disable_scripts: pending_disable,
+                            runtime_ui,
+                            move_input: raw_input,
+                            jump_requested,
+                            orbit_delta,
+                            character_system: Some(character_system),
+                            gameplay_camera: Some(gameplay_camera),
+                        };
+                        let mut context = HostContext {
+                            delta_time: dt as f64,
+                            engine: &mut bridge,
+                        };
+                        let _ = scene.call_object_method(
+                            ctrl_obj,
+                            "update",
+                            vec![crate::scripting::value::Value::Number(dt as f64)],
+                            &mut context,
+                        );
+                    }
+
                     p_world.apply_gravity(gravity, dt);
                     p_world.integrate_positions(dt);
                     p_world.resolve_dynamic_collisions();
@@ -908,13 +964,41 @@ impl App {
                     p_world.update_sleeping(gravity);
 
                     let contacted = character_system.update(
-                        &self.world,
+                        world_mut,
                         p_world,
                         dt,
-                        world_move_input,
-                        self.jump_requested,
+                        glam::Vec2::ZERO,
+                        false,
                     );
                     contacted_this_frame.extend(contacted);
+
+                    if let (Some(scene), Some(cam_obj)) = (scene_opt.as_mut(), cam_opt) {
+                        let mut bridge = ScriptHostBridge {
+                            entity_manager: em,
+                            world: world_mut,
+                            dynamic_properties,
+                            pending_events,
+                            test_results,
+                            pending_enable_scripts: pending_enable,
+                            pending_disable_scripts: pending_disable,
+                            runtime_ui,
+                            move_input: raw_input,
+                            jump_requested,
+                            orbit_delta,
+                            character_system: Some(character_system),
+                            gameplay_camera: Some(gameplay_camera),
+                        };
+                        let mut context = HostContext {
+                            delta_time: dt as f64,
+                            engine: &mut bridge,
+                        };
+                        let _ = scene.call_object_method(
+                            cam_obj,
+                            "update",
+                            vec![crate::scripting::value::Value::Number(dt as f64)],
+                            &mut context,
+                        );
+                    }
                 });
 
                 if let Some(scene) = &mut self.script_scene {
@@ -929,6 +1013,11 @@ impl App {
                         pending_enable_scripts: &mut self.script_pending_enable,
                         pending_disable_scripts: &mut self.script_pending_disable,
                         runtime_ui: &mut self.runtime_ui,
+                        move_input: raw_input,
+                        jump_requested: self.jump_requested,
+                        orbit_delta: [0.0, 0.0],
+                        character_system: Some(&mut self.character_system),
+                        gameplay_camera: Some(&mut self.gameplay_camera),
                     };
                     let mut context = HostContext {
                         delta_time: frame_time as f64,
@@ -1070,6 +1159,8 @@ impl App {
     fn start_scripting(&mut self) {
         self.script_contacted_last_frame.clear();
         self.runtime_ui.clear();
+        self.controller_object = None;
+        self.camera_object = None;
         self.authored_disabled_scripts = self.world.disabled_scripts.clone();
         let Some(project_path) = &self.project_manager.current_project else {
             return;
@@ -1099,6 +1190,58 @@ impl App {
                         e
                     ));
                 } else {
+                    let ctrl_name = self.world.selected_controller.clone();
+                    let cam_name = self.world.selected_camera.clone();
+
+                    let player_val = crate::scripting::value::Value::Namespace("player".to_string());
+                    let camera_val = crate::scripting::value::Value::Namespace("camera".to_string());
+                    let input_val = crate::scripting::value::Value::Namespace("input".to_string());
+
+                    let mut bridge = ScriptHostBridge {
+                        entity_manager: &mut self.entity_manager,
+                        world: &mut self.world,
+                        dynamic_properties: &mut self.script_dynamic_properties,
+                        pending_events: &mut self.script_pending_events,
+                        test_results: &mut self.script_test_results,
+                        pending_enable_scripts: &mut self.script_pending_enable,
+                        pending_disable_scripts: &mut self.script_pending_disable,
+                        runtime_ui: &mut self.runtime_ui,
+                        move_input: glam::Vec2::ZERO,
+                        jump_requested: false,
+                        orbit_delta: [0.0, 0.0],
+                        character_system: Some(&mut self.character_system),
+                        gameplay_camera: Some(&mut self.gameplay_camera),
+                    };
+                    let mut context = HostContext {
+                        delta_time: 0.0,
+                        engine: &mut bridge,
+                    };
+
+                    let ctrl_class = match ctrl_name.as_str() {
+                        "thirdPerson_Controller" => "ThirdPersonController",
+                        other => other,
+                    };
+                    if let Ok(obj) = scene.instantiate_script_object(
+                        ctrl_class,
+                        vec![player_val.clone(), camera_val.clone(), input_val.clone()],
+                        &mut context,
+                    ) {
+                        self.controller_object = Some(obj);
+                    }
+
+                    let cam_class = match cam_name.as_str() {
+                        "thirdPerson" => "ThirdPersonCamera",
+                        "firstPerson" => "FirstPersonCamera",
+                        other => other,
+                    };
+                    if let Ok(obj) = scene.instantiate_script_object(
+                        cam_class,
+                        vec![player_val.clone()],
+                        &mut context,
+                    ) {
+                        self.camera_object = Some(obj);
+                    }
+
                     self.script_scene = Some(scene);
                 }
             }
@@ -1135,6 +1278,8 @@ impl App {
         self.script_pending_disable.clear();
         self.script_dynamic_properties.clear();
         self.runtime_ui.clear();
+        self.controller_object = None;
+        self.camera_object = None;
         self.world.disabled_scripts = std::mem::take(&mut self.authored_disabled_scripts);
 
         em.clear();
@@ -1155,6 +1300,11 @@ impl App {
                 pending_enable_scripts: &mut self.script_pending_enable,
                 pending_disable_scripts: &mut self.script_pending_disable,
                 runtime_ui: &mut self.runtime_ui,
+                move_input: glam::Vec2::ZERO,
+                jump_requested: false,
+                orbit_delta: [0.0, 0.0],
+                character_system: Some(&mut self.character_system),
+                gameplay_camera: Some(&mut self.gameplay_camera),
             };
 
             let mut context = HostContext {

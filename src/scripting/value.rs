@@ -112,6 +112,9 @@ pub enum Value {
 
     /// Represents a built-in library namespace (e.g. math, cell).
     Namespace(String),
+
+    /// Reference to a script-defined object instance (`entity`).
+    Object(Arc<RefCell<crate::scripting::interpreter::ScriptInstance>>),
 }
 
 impl Value {
@@ -126,6 +129,7 @@ impl Value {
             Self::Handle { .. } => "handle",
             Self::Function(..) => "function",
             Self::Namespace(_) => "namespace",
+            Self::Object(_) => "object",
         }
     }
 
@@ -140,6 +144,7 @@ impl Value {
             Self::Bool(value) => Ok(*value),
             Self::Nil => Ok(false),
             Self::Handle { .. } => Ok(true),
+            Self::Object(_) => Ok(true),
             other => Err(format!(
                 "expected bool or optional value in condition, got {}",
                 other.type_name()
@@ -265,6 +270,8 @@ impl Value {
             Self::Function(..) => "function".to_string(),
 
             Self::Namespace(name) => format!("namespace:{}", name),
+
+            Self::Object(inst) => format!("object:{}", inst.borrow().entity_name()),
         }
     }
 }
@@ -306,6 +313,7 @@ impl PartialEq for Value {
             ) => Arc::ptr_eq(a_compiled, b_compiled) && a_params == b_params && a_caps == b_caps,
 
             (Self::Namespace(a), Self::Namespace(b)) => a == b,
+            (Self::Object(a), Self::Object(b)) => Arc::ptr_eq(a, b),
             _ => false,
         }
     }

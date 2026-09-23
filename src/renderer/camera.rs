@@ -227,7 +227,7 @@ impl GameplayCamera {
         }
     }
 
-    fn resolve_collision(&self, target: Vec3, desired: Vec3, world: &World) -> Vec3 {
+    pub fn resolve_collision(&self, target: Vec3, desired: Vec3, world: &World) -> Vec3 {
         let dir = desired - target;
 
         let dist = dir.length();

@@ -43,6 +43,11 @@ impl CharacterSystem {
         self.characters.values()
     }
 
+    /// Returns an iterator over all active runtime characters mutably.
+    pub fn get_active_characters_mut(&mut self) -> impl Iterator<Item = &mut Character> {
+        self.characters.values_mut()
+    }
+
     /// Discards all runtime character state.
     pub fn clear(&mut self) {
         self.characters.clear();
@@ -68,21 +73,32 @@ impl CharacterSystem {
         let mut contacted_cells = std::collections::HashSet::new();
         for character in self.characters.values_mut() {
             // 1. Horizontal Movement
-            // We apply input directly to horizontal velocity.
-            let horizontal_vel = if input.length_squared() > 0.001 {
-                input.normalize() * MOVE_SPEED
-            } else {
-                Vec2::ZERO
-            };
+            if input.length_squared() > 0.001 {
+                let horizontal_vel = input.normalize() * MOVE_SPEED;
+                character.movement.velocity.x = horizontal_vel.x;
+                character.movement.velocity.z = horizontal_vel.y;
 
-            character.movement.velocity.x = horizontal_vel.x;
-            character.movement.velocity.z = horizontal_vel.y;
+                let angle = f32::atan2(horizontal_vel.x, horizontal_vel.y);
+                character.transform.rotation = Quat::from_rotation_y(angle);
+
+                character.animation.current_state = AnimationState::Walk;
+                character.movement.state = MovementState::Walk;
+                character
+                    .animation_controller
+                    .select_animation(TargetAnimation::Walk);
+            } else if character.movement.velocity.x.abs() < 0.001
+                && character.movement.velocity.z.abs() < 0.001
+            {
+                character.animation.current_state = AnimationState::Idle;
+                character.movement.state = MovementState::Idle;
+                character
+                    .animation_controller
+                    .select_animation(TargetAnimation::Idle);
+            }
 
             // 2. Jumping
-            // Jump is only accepted if the character is grounded.
             if jump_requested && character.movement.is_grounded {
                 character.movement.velocity.y = JUMP_IMPULSE;
-                // Character is no longer grounded immediately after jumping.
                 character.movement.is_grounded = false;
             }
 
@@ -93,42 +109,16 @@ impl CharacterSystem {
             let next_pos = character.transform.position + character.movement.velocity * dt;
             character.transform.position = next_pos;
 
-            // 5. Orientation
-            // Character faces the direction of horizontal movement.
-            if horizontal_vel.length_squared() > 0.001 {
-                let angle = f32::atan2(horizontal_vel.x, horizontal_vel.y);
-                character.transform.rotation = Quat::from_rotation_y(angle);
-            }
-
-            // 6. Static Voxel Collision Resolution
-            // Note: We use a static helper function to avoid borrow checker errors
-            // when accessing world/physics while iterating characters.
+            // 5. Static Voxel Collision Resolution
             Self::resolve_static_voxel_collisions(character, physics_world, &mut contacted_cells);
 
-            // Dynamic Body Collision Resolution
+            // 6. Dynamic Body Collision Resolution
             Self::resolve_dynamic_body_collisions(character, physics_world, &mut contacted_cells);
 
-            // 7. Animation State Handoff
-            let horizontal_speed = horizontal_vel.length();
-            if horizontal_speed > 0.1 {
-                character.animation.current_state = AnimationState::Walk;
-                character.movement.state = MovementState::Walk;
-                character
-                    .animation_controller
-                    .select_animation(TargetAnimation::Walk);
-            } else {
-                character.animation.current_state = AnimationState::Idle;
-                character.movement.state = MovementState::Idle;
-                character
-                    .animation_controller
-                    .select_animation(TargetAnimation::Idle);
-            }
-
-            // 8. Advance Custom Animation Controller
-            // This advances time and blends weights.
+            // 7. Advance Custom Animation Controller
             character.animation_controller.update(dt);
 
-            // 9. Evaluate Pose for Renderer
+            // 8. Evaluate Pose for Renderer
             character.current_pose = character.animation_controller.evaluate_pose();
         }
         contacted_cells

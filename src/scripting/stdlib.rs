@@ -3,9 +3,19 @@ use crate::scripting::interpreter::Interpreter;
 use crate::scripting::value::{HandleKind, Value};
 
 pub fn resolve_stdlib_property(
-    _object_name: &str,
-    _property_name: &str,
+    object_name: &str,
+    property_name: &str,
+    host: &mut HostContext,
 ) -> Result<Option<Value>, String> {
+    if object_name == "player" && property_name == "position" {
+        if let Some(pos) = host.engine.get_player_position() {
+            return Ok(Some(Value::array(vec![
+                Value::Number(pos[0] as f64),
+                Value::Number(pos[1] as f64),
+                Value::Number(pos[2] as f64),
+            ])));
+        }
+    }
     Ok(None)
 }
 
@@ -19,6 +29,172 @@ pub fn call_stdlib_function(
     _host: &mut HostContext,
 ) -> Result<Option<Value>, String> {
     match object_name {
+        "input" => {
+            match method_name {
+                "get_move_vector" => {
+                    let mv = _host.engine.get_input_move_vector();
+                    Ok(Some(Value::array(vec![
+                        Value::Number(mv[0] as f64),
+                        Value::Number(mv[1] as f64),
+                    ])))
+                }
+                "is_jump_pressed" => Ok(Some(Value::Bool(_host.engine.is_input_jump_pressed()))),
+                "get_orbit_delta" => {
+                    let orbit = _host.engine.get_input_orbit_delta();
+                    Ok(Some(Value::array(vec![
+                        Value::Number(orbit[0] as f64),
+                        Value::Number(orbit[1] as f64),
+                    ])))
+                }
+                _ => Err(format!("unknown function 'input.{}'", method_name)),
+            }
+        }
+        "camera" => {
+            match method_name {
+                "get_horizontal_basis" => {
+                    let (f, r) = _host.engine.get_camera_horizontal_basis();
+                    Ok(Some(Value::array(vec![
+                        Value::array(vec![
+                            Value::Number(f[0] as f64),
+                            Value::Number(f[1] as f64),
+                            Value::Number(f[2] as f64),
+                        ]),
+                        Value::array(vec![
+                            Value::Number(r[0] as f64),
+                            Value::Number(r[1] as f64),
+                            Value::Number(r[2] as f64),
+                        ]),
+                    ])))
+                }
+                "set_position" => {
+                    if args.len() == 3 {
+                        let x = args[0].as_number()? as f32;
+                        let y = args[1].as_number()? as f32;
+                        let z = args[2].as_number()? as f32;
+                        _host.engine.set_camera_position([x, y, z]);
+                        Ok(Some(Value::Nil))
+                    } else if args.len() == 1 {
+                        let basket = args[0].as_basket()?;
+                        let borrowed = basket.borrow();
+                        if borrowed.elements.len() == 3 {
+                            let x = borrowed.elements[0].as_number()? as f32;
+                            let y = borrowed.elements[1].as_number()? as f32;
+                            let z = borrowed.elements[2].as_number()? as f32;
+                            _host.engine.set_camera_position([x, y, z]);
+                            return Ok(Some(Value::Nil));
+                        }
+                        Err("camera.set_position expects 3 numbers or a 3D array".to_string())
+                    } else {
+                        Err("camera.set_position expects 3 numbers or a 3D array".to_string())
+                    }
+                }
+                "set_target" => {
+                    if args.len() == 3 {
+                        let x = args[0].as_number()? as f32;
+                        let y = args[1].as_number()? as f32;
+                        let z = args[2].as_number()? as f32;
+                        _host.engine.set_camera_target([x, y, z]);
+                        Ok(Some(Value::Nil))
+                    } else if args.len() == 1 {
+                        let basket = args[0].as_basket()?;
+                        let borrowed = basket.borrow();
+                        if borrowed.elements.len() == 3 {
+                            let x = borrowed.elements[0].as_number()? as f32;
+                            let y = borrowed.elements[1].as_number()? as f32;
+                            let z = borrowed.elements[2].as_number()? as f32;
+                            _host.engine.set_camera_target([x, y, z]);
+                            return Ok(Some(Value::Nil));
+                        }
+                        Err("camera.set_target expects 3 numbers or a 3D array".to_string())
+                    } else {
+                        Err("camera.set_target expects 3 numbers or a 3D array".to_string())
+                    }
+                }
+                "set_orientation" => {
+                    if args.len() != 2 {
+                        return Err("camera.set_orientation expects 2 numbers (yaw, pitch)".to_string());
+                    }
+                    let yaw = args[0].as_number()? as f32;
+                    let pitch = args[1].as_number()? as f32;
+                    _host.engine.set_camera_orientation(yaw, pitch);
+                    Ok(Some(Value::Nil))
+                }
+                _ => Err(format!("unknown function 'camera.{}'", method_name)),
+            }
+        }
+        "physics" => {
+            match method_name {
+                "resolve_camera_collision" => {
+                    if args.len() != 2 {
+                        return Err("physics.resolve_camera_collision expects target and desired arrays".to_string());
+                    }
+                    let t_basket = args[0].as_basket()?;
+                    let d_basket = args[1].as_basket()?;
+                    let tb = t_basket.borrow();
+                    let db = d_basket.borrow();
+                    if tb.elements.len() != 3 || db.elements.len() != 3 {
+                        return Err("target and desired must be 3-element arrays".to_string());
+                    }
+                    let target = [
+                        tb.elements[0].as_number()? as f32,
+                        tb.elements[1].as_number()? as f32,
+                        tb.elements[2].as_number()? as f32,
+                    ];
+                    let desired = [
+                        db.elements[0].as_number()? as f32,
+                        db.elements[1].as_number()? as f32,
+                        db.elements[2].as_number()? as f32,
+                    ];
+                    let actual = _host.engine.resolve_camera_collision(target, desired);
+                    Ok(Some(Value::array(vec![
+                        Value::Number(actual[0] as f64),
+                        Value::Number(actual[1] as f64),
+                        Value::Number(actual[2] as f64),
+                    ])))
+                }
+                _ => Err(format!("unknown function 'physics.{}'", method_name)),
+            }
+        }
+        "player" => {
+            match method_name {
+                "set_horizontal_velocity" => {
+                    if args.len() != 2 {
+                        return Err("player.set_horizontal_velocity expects 2 numbers (vx, vz)".to_string());
+                    }
+                    let vx = args[0].as_number()? as f32;
+                    let vz = args[1].as_number()? as f32;
+                    _host.engine.set_player_horizontal_velocity(vx, vz);
+                    Ok(Some(Value::Nil))
+                }
+                "set_facing_direction" => {
+                    if args.len() != 2 {
+                        return Err("player.set_facing_direction expects 2 numbers (dx, dz)".to_string());
+                    }
+                    let dx = args[0].as_number()? as f32;
+                    let dz = args[1].as_number()? as f32;
+                    _host.engine.set_player_facing_direction(dx, dz);
+                    Ok(Some(Value::Nil))
+                }
+                "select_animation" => {
+                    if args.len() != 1 {
+                        return Err("player.select_animation expects 1 string".to_string());
+                    }
+                    let anim = args[0].as_string()?;
+                    _host.engine.select_player_animation(anim);
+                    Ok(Some(Value::Nil))
+                }
+                "is_grounded" => Ok(Some(Value::Bool(_host.engine.is_player_grounded()))),
+                "apply_vertical_impulse" => {
+                    if args.len() != 1 {
+                        return Err("player.apply_vertical_impulse expects 1 number".to_string());
+                    }
+                    let impulse = args[0].as_number()? as f32;
+                    _host.engine.apply_player_vertical_impulse(impulse);
+                    Ok(Some(Value::Nil))
+                }
+                _ => Err(format!("unknown function 'player.{}'", method_name)),
+            }
+        }
         "ui" => {
             match method_name {
                 "new" => {

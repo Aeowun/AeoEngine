@@ -43,6 +43,15 @@ impl ScriptInstance {
         }
     }
 
+    pub fn new_entity(entity_name: &str) -> Self {
+        Self {
+            id: 0,
+            entity_name: entity_name.to_string(),
+            script_path: None,
+            fields: BTreeMap::new(),
+        }
+    }
+
     pub fn with_path(mut self, path: String) -> Self {
         self.script_path = Some(path);
         self
@@ -1618,6 +1627,12 @@ impl Interpreter {
                                 ));
                             }
                         }
+                        Value::Object(instance_arc) => instance_arc
+                            .borrow()
+                            .fields
+                            .get(name)
+                            .cloned()
+                            .unwrap_or(Value::Nil),
                         _ => {
                             return Err(format!(
                                 "cannot access member on type {}",
@@ -1639,6 +1654,14 @@ impl Interpreter {
                     }
                     Value::Handle { kind, id } => {
                         set_host_member_property(host, kind, id, name, value)
+                    }
+                    Value::Object(instance_arc) => {
+                        if matches!(value, Value::Nil) {
+                            instance_arc.borrow_mut().fields.remove(name);
+                        } else {
+                            instance_arc.borrow_mut().fields.insert(name.clone(), value);
+                        }
+                        Ok(())
                     }
                     _ => Err(format!(
                         "cannot assign to member of type {}",
@@ -1917,6 +1940,8 @@ impl Interpreter {
         }
 
         match &expression.kind {
+            ExpressionKind::Literal(val) => Ok(val.clone()),
+
             ExpressionKind::Number(value) => Ok(Value::Number(*value)),
 
             ExpressionKind::String(value) => Ok(Value::String(value.clone())),
@@ -2150,7 +2175,7 @@ impl Interpreter {
                     if let Some(value) = resolve_host_property(host, namespace, &name)? {
                         return Ok(value);
                     }
-                    if let Some(value) = super::stdlib::resolve_stdlib_property(namespace, &name)? {
+                    if let Some(value) = super::stdlib::resolve_stdlib_property(namespace, &name, host)? {
                         return Ok(value);
                     }
                 }
@@ -2173,6 +2198,24 @@ impl Interpreter {
                                 name,
                                 kind.name()
                             ))
+                        }
+                    }
+
+                    Value::Object(ref instance_arc) => {
+                        let borrowed = instance_arc.borrow();
+                        if let Some(val) = borrowed.fields.get(name) {
+                            Ok(val.clone())
+                        } else if let Some(function) = self.find_function(&borrowed.entity_name, name) {
+                            let cache_key = (borrowed.entity_name.clone(), name.clone());
+                            let compiled = if let Some(compiled) = self.compiled_functions.get(&cache_key) {
+                                Arc::clone(compiled)
+                            } else {
+                                Arc::new(compile_function(&function))
+                            };
+                            let param_names = function.parameters.iter().map(|p| p.name.clone()).collect();
+                            Ok(Value::Function(compiled, param_names, vec![]))
+                        } else {
+                            Ok(Value::Nil)
                         }
                     }
 
@@ -2307,7 +2350,52 @@ impl Interpreter {
         )
     }
 
-    fn eval_call_opt_fiber(
+    pub fn call_object_method_direct(
+        &mut self,
+        object: &Value,
+        method_name: &str,
+        args: Vec<Value>,
+        host: &mut HostContext,
+    ) -> Result<Value, String> {
+        let Value::Object(instance_arc) = object else {
+            return Err(format!("expected Value::Object, got {}", object.type_name()));
+        };
+
+        let entity_name = instance_arc.borrow().entity_name().to_string();
+        let Some(function) = self.find_function(&entity_name, method_name) else {
+            return Err(format!("cannot access method '{}' on {}", method_name, entity_name));
+        };
+
+        let cache_key = (entity_name.clone(), method_name.to_string());
+        let compiled = if let Some(compiled) = self.compiled_functions.get(&cache_key) {
+            Arc::clone(compiled)
+        } else {
+            let compiled = Arc::new(compile_function(&function));
+            self.compiled_functions.insert(cache_key.clone(), Arc::clone(&compiled));
+            compiled
+        };
+
+        let param_names = function.parameters.iter().map(|p| p.name.clone()).collect();
+        let mut target_instance = instance_arc.borrow().clone();
+
+        let result = self.invoke_callable_opt_fiber(
+            &mut target_instance,
+            compiled,
+            param_names,
+            args,
+            Some(Value::Object(Arc::clone(instance_arc))),
+            method_name.to_string(),
+            host,
+            vec![],
+            None,
+            None,
+        )?;
+
+        *instance_arc.borrow_mut() = target_instance;
+        Ok(result)
+    }
+
+    pub(crate) fn eval_call_opt_fiber(
         &mut self,
         instance: &mut ScriptInstance,
         scopes: &mut Vec<Scope>,
@@ -2442,7 +2530,123 @@ impl Interpreter {
                     return Err(format!("cannot access member '{}' on {}", name, type_name));
                 }
 
+                Value::Object(instance_arc) => {
+                    let entity_name = instance_arc.borrow().entity_name().to_string();
+                    if let Some(function) = self.find_function(&entity_name, name) {
+                        let cache_key = (entity_name.clone(), name.clone());
+                        let compiled = if let Some(compiled) = self.compiled_functions.get(&cache_key) {
+                            Arc::clone(compiled)
+                        } else {
+                            let compiled = Arc::new(compile_function(&function));
+                            self.compiled_functions.insert(cache_key.clone(), Arc::clone(&compiled));
+                            compiled
+                        };
+                        let param_names = function.parameters.iter().map(|p| p.name.clone()).collect();
+
+                        let mut target_instance = instance_arc.borrow().clone();
+                        let result = self.invoke_callable_opt_fiber(
+                            &mut target_instance,
+                            compiled,
+                            param_names,
+                            arg_values,
+                            Some(Value::Object(Arc::clone(instance_arc))),
+                            name.clone(),
+                            host,
+                            vec![],
+                            Some(call_span),
+                            opt_fiber,
+                        )?;
+                        *instance_arc.borrow_mut() = target_instance;
+                        return Ok(result);
+                    } else if let Some(val) = instance_arc.borrow().fields.get(name).cloned() {
+                        if let Value::Function(compiled, params, caps) = val {
+                            let mut target_instance = instance_arc.borrow().clone();
+                            let result = self.invoke_callable_opt_fiber(
+                                &mut target_instance,
+                                compiled,
+                                params,
+                                arg_values,
+                                Some(Value::Object(Arc::clone(instance_arc))),
+                                name.clone(),
+                                host,
+                                caps,
+                                Some(call_span),
+                                opt_fiber,
+                            )?;
+                            *instance_arc.borrow_mut() = target_instance;
+                            return Ok(result);
+                        }
+                    }
+                    return Err(format!("cannot access method '{}' on {}", name, entity_name));
+                }
+
                 _ => {}
+            }
+        }
+
+        if let ExpressionKind::Identifier(ref type_name) = callee.kind {
+            if let Some(entity) = self.find_entity(type_name) {
+                let arg_values = self.eval_arguments_opt_fiber(
+                    instance,
+                    scopes,
+                    arguments,
+                    host,
+                    captured_scopes,
+                    opt_fiber.as_deref_mut(),
+                )?;
+
+                let mut obj_instance = ScriptInstance::new_entity(type_name);
+
+                for member in &entity.members {
+                    if let EntityMember::Field(field) = member {
+                        let init_val = if let Some(ref init_expr) = field.initializer {
+                            self.eval_expression_opt_fiber(
+                                &mut obj_instance,
+                                scopes,
+                                init_expr,
+                                host,
+                                captured_scopes,
+                                opt_fiber.as_deref_mut(),
+                            )?
+                        } else {
+                            Value::Nil
+                        };
+                        obj_instance.fields.insert(field.name.clone(), init_val);
+                    }
+                }
+
+                let obj_arc = Arc::new(RefCell::new(obj_instance));
+                if let Some(constructor) = entity.members.iter().find_map(|m| match m {
+                    EntityMember::Function(f) if f.name == "constructor" => Some(f.clone()),
+                    _ => None,
+                }) {
+                    let cache_key = (type_name.clone(), "constructor".to_string());
+                    let compiled = if let Some(compiled) = self.compiled_functions.get(&cache_key) {
+                        Arc::clone(compiled)
+                    } else {
+                        let compiled = Arc::new(compile_function(&constructor));
+                        self.compiled_functions.insert(cache_key.clone(), Arc::clone(&compiled));
+                        compiled
+                    };
+                    let param_names = constructor.parameters.iter().map(|p| p.name.clone()).collect();
+
+                    let mut target_instance = obj_arc.borrow().clone();
+                    let _ = self.invoke_callable_opt_fiber(
+                        &mut target_instance,
+                        compiled,
+                        param_names,
+                        arg_values,
+                        Some(Value::Object(Arc::clone(&obj_arc))),
+                        "constructor".to_string(),
+                        host,
+                        vec![],
+                        Some(call_span),
+                        opt_fiber,
+                    )?;
+                    *obj_arc.borrow_mut() = target_instance;
+                }
+
+                return Ok(Value::Object(obj_arc));
             }
         }
 
@@ -2793,6 +2997,10 @@ impl Interpreter {
             || name == "test"
             || name == "time"
             || name == "ui"
+            || name == "input"
+            || name == "camera"
+            || name == "physics"
+            || name == "player"
         {
             return Ok(Value::Namespace(name.to_string()));
         }
@@ -5214,5 +5422,53 @@ entity Test {
             .unwrap();
         assert_eq!(instance.get_field("r1"), Some(&Value::Number(12.0)));
         assert_eq!(instance.get_field("r2"), Some(&Value::Number(101.0)));
+    }
+
+    #[test]
+    fn test_script_object_constructor_and_persistent_fields() {
+        let source = r#"
+entity Counter {
+    count: number = 0
+
+    fn constructor(start) {
+        count = start
+    }
+
+    fn increment() {
+        count = count + 1
+        return count
+    }
+}
+
+entity Test {
+    r1: number = 0
+    r2: number = 0
+    r3: number = 0
+
+    fn main() {
+        const c = Counter(10)
+        r1 = c.count
+        c.increment()
+        r2 = c.count
+        c.increment()
+        r3 = c.count
+    }
+}
+"#;
+        let mut interpreter = interpreter(source);
+        let mut em = test_host();
+        let mut host = HostContext {
+            delta_time: 1.0,
+            engine: &mut em,
+        };
+        let mut instance = interpreter
+            .instantiate_entity("Test", 1, &mut host)
+            .unwrap();
+        interpreter
+            .call(&mut instance, "main", vec![], &mut host)
+            .unwrap();
+        assert_eq!(instance.get_field("r1"), Some(&Value::Number(10.0)));
+        assert_eq!(instance.get_field("r2"), Some(&Value::Number(11.0)));
+        assert_eq!(instance.get_field("r3"), Some(&Value::Number(12.0)));
     }
 }

@@ -18,11 +18,16 @@ pub struct ScriptHostBridge<'a> {
     pub pending_enable_scripts: &'a mut Vec<String>,
     pub pending_disable_scripts: &'a mut Vec<String>,
     pub runtime_ui: &'a mut crate::engine::ui::RuntimeUi,
+    pub move_input: glam::Vec2,
+    pub jump_requested: bool,
+    pub orbit_delta: [f32; 2],
+    pub character_system: Option<&'a mut crate::character::CharacterSystem>,
+    pub gameplay_camera: Option<&'a mut crate::renderer::camera::GameplayCamera>,
 }
 
 fn norm_path(path: &str) -> String {
     let clean = path.replace("\\", "/");
-    if clean.starts_with("scripts/") {
+    if clean.starts_with("scripts/") || clean.starts_with("controllers/") || clean.starts_with("cameras/") {
         clean
     } else {
         format!("scripts/{}", clean)
@@ -611,6 +616,115 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
     fn drain_ui_clicks(&mut self) -> Vec<u64> {
         self.runtime_ui.drain_pending_clicks()
     }
+
+    fn get_input_move_vector(&self) -> [f32; 2] {
+        [self.move_input.x, self.move_input.y]
+    }
+
+    fn is_input_jump_pressed(&self) -> bool {
+        self.jump_requested
+    }
+
+    fn get_input_orbit_delta(&self) -> [f32; 2] {
+        self.orbit_delta
+    }
+
+    fn get_camera_horizontal_basis(&self) -> ([f32; 3], [f32; 3]) {
+        if let Some(ref cam) = self.gameplay_camera {
+            let (f, r) = cam.get_horizontal_basis();
+            ([f.x, f.y, f.z], [r.x, r.y, r.z])
+        } else {
+            ([0.0, 0.0, -1.0], [1.0, 0.0, 0.0])
+        }
+    }
+
+    fn set_camera_position(&mut self, pos: [f32; 3]) {
+        if let Some(ref mut cam) = self.gameplay_camera {
+            cam.current_position = Vec3::new(pos[0], pos[1], pos[2]);
+        }
+    }
+
+    fn set_camera_target(&mut self, target: [f32; 3]) {
+        if let Some(ref mut cam) = self.gameplay_camera {
+            cam.current_target = Vec3::new(target[0], target[1], target[2]);
+        }
+    }
+
+    fn set_camera_orientation(&mut self, yaw: f32, pitch: f32) {
+        if let Some(ref mut cam) = self.gameplay_camera {
+            cam.yaw = yaw;
+            cam.pitch = pitch;
+        }
+    }
+
+    fn resolve_camera_collision(&self, target: [f32; 3], desired: [f32; 3]) -> [f32; 3] {
+        if let Some(ref cam) = self.gameplay_camera {
+            let t = Vec3::new(target[0], target[1], target[2]);
+            let d = Vec3::new(desired[0], desired[1], desired[2]);
+            let res = cam.resolve_collision(t, d, self.world);
+            [res.x, res.y, res.z]
+        } else {
+            desired
+        }
+    }
+
+    fn get_player_position(&self) -> Option<[f32; 3]> {
+        if let Some(ref sys) = self.character_system {
+            if let Some(player) = sys.get_active_characters().next() {
+                let p = player.transform.position;
+                return Some([p.x, p.y, p.z]);
+            }
+        }
+        None
+    }
+
+    fn set_player_horizontal_velocity(&mut self, vx: f32, vz: f32) {
+        if let Some(ref mut sys) = self.character_system {
+            if let Some(player) = sys.get_active_characters_mut().next() {
+                player.movement.velocity.x = vx;
+                player.movement.velocity.z = vz;
+            }
+        }
+    }
+
+    fn set_player_facing_direction(&mut self, dx: f32, dz: f32) {
+        if let Some(ref mut sys) = self.character_system {
+            if let Some(player) = sys.get_active_characters_mut().next() {
+                let angle = f32::atan2(dx, dz);
+                player.transform.rotation = glam::Quat::from_rotation_y(angle);
+            }
+        }
+    }
+
+    fn select_player_animation(&mut self, anim: &str) {
+        if let Some(ref mut sys) = self.character_system {
+            if let Some(player) = sys.get_active_characters_mut().next() {
+                let target_anim = match anim {
+                    "Walk" => crate::character_custom::TargetAnimation::Walk,
+                    _ => crate::character_custom::TargetAnimation::Idle,
+                };
+                player.animation_controller.select_animation(target_anim);
+            }
+        }
+    }
+
+    fn is_player_grounded(&self) -> bool {
+        if let Some(ref sys) = self.character_system {
+            if let Some(player) = sys.get_active_characters().next() {
+                return player.movement.is_grounded;
+            }
+        }
+        true
+    }
+
+    fn apply_player_vertical_impulse(&mut self, impulse: f32) {
+        if let Some(ref mut sys) = self.character_system {
+            if let Some(player) = sys.get_active_characters_mut().next() {
+                player.movement.velocity.y = impulse;
+                player.movement.is_grounded = false;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -655,6 +769,11 @@ mod tests {
             pending_enable_scripts: &mut pending_enable_scripts,
             pending_disable_scripts: &mut pending_disable_scripts,
             runtime_ui: &mut runtime_ui,
+            move_input: glam::Vec2::ZERO,
+            jump_requested: false,
+            orbit_delta: [0.0, 0.0],
+            character_system: None,
+            gameplay_camera: None,
         };
 
         let result = bridge
@@ -710,6 +829,11 @@ mod tests {
             pending_enable_scripts: &mut pending_enable_scripts,
             pending_disable_scripts: &mut pending_disable_scripts,
             runtime_ui: &mut runtime_ui,
+            move_input: glam::Vec2::ZERO,
+            jump_requested: false,
+            orbit_delta: [0.0, 0.0],
+            character_system: None,
+            gameplay_camera: None,
         };
 
         // 1. Initial read should be authored value

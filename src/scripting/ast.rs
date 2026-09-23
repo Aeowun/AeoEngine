@@ -215,6 +215,7 @@ pub enum ExpressionKind {
     String(String),
     Bool(bool),
     Nil,
+    Literal(crate::scripting::value::Value),
 
     Identifier(String),
 

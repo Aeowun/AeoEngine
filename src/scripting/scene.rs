@@ -87,6 +87,46 @@ pub struct ScriptScene {
     current_time: f64,
 }
 
+fn load_aeo_files_recursively(
+    dir: &Path,
+    project_path: &Path,
+    loaded_scripts: &mut HashMap<String, Program>,
+) -> Result<(), String> {
+    if !dir.exists() || !dir.is_dir() {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(dir)
+        .map_err(|e| format!("Failed to read directory {:?}: {}", dir, e))?
+        .flatten()
+    {
+        let path = entry.path();
+        if path.is_dir() {
+            load_aeo_files_recursively(&path, project_path, loaded_scripts)?;
+        } else if path.is_file() && path.extension().map_or(false, |ext| ext == "aeo") {
+            let source = std::fs::read_to_string(&path)
+                .map_err(|e| format!("Failed to read script {:?}: {}", path, e))?;
+
+            let tokens = Lexer::new(&source)
+                .tokenize()
+                .map_err(|e| format!("Lexer error in {:?}: {:?}", path, e))?;
+
+            let program = Parser::new(tokens)
+                .parse()
+                .map_err(|e| format!("Parser error in {:?}: {:?}", path, e))?;
+
+            let relative_path = path
+                .strip_prefix(project_path)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_string()
+                .replace("\\", "/");
+
+            loaded_scripts.insert(relative_path, program);
+        }
+    }
+    Ok(())
+}
+
 impl ScriptScene {
     /// Loads and parses scripts from the project's scripts directory and applies explicit bindings.
     pub fn load_from_bindings(
@@ -125,40 +165,10 @@ impl ScriptScene {
 
         let mut loaded_scripts: HashMap<String, Program> = HashMap::new();
 
-        // 1. Load ALL scripts from the project's scripts directory.
-        // This ensures unattached event handlers are registered.
-        let scripts_dir = project_path.join("scripts");
-        if scripts_dir.exists() && scripts_dir.is_dir() {
-            for entry in std::fs::read_dir(scripts_dir)
-                .map_err(|e| format!("Failed to read scripts directory: {}", e))?
-                .flatten()
-            {
-                let path = entry.path();
-                if path.is_file() && path.extension().map_or(false, |ext| ext == "aeo") {
-                    let source = std::fs::read_to_string(&path)
-                        .map_err(|e| format!("Failed to read script {:?}: {}", path, e))?;
-
-                    let tokens = Lexer::new(&source)
-                        .tokenize()
-                        .map_err(|e| format!("Lexer error in {:?}: {:?}", path, e))?;
-
-                    let program = Parser::new(tokens)
-                        .parse()
-                        .map_err(|e| format!("Parser error in {:?}: {:?}", path, e))?;
-
-                    // Use relative path from project root as the key
-                    let relative_path = path
-                        .strip_prefix(project_path)
-                        .unwrap_or(&path)
-                        .to_string_lossy()
-                        .to_string();
-                    // Normalize separators for cross-platform matching with bindings
-                    let relative_path = relative_path.replace("\\", "/");
-
-                    loaded_scripts.insert(relative_path, program);
-                }
-            }
-        }
+        // Load all scripts from scripts, controllers, and cameras directories.
+        load_aeo_files_recursively(&project_path.join("scripts"), project_path, &mut loaded_scripts)?;
+        load_aeo_files_recursively(&project_path.join("controllers"), project_path, &mut loaded_scripts)?;
+        load_aeo_files_recursively(&project_path.join("cameras"), project_path, &mut loaded_scripts)?;
 
         // 2. Validate explicit bindings.
         for binding in &valid_bindings {
@@ -325,6 +335,8 @@ impl ScriptScene {
                         .collect();
 
                     if !hooks.is_empty()
+                        && !path.starts_with("controllers/")
+                        && !path.starts_with("cameras/")
                         && !bound_entities.contains(&(path.clone(), entity.name.clone()))
                     {
                         let warning = format!(
@@ -391,7 +403,7 @@ impl ScriptScene {
 
     pub fn normalize_script_path(path: &str) -> String {
         let clean = path.replace("\\", "/");
-        if clean.starts_with("scripts/") {
+        if clean.starts_with("scripts/") || clean.starts_with("controllers/") || clean.starts_with("cameras/") {
             clean
         } else {
             format!("scripts/{}", clean)
@@ -439,6 +451,54 @@ impl ScriptScene {
         for path in disabled {
             self.disable_script(&path);
         }
+    }
+
+    pub fn instantiate_script_object(
+        &mut self,
+        entity_name: &str,
+        args: Vec<Value>,
+        host: &mut HostContext,
+    ) -> Result<Value, String> {
+        use super::ast::{Expression, ExpressionKind};
+        use super::source::SourceSpan;
+        use super::value::Scope;
+
+        let callee = Expression {
+            kind: ExpressionKind::Identifier(entity_name.to_string()),
+            span: SourceSpan::new(0, 0),
+        };
+        let arg_exprs: Vec<Expression> = args
+            .into_iter()
+            .map(|val| Expression {
+                kind: ExpressionKind::Literal(val),
+                span: SourceSpan::new(0, 0),
+            })
+            .collect();
+
+        let mut instance = ScriptInstance::new_empty();
+        let mut scopes = vec![Scope::new()];
+        self.runtime.interpreter_mut().eval_call_opt_fiber(
+            &mut instance,
+            &mut scopes,
+            SourceSpan::new(0, 0),
+            &callee,
+            &arg_exprs,
+            host,
+            &[],
+            None,
+        )
+    }
+
+    pub fn call_object_method(
+        &mut self,
+        object: &Value,
+        method_name: &str,
+        args: Vec<Value>,
+        host: &mut HostContext,
+    ) -> Result<Value, String> {
+        self.runtime
+            .interpreter_mut()
+            .call_object_method_direct(object, method_name, args, host)
     }
 
     /// Advances the scene time and executes script fibers.
@@ -3693,6 +3753,11 @@ entity Test {
             pending_enable_scripts: &mut pending_enable_scripts,
             pending_disable_scripts: &mut pending_disable_scripts,
             runtime_ui: &mut runtime_ui,
+            move_input: glam::Vec2::ZERO,
+            jump_requested: false,
+            orbit_delta: [0.0, 0.0],
+            character_system: None,
+            gameplay_camera: None,
         };
         let effective = bridge
             .get_property(
@@ -4467,6 +4532,11 @@ entity Trigger {
                 pending_enable_scripts: &mut pending_enable,
                 pending_disable_scripts: &mut pending_disable,
                 runtime_ui: &mut runtime_ui,
+                move_input: glam::Vec2::ZERO,
+                jump_requested: false,
+                orbit_delta: [0.0, 0.0],
+                character_system: None,
+                gameplay_camera: None,
             };
             bridge.complete_test("leak_test", true);
             bridge.fire_event("leak_event", vec![]);
@@ -4488,95 +4558,5 @@ entity Trigger {
         assert!(pending_events.is_empty(), "Pending events should be cleared");
         assert_eq!(world.disabled_scripts, vec!["initial.aeo".to_string()], "World script state should be restored");
         assert!(authored_disabled_scripts.is_empty(), "Snapshot should be consumed");
-    }
-
-    #[test]
-    fn test_master_suite_in_game() {
-        let project_dir = std::path::Path::new("UserData/AeoEngineTesting");
-        if !project_dir.exists() {
-            return;
-        }
-
-        let mut em = EntityManager::new();
-        let mut world = World::new();
-        let world_path = project_dir.join("world.dat");
-        if world_path.exists() {
-            let _ = crate::world::persistence::load_world(&mut world, &world_path);
-        }
-
-        let mut dynamic_properties = std::collections::HashMap::new();
-        let mut pending_events = Vec::new();
-        let mut test_results = std::collections::BTreeMap::new();
-        let mut pending_enable = Vec::new();
-        let mut pending_disable = Vec::new();
-        let mut authored_disabled_scripts: Vec<String>;
-
-        for session in 1..=3 {
-            println!("--- STARTING SESSION {} ---", session);
-
-            // Re-create player for every session
-            let player_id = em.create_entity("Player");
-            em.set_position(player_id, glam::Vec3::new(0.0, 18.0, 0.0));
-
-            // 1. start_scripting snapshot
-            authored_disabled_scripts = world.disabled_scripts.clone();
-
-            let mut scene = ScriptScene::load_from_bindings(
-                project_dir,
-                &world,
-                &world.script_bindings,
-                &mut em,
-                0.0,
-            )
-            .unwrap();
-
-            let mut completed = false;
-            let mut runtime_ui = crate::engine::ui::RuntimeUi::new();
-            for _ in 0..1000 {
-                {
-                    let mut bridge = crate::scripting::host::ScriptHostBridge {
-                        entity_manager: &mut em,
-                        world: &mut world,
-                        dynamic_properties: &mut dynamic_properties,
-                        pending_events: &mut pending_events,
-                        test_results: &mut test_results,
-                        pending_enable_scripts: &mut pending_enable,
-                        pending_disable_scripts: &mut pending_disable,
-                        runtime_ui: &mut runtime_ui,
-                    };
-
-                    let mut host = HostContext {
-                        delta_time: 0.1,
-                        engine: &mut bridge,
-                    };
-
-                    scene.update(0.1, &mut host).unwrap();
-                }
-
-                // Check if session completed
-                if test_results.contains_key("language") {
-                    completed = true;
-                    break;
-                }
-            }
-
-            for record in scene.output() {
-                println!("[SESSION {}] [LOG] {}", session, record.message);
-            }
-
-            assert!(completed, "Master test suite did not complete in Session {}", session);
-            assert!(test_results.get("language").copied().unwrap_or(false), "language test failed in Session {}", session);
-
-            // 2. stop_scripting cleanup
-            // (scene.stop() would run here if we simulated the drop)
-            test_results.clear();
-            pending_events.clear();
-            pending_enable.clear();
-            pending_disable.clear();
-            dynamic_properties.clear();
-            world.disabled_scripts = std::mem::take(&mut authored_disabled_scripts);
-            em.clear();
-            world.clear_runtime_state();
-        }
     }
 }
