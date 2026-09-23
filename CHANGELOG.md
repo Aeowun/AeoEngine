@@ -653,85 +653,150 @@
 
 ## 0.7.3 — Unreleased
 
-### Added
+### AeoScript
 
-* `on_touch(cell)` event: AeoScript lifecycle/event function triggered when the player character contacts a scripted object
-* Cell Collision Event Toggle: persistent `collision_events_enabled` property to control whether a Cell dispatches contact events
-* Script Enable/Disable: ability to temporarily deactivate scripts from the Script Editor Inspector
-* Persistence for new collision and script state settings
-* Lexical language work completed during the previous development cycle, with corresponding lexer/parser behavior and regression coverage
+#### Added
+
 * Script-defined entity objects with persistent fields, constructors, methods, and independent object instances
-* Direct AeoScript access to Play-mode input through movement, jump, and mouse-orbit state
-* Script-defined controller implementations selected from project controller profiles
-* Script-defined camera implementations selected from project camera profiles
-* Generic player movement and camera control APIs for controller and camera scripts
-* Runtime UI with `Panel`, `Text`, and `Button` elements
-* Runtime UI properties for:
-
-    * position
-    * size
-    * visibility
-    * enabled state
-    * color
-* Runtime UI handles through `UiHandle` values
-* `ui.new()` for creating runtime UI elements
-* `ui.delete()` for removing runtime UI elements
-* Runtime UI button callbacks using AeoScript closures
-* Runtime UI click scheduling through the script runtime
-* Runtime UI integration tests covering:
-
-    * creation
-    * property access
-    * callbacks
-    * deletion
-    * handle validation
 * Lexical closures with captured script scopes retained by function values
+* Direct AeoScript access to Play-mode input:
+
+  * movement
+  * jump
+  * mouse orbit
+* Generic player movement and camera control APIs
 * Runtime Script Control for enabling and disabling scripts while the game is running
+* `on_touch(cell)` event for player contact with scripted Cells
+* Persistent `collision_events_enabled` Cell property for controlling contact event dispatch
+* Script enable/disable state persistence
+* Continued lexer and parser work with corresponding regression coverage
 
-### Changed
+#### Changed
 
-* `ScriptScene` now loads `.aeo` files from project `controllers/` and `cameras/` directories in addition to `scripts/`
-* Controller movement decisions are delegated to the selected AeoScript controller while AeoEngine continues to own:
+* `ScriptScene` now loads `.aeo` files from:
 
-    * gravity
-    * physics
-    * collision
-    * grounded resolution
-    * movement integration
-* Camera behavior is delegated to the selected AeoScript camera while AeoEngine continues to own the underlying camera and rendering systems
-* Script-defined controller and camera objects retain their state between runtime updates
-* Object method invocation now uses a direct runtime dispatch path for repeated controller and camera updates rather than constructing temporary call expressions
-* Runtime UI is reset with Play mode lifecycle state
-* Runtime UI is rendered as a foreground gameplay overlay within the central 3D viewport
-* Runtime UI coordinates are relative to the central 3D viewport rather than the full editor window
-* Runtime UI element rendering is clipped to the central 3D viewport
-* Editor 3D rendering now uses the exact central viewport bounds and aspect ratio
-* Editor OpenGL rendering and clearing are clipped to the central viewport
-* Editor hover raycasting now accounts for the central viewport bounds
-* The editor workspace now maintains the intended `[P | V | P]` layout between the side panels and central viewport
+  * `scripts/`
+  * `controllers/`
+  * `cameras/`
+* Script-defined controller and camera objects retain state between runtime updates
+* Repeated controller and camera calls use direct runtime method dispatch rather than constructing temporary call expressions
+* Controller scripts now provide movement decisions while AeoEngine continues to own:
 
-### Fixed
+  * gravity
+  * physics
+  * collision
+  * grounded resolution
+  * movement integration
+* Camera scripts now provide camera behavior while AeoEngine continues to own the underlying camera and rendering systems
+
+#### Fixed
 
 * Removed redundant script-side gravity handling from controller scripts
+* Reduced repeated controller and camera dispatch overhead
 * Removed temporary controller diagnostic logging after controller execution and input access were verified
-* Reduced runtime overhead from repeated controller and camera object method dispatch
-* Fixed runtime UI coordinates being interpreted relative to the full application window
-* Fixed runtime UI elements rendering over the editor side panels
-* Fixed default runtime Panel styling causing white text to become unreadable
-* Fixed editor 3D projection using the full window aspect ratio instead of the actual central viewport
-* Fixed editor hover picking offsets caused by side-panel dimensions
+
+---
+
+### Runtime UI
+
+#### Added
+
+* Runtime UI system with:
+
+  * `Panel`
+  * `Text`
+  * `Button`
+* Runtime UI properties for:
+
+  * position
+  * size
+  * visibility
+  * enabled state
+  * color
+* `UiHandle` runtime values
+* `ui.new()` for runtime UI creation
+* `ui.delete()` for runtime UI removal
+* Runtime UI button callbacks using AeoScript closures
+* Runtime UI click scheduling through the script runtime
+* Integration coverage for:
+
+  * creation
+  * property access
+  * callbacks
+  * deletion
+  * handle validation
+
+#### Changed
+
+* Runtime UI is reset with Play mode lifecycle state
+* Runtime UI is rendered as a foreground gameplay overlay inside the central 3D viewport
+* Runtime UI coordinates are relative to the central 3D viewport
+* Runtime UI rendering is clipped to the central 3D viewport
+
+#### Fixed
+
+* Runtime UI coordinates being interpreted relative to the full application window
+* Runtime UI rendering over editor side panels
+* Default runtime Panel styling making white text unreadable
+
+---
+
+### Editor and Viewport
+
+#### Changed
+
+* Editor 3D rendering now uses the exact central viewport bounds and aspect ratio
+* Editor OpenGL rendering and clearing are clipped to the central viewport
+* Editor hover raycasting now accounts for central viewport bounds
+* Editor workspace now maintains the intended `[P | V | P]` layout
+
+#### Fixed
+
+* Incorrect editor projection caused by using the full application window aspect ratio
+* Hover picking offsets caused by side-panel dimensions
+
+---
+
+### Gameplay Controllers and Cameras
+
+#### Added
+
+* Project controller profiles for selecting script-defined controller implementations
+* Project camera profiles for selecting script-defined camera implementations
+* Generic APIs for scripted player movement and facing
+* Generic APIs for scripted camera behavior
+* Script-driven third-person controller implementation
+* Script-driven gameplay camera implementation
+
+#### Changed
+
+* Controller logic is now delegated to AeoScript while runtime physics remains engine-owned
+* Camera logic is now delegated to AeoScript while rendering remains engine-owned
+
+---
+
+### Runtime Stability
+
+#### Fixed
+
+* Script runtime control now supports enabling and disabling scripts without restarting Play mode
+* Runtime script state is correctly reset with Play mode lifecycle state
+* Runtime UI state is discarded when Play mode stops
+* Controller and camera runtime state persists correctly between updates
+
+---
 
 ### Notes
 
-> Version 0.7.3 expands AeoScript from scene and object scripting into script-defined controller, camera, input, runtime UI, closure, and runtime script-control behavior while keeping AeoEngine responsible for physics, gravity, collision, rendering, and runtime simulation.
+> Version 0.7.3 expands AeoScript beyond scene and object scripting into script-defined gameplay controllers, cameras, input handling, runtime UI, closures, and runtime script control while keeping AeoEngine responsible for physics, gravity, collision, rendering, and simulation.
 
-> Runtime UI remains session-only and is discarded when Play mode stops.
+> Runtime UI is session-only and is discarded when Play mode stops.
 
-| Verification              |                              Result |
-| ------------------------- | ----------------------------------: |
-| Rust tests                |                      **402 passed** |
-| Rust test failures        |                               **0** |
-| In-game master test suite | Covers Runtime UI integration tests |
+| Verification              |                          Result |
+| ------------------------- | ------------------------------: |
+| Rust tests                |                  **402 passed** |
+| Rust test failures        |                           **0** |
+| In-game master test suite | Runtime UI integration coverage |
 
 ### Planned
 

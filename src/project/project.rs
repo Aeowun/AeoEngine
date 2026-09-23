@@ -79,6 +79,7 @@ impl ProjectManager {
         ensure_project_characters(&project_path);
         ensure_project_controllers(&project_path);
         ensure_project_cameras(&project_path);
+        ensure_project_audio(&project_path);
 
         self.add_recent(project_path.clone());
         self.current_project = Some(project_path.clone());
@@ -94,6 +95,7 @@ impl ProjectManager {
             ensure_project_characters(&path);
             ensure_project_controllers(&path);
             ensure_project_cameras(&path);
+            ensure_project_audio(&path);
 
             self.add_recent(path.clone());
             self.current_project = Some(path);
@@ -267,6 +269,13 @@ pub fn discover_cameras(project_path: &std::path::Path) -> Vec<String> {
         names.push("thirdPerson".to_string());
     }
     names
+}
+
+pub fn ensure_project_audio(project_path: &std::path::Path) {
+    let audio_dir = project_path.join(".assets").join("audio");
+    if !audio_dir.exists() {
+        let _ = fs::create_dir_all(&audio_dir);
+    }
 }
 
 #[cfg(test)]

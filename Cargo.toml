@@ -20,3 +20,4 @@ image = { version = "0.25.5", default-features = false, features = ["png"] }
 rfd = "0.15.0"
 chrono = "0.4"
 rand = "0.8"
+rodio = "0.20"

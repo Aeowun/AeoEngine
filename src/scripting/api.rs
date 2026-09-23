@@ -48,6 +48,18 @@ pub trait EngineHost {
     fn get_script_property(&self, kind: HandleKind, id: u64, name: &str) -> Option<Value>;
     fn set_script_property(&mut self, kind: HandleKind, id: u64, name: String, value: Value);
 
+    // Audio support
+    fn is_audio_playing(&self, _id: u64) -> Option<bool> { None }
+    fn is_audio_paused(&self, _id: u64) -> Option<bool> { None }
+    fn is_audio_looped(&self, _id: u64) -> Option<bool> { None }
+    fn get_audio_volume(&self, _id: u64) -> Option<f32> { None }
+    fn set_audio_playing(&mut self, _id: u64, _playing: bool) {}
+    fn set_audio_looped(&mut self, _id: u64, _looped: bool) {}
+    fn set_audio_volume(&mut self, _id: u64, _volume: f32) {}
+    fn audio_play(&mut self, _id: u64) {}
+    fn audio_stop(&mut self, _id: u64) {}
+    fn audio_pause(&mut self, _id: u64) {}
+
     fn create_runtime_cell(&mut self, cell_type: &str) -> Result<(HandleKind, u64), String>;
     fn move_runtime_cell(&mut self, id: u64, x: i32, y: i32, z: i32) -> Result<(), String>;
     fn delete_cell(&mut self, id: u64) -> Result<(), String>;
@@ -650,6 +662,6 @@ pub fn call_host_member(
             _ => Ok(None),
         },
 
-        HandleKind::Ui => Ok(None),
+        HandleKind::Ui | HandleKind::Sound => Ok(None),
     }
 }

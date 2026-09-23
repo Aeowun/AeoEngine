@@ -745,8 +745,7 @@ impl ScriptScene {
         host: &mut HostContext,
     ) -> Result<(), String> {
         eprintln!(
-            "[RUNTIME] dispatching event '{}' (disabled_scripts: {:?})",
-            name, self.disabled_scripts
+
         );
         self.runtime
             .dispatch_event(name, arguments, host, &self.disabled_scripts)
@@ -939,6 +938,7 @@ pub(crate) mod tests {
             for cell in self.world.cells.values() {
                 let matches = match class_name {
                     "Light" => cell.cell_type == CellType::Light,
+                    "AudioEmitter" => cell.cell_type == CellType::AudioEmitter,
                     "Block" => cell.cell_type == CellType::Block,
                     "FxBlock" => cell.cell_type == CellType::FxBlock,
                     "SpawnPoint" => cell.cell_type == CellType::SpawnPoint,
@@ -1023,6 +1023,12 @@ pub(crate) mod tests {
                 HandleKind::Cell | HandleKind::Light => {
                     if let Some(cell) = self.world.get_effective_cell_by_id(id) {
                         match name {
+                            "sound" => {
+                                return Ok(Some(Value::Handle {
+                                    kind: HandleKind::Sound,
+                                    id,
+                                }));
+                            }
                             "id" => return Ok(Some(Value::Number(cell.id as f64))),
                             "name" => {
                                 return Ok(Some(Value::String(
@@ -1164,6 +1170,12 @@ pub(crate) mod tests {
                 HandleKind::Entity => {
                     let entity_id = EntityId(id);
                     match name {
+                        "sound" => {
+                            return Ok(Some(Value::Handle {
+                                kind: HandleKind::Sound,
+                                id,
+                            }));
+                        }
                         "name" => {
                             if let Some(entity_name) = self.entity_manager.get_name(entity_id) {
                                 return Ok(Some(Value::String(entity_name.to_string())));
@@ -1172,6 +1184,23 @@ pub(crate) mod tests {
                         _ => {}
                     }
                 }
+                HandleKind::Sound => match name {
+                    "playing" => {
+                        return Ok(Some(Value::Bool(
+                            self.world.is_audio_playing(id)
+                                && !self.world.is_audio_paused(id),
+                        )));
+                    }
+                    "looped" => {
+                        return Ok(Some(Value::Bool(self.world.is_audio_looped(id))));
+                    }
+                    "volume" => {
+                        return Ok(Some(Value::Number(
+                            self.world.get_audio_volume(id) as f64
+                        )));
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
             Ok(None)
@@ -1187,6 +1216,24 @@ pub(crate) mod tests {
             use crate::scripting::value::HandleKind;
             if let Some(_cell) = self.world.get_effective_cell_by_id(id) {
                 match kind {
+                    HandleKind::Sound => match name {
+                        "playing" => {
+                            let playing = value.as_bool()?;
+                            self.world.set_audio_playing_runtime(id, playing);
+                            return Ok(true);
+                        }
+                        "looped" => {
+                            let looped = value.as_bool()?;
+                            self.world.set_audio_looped_runtime(id, looped);
+                            return Ok(true);
+                        }
+                        "volume" => {
+                            let vol = value.as_number()? as f32;
+                            self.world.set_audio_volume_runtime(id, vol);
+                            return Ok(true);
+                        }
+                        _ => {}
+                    },
                     HandleKind::Cell | HandleKind::Light => match name {
                         "position" => {
                             let basket = value.as_basket()?;
@@ -1314,12 +1361,61 @@ pub(crate) mod tests {
 
         fn call_method(
             &mut self,
-            _kind: crate::scripting::value::HandleKind,
-            _id: u64,
-            _name: &str,
+            kind: crate::scripting::value::HandleKind,
+            id: u64,
+            name: &str,
             _args: &[crate::scripting::value::Value],
         ) -> Result<Option<crate::scripting::value::Value>, String> {
+            use crate::scripting::value::{HandleKind, Value};
+            if kind == HandleKind::Sound {
+                match name {
+                    "play" => {
+                        self.world.audio_play_runtime(id);
+                        return Ok(Some(Value::Nil));
+                    }
+                    "stop" => {
+                        self.world.audio_stop_runtime(id);
+                        return Ok(Some(Value::Nil));
+                    }
+                    "pause" => {
+                        self.world.audio_pause_runtime(id);
+                        return Ok(Some(Value::Nil));
+                    }
+                    _ => {}
+                }
+            }
             Ok(None)
+        }
+
+        fn is_audio_playing(&self, id: u64) -> Option<bool> {
+            Some(self.world.is_audio_playing(id))
+        }
+        fn is_audio_paused(&self, id: u64) -> Option<bool> {
+            Some(self.world.is_audio_paused(id))
+        }
+        fn is_audio_looped(&self, id: u64) -> Option<bool> {
+            Some(self.world.is_audio_looped(id))
+        }
+        fn get_audio_volume(&self, id: u64) -> Option<f32> {
+            Some(self.world.get_audio_volume(id))
+        }
+        fn set_audio_playing(&mut self, id: u64, playing: bool) {
+            self.world.set_audio_playing_runtime(id, playing);
+        }
+        fn set_audio_looped(&mut self, id: u64, looped: bool) {
+            self.world.set_audio_looped_runtime(id, looped);
+        }
+        fn set_audio_volume(&mut self, id: u64, volume: f32) {
+            self.world.set_audio_volume_runtime(id, volume);
+        }
+        fn audio_play(&mut self, id: u64) {
+            self.world.audio_play_runtime(id);
+        }
+        fn audio_stop(&mut self, id: u64) {
+            self.world.audio_stop_runtime(id);
+        }
+        fn audio_pause(&mut self, id: u64) {
+            self.world.audio_pause_runtime(id);
         }
 
         fn set_attribute(
@@ -1376,6 +1472,7 @@ pub(crate) mod tests {
                 "NPC" => crate::world::CellType::NPC,
                 "Light" => crate::world::CellType::Light,
                 "SpawnPoint" => crate::world::CellType::SpawnPoint,
+                "AudioEmitter" => crate::world::CellType::AudioEmitter,
                 "Empty" => return Err("Cannot create Empty cell".to_string()),
                 _ => return Err(format!("Unknown cell type: {}", cell_type)),
             };
@@ -4560,5 +4657,252 @@ entity Trigger {
         assert!(pending_events.is_empty(), "Pending events should be cleared");
         assert_eq!(world.disabled_scripts, vec!["initial.aeo".to_string()], "World script state should be restored");
         assert!(authored_disabled_scripts.is_empty(), "Snapshot should be consumed");
+    }
+
+    #[test]
+    fn test_audio_emitter_creation_and_defaults() {
+        use crate::world::Cell;
+        let cell = Cell::new_audio_emitter();
+        assert_eq!(cell.cell_type, CellType::AudioEmitter);
+        assert_eq!(cell.texture, "speaker");
+        assert_eq!(cell.audio, "");
+        assert_eq!(cell.playing, false);
+        assert_eq!(cell.looped, false);
+        assert_eq!(cell.volume, 1.0);
+        assert_eq!(cell.visible, false);
+        assert_eq!(cell.solid, false);
+    }
+
+    #[test]
+    fn test_audio_emitter_persistence_full() {
+        use std::fs;
+        use std::path::Path;
+        use crate::world::persistence::{load_world, save_world};
+
+        let mut world = World::new();
+        let coord = WorldCoord::new(1, 2, 3);
+        let id = world.set_cell(coord, CellType::AudioEmitter);
+
+        if let Some(cell) = world.get_mut(coord) {
+            cell.audio = "battle/sword-unsheathe.wav".to_string();
+            cell.playing = true;
+            cell.looped = true;
+            cell.volume = 0.75;
+        }
+
+        let path = Path::new("test_audio_emitter_full.dat");
+        save_world(&world, path).unwrap();
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        let loaded = loaded_world.get(coord).unwrap();
+        assert_eq!(loaded.id, id);
+        assert_eq!(loaded.cell_type, CellType::AudioEmitter);
+        assert_eq!(loaded.audio, "battle/sword-unsheathe.wav");
+        assert_eq!(loaded.playing, true);
+        assert_eq!(loaded.looped, true);
+        assert_eq!(loaded.volume, 0.75);
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_audio_emitter_three_authored_configurations() {
+        use std::fs;
+        use std::path::Path;
+        use crate::world::persistence::{load_world, save_world};
+
+        let mut world = World::new();
+
+        // 1. Ambient looping sound: playing = true, looped = true
+        let c1 = WorldCoord::new(0, 0, 0);
+        world.set_cell(c1, CellType::AudioEmitter);
+        if let Some(cell) = world.get_mut(c1) {
+            cell.audio = "misc/ambient.wav".to_string();
+            cell.playing = true;
+            cell.looped = true;
+            cell.volume = 1.0;
+        }
+
+        // 2. Event-triggered one-shot: playing = false, looped = false
+        let c2 = WorldCoord::new(1, 0, 0);
+        world.set_cell(c2, CellType::AudioEmitter);
+        if let Some(cell) = world.get_mut(c2) {
+            cell.audio = "battle/swing.wav".to_string();
+            cell.playing = false;
+            cell.looped = false;
+            cell.volume = 0.9;
+        }
+
+        // 3. Event-triggered looping sound: playing = false, looped = true
+        let c3 = WorldCoord::new(2, 0, 0);
+        world.set_cell(c3, CellType::AudioEmitter);
+        if let Some(cell) = world.get_mut(c3) {
+            cell.audio = "interface/alarm.wav".to_string();
+            cell.playing = false;
+            cell.looped = true;
+            cell.volume = 0.5;
+        }
+
+        let path = Path::new("test_audio_configs.dat");
+        save_world(&world, path).unwrap();
+
+        let mut loaded = World::new();
+        load_world(&mut loaded, path).unwrap();
+
+        let l1 = loaded.get(c1).unwrap();
+        assert_eq!(l1.playing, true);
+        assert_eq!(l1.looped, true);
+
+        let l2 = loaded.get(c2).unwrap();
+        assert_eq!(l2.playing, false);
+        assert_eq!(l2.looped, false);
+
+        let l3 = loaded.get(c3).unwrap();
+        assert_eq!(l3.playing, false);
+        assert_eq!(l3.looped, true);
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_aeoscript_sound_object_and_methods() {
+        let source = r#"
+const speaker = find("Speaker")[0]
+const sound = speaker.sound
+sound.play()
+sound.volume = 0.5
+sound.looped = true
+"#;
+
+        let mut th = test_host();
+        let coord = WorldCoord::new(0, 0, 0);
+        let cell_id = th.world.set_cell(coord, CellType::AudioEmitter);
+        if let Some(cell) = th.world.get_mut(coord) {
+            cell.entity_identity = Some("Speaker".to_string());
+            cell.audio = "world/door.wav".to_string();
+            cell.playing = false;
+            cell.looped = false;
+            cell.volume = 1.0;
+        }
+
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
+        };
+
+        assert_eq!(host.engine.is_audio_playing(cell_id), Some(false));
+
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        assert_eq!(host.engine.is_audio_playing(cell_id), Some(true));
+        assert_eq!(host.engine.is_audio_looped(cell_id), Some(true));
+        assert_eq!(host.engine.get_audio_volume(cell_id), Some(0.5));
+
+        // Test pause and stop via scripting or engine bridge
+        host.engine.audio_pause(cell_id);
+        assert_eq!(host.engine.is_audio_paused(cell_id), Some(true));
+
+        host.engine.audio_stop(cell_id);
+        assert_eq!(host.engine.is_audio_playing(cell_id), Some(false));
+    }
+
+    #[test]
+    fn test_aeoscript_find_and_multiple_speakers() {
+        let source = r#"
+const speakers = find("Speakers")
+for speaker in speakers {
+    speaker.sound.play()
+}
+"#;
+
+        let mut th = test_host();
+
+        let c1 = WorldCoord::new(0, 0, 0);
+        let id1 = th.world.set_cell(c1, CellType::AudioEmitter);
+        if let Some(cell) = th.world.get_mut(c1) {
+            cell.entity_identity = Some("Speakers".to_string());
+            cell.audio = "battle/spell.wav".to_string();
+        }
+
+        let c2 = WorldCoord::new(1, 0, 0);
+        let id2 = th.world.set_cell(c2, CellType::AudioEmitter);
+        if let Some(cell) = th.world.get_mut(c2) {
+            cell.entity_identity = Some("Speakers".to_string());
+            cell.audio = "battle/magic1.wav".to_string();
+        }
+
+        let mut host = HostContext {
+            delta_time: 0.0,
+            engine: &mut th,
+        };
+
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.0, &mut host).unwrap();
+
+        assert_eq!(host.engine.is_audio_playing(id1), Some(true));
+        assert_eq!(host.engine.is_audio_playing(id2), Some(true));
+    }
+
+    #[test]
+    fn test_runtime_audio_state_reset_and_authored_preservation() {
+        let mut world = World::new();
+        let coord = WorldCoord::new(0, 0, 0);
+        let id = world.set_cell(coord, CellType::AudioEmitter);
+
+        if let Some(cell) = world.get_mut(coord) {
+            cell.audio = "world/door.wav".to_string();
+            cell.playing = false;
+            cell.looped = false;
+            cell.volume = 1.0;
+        }
+
+        // Apply runtime overrides
+        world.audio_play_runtime(id);
+        world.set_audio_looped_runtime(id, true);
+        world.set_audio_volume_runtime(id, 0.25);
+
+        // Verify runtime queries return overridden values
+        assert_eq!(world.is_audio_playing(id), true);
+        assert_eq!(world.is_audio_looped(id), true);
+        assert_eq!(world.get_audio_volume(id), 0.25);
+
+        // Verify authored cell in world is UNCHANGED
+        let authored = world.get(coord).unwrap();
+        assert_eq!(authored.playing, false);
+        assert_eq!(authored.looped, false);
+        assert_eq!(authored.volume, 1.0);
+
+        // Clear runtime state
+        world.clear_runtime_state();
+
+        // Verify runtime queries revert back to authored values
+        assert_eq!(world.is_audio_playing(id), false);
+        assert_eq!(world.is_audio_looped(id), false);
+        assert_eq!(world.get_audio_volume(id), 1.0);
+    }
+
+    #[test]
+    fn test_audio_emitter_startup_behavior() {
+        let mut world = World::new();
+
+        let c1 = WorldCoord::new(0, 0, 0);
+        let id1 = world.set_cell(c1, CellType::AudioEmitter);
+        if let Some(cell) = world.get_mut(c1) {
+            cell.playing = true;
+        }
+
+        let c2 = WorldCoord::new(1, 0, 0);
+        let id2 = world.set_cell(c2, CellType::AudioEmitter);
+        if let Some(cell) = world.get_mut(c2) {
+            cell.playing = false;
+        }
+
+        assert_eq!(world.is_audio_playing(id1), true);
+        assert_eq!(world.is_audio_playing(id2), false);
     }
 }

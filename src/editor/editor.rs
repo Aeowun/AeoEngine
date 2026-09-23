@@ -162,7 +162,7 @@ impl Editor {
         project_path: &Option<std::path::PathBuf>,
     ) {
         self.draw_menu_bar(ctx);
-        self.draw_tool_bar(ctx);
+        self.draw_tool_bar(ctx, project_path);
 
         if !self.last_show_script_workspace && self.show_script_workspace {
             self.script_editor.refresh_scripts(project_path);
@@ -284,10 +284,10 @@ impl Editor {
         });
     }
 
-    fn draw_tool_bar(&mut self, ctx: &egui::Context) {
+    fn draw_tool_bar(&mut self, ctx: &egui::Context, project_path: &Option<std::path::PathBuf>) {
         egui::TopBottomPanel::top("tool_bar").show(ctx, |ui| {
             ui.add_space(2.0);
-            tools::draw_tool_bar(ui, self);
+            tools::draw_tool_bar(ui, self, project_path);
             ui.add_space(2.0);
         });
     }
@@ -436,6 +436,10 @@ pub enum PropertyChange {
     Visible(bool),
     ColorRgb(glam::Vec3),
     Texture(String),
+    Audio(String),
+    AudioPlaying(bool),
+    AudioLooped(bool),
+    AudioVolume(f32),
     CollisionEventsEnabled(bool),
     EntityIdentity(Option<String>),
     AttributeSet(String, AttributeValue),
@@ -468,6 +472,10 @@ impl Editor {
                         PropertyChange::Visible(visible) => other_cell.visible = *visible,
                         PropertyChange::ColorRgb(color) => other_cell.color_rgb = *color,
                         PropertyChange::Texture(texture) => other_cell.texture = texture.clone(),
+                        PropertyChange::Audio(audio) => other_cell.audio = audio.clone(),
+                        PropertyChange::AudioPlaying(playing) => other_cell.playing = *playing,
+                        PropertyChange::AudioLooped(looped) => other_cell.looped = *looped,
+                        PropertyChange::AudioVolume(volume) => other_cell.volume = *volume,
                         PropertyChange::CollisionEventsEnabled(enabled) => {
                             other_cell.collision_events_enabled = *enabled
                         }
@@ -742,6 +750,48 @@ impl Editor {
                                         cell.light_shadows = shadows;
                                         changes.push(PropertyChange::LightShadows(shadows));
                                     }
+                                });
+                        }
+
+                        // --- AUDIO ---
+                        if cell.cell_type == crate::world::CellType::AudioEmitter {
+                            egui::CollapsingHeader::new("AUDIO")
+                                .default_open(true)
+                                .show(ui, |ui| {
+                                    let mut audio = cell.audio.clone();
+                                    tools::draw_audio_edit(ui, &mut audio, project_path);
+                                    if audio != cell.audio {
+                                        cell.audio = audio.clone();
+                                        changes.push(PropertyChange::Audio(audio));
+                                    }
+
+                                    let mut playing = cell.playing;
+                                    if ui.checkbox(&mut playing, "Playing").changed() {
+                                        cell.playing = playing;
+                                        changes.push(PropertyChange::AudioPlaying(playing));
+                                    }
+
+                                    let mut looped = cell.looped;
+                                    if ui.checkbox(&mut looped, "Looped").changed() {
+                                        cell.looped = looped;
+                                        changes.push(PropertyChange::AudioLooped(looped));
+                                    }
+
+                                    let mut volume = cell.volume;
+                                    ui.horizontal(|ui| {
+                                        ui.label("Volume:");
+                                        if ui
+                                            .add(
+                                                egui::DragValue::new(&mut volume)
+                                                    .speed(0.05)
+                                                    .range(0.0..=2.0),
+                                            )
+                                            .changed()
+                                        {
+                                            cell.volume = volume;
+                                            changes.push(PropertyChange::AudioVolume(volume));
+                                        }
+                                    });
                                 });
                         }
 
@@ -1032,6 +1082,7 @@ impl Editor {
 
         let mut blocks = Vec::new();
         let mut lights = Vec::new();
+        let mut audio_emitters = Vec::new();
         let mut spawn_points = Vec::new();
         let mut fx_blocks = Vec::new();
         let mut players = Vec::new();
@@ -1042,6 +1093,7 @@ impl Editor {
                 match cell.cell_type {
                     crate::world::CellType::Block => blocks.push(coord),
                     crate::world::CellType::Light => lights.push(coord),
+                    crate::world::CellType::AudioEmitter => audio_emitters.push(coord),
                     crate::world::CellType::SpawnPoint => spawn_points.push(coord),
                     crate::world::CellType::FxBlock => fx_blocks.push(coord),
                     crate::world::CellType::Player => players.push(coord),
@@ -1056,6 +1108,7 @@ impl Editor {
 
         blocks.sort_by(sort_fn);
         lights.sort_by(sort_fn);
+        audio_emitters.sort_by(sort_fn);
         spawn_points.sort_by(sort_fn);
         fx_blocks.sort_by(sort_fn);
         players.sort_by(sort_fn);
@@ -1066,6 +1119,7 @@ impl Editor {
             let tree_data = [
                 ("BLOCKS", &blocks),
                 ("LIGHTS", &lights),
+                ("AUDIO EMITTERS", &audio_emitters),
                 ("SPAWN POINTS", &spawn_points),
                 ("FX BLOCKS", &fx_blocks),
                 ("PLAYERS", &players),

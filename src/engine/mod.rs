@@ -1,4 +1,5 @@
 pub mod app;
+pub mod audio;
 pub mod entity;
 pub mod physics;
 pub mod ui;

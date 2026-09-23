@@ -234,6 +234,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
             "NPC" => CellType::NPC,
             "Light" => CellType::Light,
             "SpawnPoint" => CellType::SpawnPoint,
+            "AudioEmitter" => CellType::AudioEmitter,
             "Empty" => {
                 return Err(
                     "Cannot create Empty cell".to_string()
@@ -281,6 +282,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
             if let Some(cell) = self.world.get_effective_cell(coord) {
                 let matches = match class_name {
                     "Light" => cell.cell_type == CellType::Light,
+                    "AudioEmitter" => cell.cell_type == CellType::AudioEmitter,
                     "Block" => cell.cell_type == CellType::Block,
                     "FxBlock" => cell.cell_type == CellType::FxBlock,
                     "SpawnPoint" => {
@@ -370,6 +372,12 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                     self.world.get_effective_cell_by_id(id)
                 {
                     match name {
+                        "sound" => {
+                            return Ok(Some(Value::Handle {
+                                kind: HandleKind::Sound,
+                                id,
+                            }));
+                        }
                         "id" => {
                             return Ok(Some(Value::Number(
                                 cell.id as f64,
@@ -606,6 +614,13 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
             HandleKind::Entity => {
                 let entity_id = EntityId(id);
 
+                if name == "sound" {
+                    return Ok(Some(Value::Handle {
+                        kind: HandleKind::Sound,
+                        id,
+                    }));
+                }
+
                 if name == "name" {
                     if let Some(entity_name) =
                         self.entity_manager.get_name(entity_id)
@@ -617,7 +632,27 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                 }
             }
 
-            _ => {}
+            HandleKind::Sound => match name {
+                "playing" => {
+                    return Ok(Some(Value::Bool(
+                        self.world.is_audio_playing(id)
+                            && !self.world.is_audio_paused(id),
+                    )));
+                }
+                "looped" => {
+                    return Ok(Some(Value::Bool(
+                        self.world.is_audio_looped(id),
+                    )));
+                }
+                "volume" => {
+                    return Ok(Some(Value::Number(
+                        self.world.get_audio_volume(id) as f64,
+                    )));
+                }
+                _ => {}
+            },
+
+            HandleKind::Ui => {}
         }
 
         Ok(None)
@@ -838,6 +873,25 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                 }
             }
 
+            HandleKind::Sound => match name {
+                "playing" => {
+                    let playing = value.as_bool()?;
+                    self.world.set_audio_playing_runtime(id, playing);
+                    return Ok(true);
+                }
+                "looped" => {
+                    let looped = value.as_bool()?;
+                    self.world.set_audio_looped_runtime(id, looped);
+                    return Ok(true);
+                }
+                "volume" => {
+                    let vol = value.as_number()? as f32;
+                    self.world.set_audio_volume_runtime(id, vol);
+                    return Ok(true);
+                }
+                _ => {}
+            },
+
             _ => {}
         }
 
@@ -846,12 +900,60 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
     fn call_method(
         &mut self,
-        _kind: HandleKind,
-        _id: u64,
-        _name: &str,
+        kind: HandleKind,
+        id: u64,
+        name: &str,
         _args: &[Value],
     ) -> Result<Option<Value>, String> {
+        if kind == HandleKind::Sound {
+            match name {
+                "play" => {
+                    self.world.audio_play_runtime(id);
+                    return Ok(Some(Value::Nil));
+                }
+                "stop" => {
+                    self.world.audio_stop_runtime(id);
+                    return Ok(Some(Value::Nil));
+                }
+                "pause" => {
+                    self.world.audio_pause_runtime(id);
+                    return Ok(Some(Value::Nil));
+                }
+                _ => {}
+            }
+        }
         Ok(None)
+    }
+
+    fn is_audio_playing(&self, id: u64) -> Option<bool> {
+        Some(self.world.is_audio_playing(id))
+    }
+    fn is_audio_paused(&self, id: u64) -> Option<bool> {
+        Some(self.world.is_audio_paused(id))
+    }
+    fn is_audio_looped(&self, id: u64) -> Option<bool> {
+        Some(self.world.is_audio_looped(id))
+    }
+    fn get_audio_volume(&self, id: u64) -> Option<f32> {
+        Some(self.world.get_audio_volume(id))
+    }
+    fn set_audio_playing(&mut self, id: u64, playing: bool) {
+        self.world.set_audio_playing_runtime(id, playing);
+    }
+    fn set_audio_looped(&mut self, id: u64, looped: bool) {
+        self.world.set_audio_looped_runtime(id, looped);
+    }
+    fn set_audio_volume(&mut self, id: u64, volume: f32) {
+        self.world.set_audio_volume_runtime(id, volume);
+    }
+    fn audio_play(&mut self, id: u64) {
+        self.world.audio_play_runtime(id);
+    }
+    fn audio_stop(&mut self, id: u64) {
+        self.world.audio_stop_runtime(id);
+    }
+    fn audio_pause(&mut self, id: u64) {
+        self.world.audio_pause_runtime(id);
     }
 
     fn set_attribute(

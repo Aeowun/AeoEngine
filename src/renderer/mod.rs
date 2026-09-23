@@ -748,12 +748,20 @@ impl Renderer {
 
             for coord in world.active_effective_blocks() {
                 if let Some(cell) = world.get_effective_cell(coord) {
-                    // Editor-only bulb visualization centered inside the light cell
-                    if cell.cell_type == CellType::Light && editor.mode == EditorMode::Editor {
+                    // Editor-only marker visualization centered inside Light or AudioEmitter cells
+                    if (cell.cell_type == CellType::Light
+                        || cell.cell_type == CellType::AudioEmitter)
+                        && editor.mode == EditorMode::Editor
+                    {
                         gl::BindVertexArray(self.billboard_vao);
                         gl::Uniform1i(use_tex_location, 1);
 
-                        let tex = self.get_texture("lightbulb");
+                        let tex_name = if cell.cell_type == CellType::AudioEmitter {
+                            "speaker"
+                        } else {
+                            "lightbulb"
+                        };
+                        let tex = self.get_texture(tex_name);
                         gl::ActiveTexture(gl::TEXTURE1);
                         gl::BindTexture(gl::TEXTURE_2D, tex);
 
@@ -1021,13 +1029,21 @@ impl Renderer {
 
                     match editor.current_tool {
                         crate::editor::EditorTool::Build => {
-                            let is_light =
-                                editor.build_template.cell_type == crate::world::CellType::Light;
+                            let is_marker =
+                                editor.build_template.cell_type == crate::world::CellType::Light
+                                    || editor.build_template.cell_type == crate::world::CellType::AudioEmitter;
 
-                            if is_light {
+                            if is_marker {
                                 gl::BindVertexArray(self.highlight_vao);
 
-                                gl::Uniform3f(base_color_location, 1.0, 1.0, 0.2);
+                                let (r, g, b) = if editor.build_template.cell_type
+                                    == crate::world::CellType::AudioEmitter
+                                {
+                                    (0.2, 0.8, 1.0)
+                                } else {
+                                    (1.0, 1.0, 0.2)
+                                };
+                                gl::Uniform3f(base_color_location, r, g, b);
 
                                 for x in x_min..=x_max {
                                     for y in y_min..=y_max {

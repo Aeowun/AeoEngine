@@ -150,6 +150,30 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                     )?;
                 }
 
+                CellType::AudioEmitter => {
+                    writeln!(
+                        file,
+                        "AUDIO_EMITTER {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
+                        cell.id,
+                        coord.x,
+                        coord.y,
+                        coord.z,
+                        cell.visible,
+                        cell.solid,
+                        cell.anchored,
+                        cell.texture,
+                        cell.color_rgb.x,
+                        cell.color_rgb.y,
+                        cell.color_rgb.z,
+                        cell.entity_identity.as_deref().unwrap_or("None"),
+                        cell.collision_events_enabled,
+                        cell.playing,
+                        cell.looped,
+                        cell.volume,
+                        if cell.audio.is_empty() { "None" } else { &cell.audio }
+                    )?;
+                }
+
                 CellType::Player => {
                     writeln!(
                         file,
@@ -362,11 +386,12 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                 || block_type == "PLAYER"
                 || block_type == "NPC"
                 || block_type == "FX_BLOCK"
+                || block_type == "AUDIO_EMITTER"
             {
-                // New format always has more parts than legacy counterparts.
                 let legacy_len = match block_type {
                     "BLOCK" | "SPAWN_POINT" | "LIGHT" => 11,
                     "PLAYER" | "NPC" | "FX_BLOCK" => 12,
+                    "AUDIO_EMITTER" => 13,
                     _ => 0,
                 };
                 parts.len() > legacy_len
@@ -401,6 +426,8 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                     world.set_cell(coord, CellType::NPC)
                 } else if block_type == "LIGHT" {
                     world.set_cell(coord, CellType::Light)
+                } else if block_type == "AUDIO_EMITTER" {
+                    world.set_cell(coord, CellType::AudioEmitter)
                 } else {
                     0
                 };
@@ -436,6 +463,36 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
                         if parts.len() >= offset + 13 {
                             cell.collision_events_enabled =
                                 parts[offset + 12].parse::<bool>().unwrap_or(true);
+                        }
+                    } else if block_type == "AUDIO_EMITTER" {
+                        parse_block_properties(cell, &parts, offset);
+                        if parts.len() >= offset + 12 {
+                            let identity = parts[offset + 11];
+                            if identity != "None" {
+                                cell.entity_identity = Some(identity.to_string());
+                            }
+                        }
+                        if parts.len() >= offset + 13 {
+                            cell.collision_events_enabled =
+                                parts[offset + 12].parse::<bool>().unwrap_or(true);
+                        }
+                        if parts.len() >= offset + 17 {
+                            cell.playing = parts[offset + 13].parse::<bool>().unwrap_or(false);
+                            cell.looped = parts[offset + 14].parse::<bool>().unwrap_or(false);
+                            cell.volume = parts[offset + 15].parse::<f32>().unwrap_or(1.0);
+                            let audio_val = parts[offset + 16..].join(" ");
+                            cell.audio = if audio_val == "None" {
+                                String::new()
+                            } else {
+                                audio_val
+                            };
+                        } else if parts.len() >= offset + 14 {
+                            let audio_val = parts[offset + 13..].join(" ");
+                            cell.audio = if audio_val == "None" {
+                                String::new()
+                            } else {
+                                audio_val
+                            };
                         }
                     } else {
                         parse_block_properties(cell, &parts, offset);
@@ -1187,6 +1244,30 @@ mod tests {
         // 10. Verify the authored Cell remains unchanged.
         assert!(world.get(auth_coord).is_some());
         assert_eq!(world.get(auth_coord).unwrap().id, auth_id);
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_audio_emitter_persistence() {
+        let mut world = World::new();
+        let coord = WorldCoord::new(2, 4, 6);
+        let id = world.set_cell(coord, CellType::AudioEmitter);
+
+        if let Some(cell) = world.get_mut(coord) {
+            cell.audio = "battle/sword-unsheathe.wav".to_string();
+        }
+
+        let path = Path::new("test_audio_emitter.dat");
+        save_world(&world, path).unwrap();
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        let loaded_cell = loaded_world.get(coord).unwrap();
+        assert_eq!(loaded_cell.id, id);
+        assert_eq!(loaded_cell.cell_type, CellType::AudioEmitter);
+        assert_eq!(loaded_cell.audio, "battle/sword-unsheathe.wav");
 
         fs::remove_file(path).ok();
     }

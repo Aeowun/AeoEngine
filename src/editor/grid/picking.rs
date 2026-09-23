@@ -133,18 +133,19 @@ pub fn raycast_world(
     while dist < max_dist {
         if let Some(cell) = world.get(map_pos) {
             // Eligible: Block, SpawnPoint
-            // Light is only eligible if include_lights is true.
+            // Light/AudioEmitter are only eligible if include_lights is true.
             let eligible = match cell.cell_type {
                 crate::world::CellType::Block | crate::world::CellType::SpawnPoint => true,
-                crate::world::CellType::Light => include_lights,
+                crate::world::CellType::Light | crate::world::CellType::AudioEmitter => include_lights,
                 _ => false,
             };
 
-            // Lights are often set to visible=false, so we check eligibility first.
-            // If it's a light and we are including lights, we hit it regardless of visibility flag.
+            // Lights and AudioEmitters are often set to visible=false, so we check eligibility first.
+            // If it's a marker and we are including lights/markers, we hit it regardless of visibility flag.
             if eligible
                 && (world.is_cell_visible(map_pos)
-                    || cell.cell_type == crate::world::CellType::Light)
+                    || cell.cell_type == crate::world::CellType::Light
+                    || cell.cell_type == crate::world::CellType::AudioEmitter)
             {
                 return Some((map_pos, hit_normal));
             }

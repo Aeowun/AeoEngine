@@ -157,6 +157,9 @@ pub struct App {
 
     /// Mouse orbit input consumed by the scripted camera/controller.
     pub orbit_delta: [f32; 2],
+
+    /// Engine audio system.
+    pub audio_system: crate::engine::audio::AudioSystem,
 }
 
 impl App {
@@ -220,6 +223,7 @@ impl App {
             camera_object: None,
 
             orbit_delta: [0.0, 0.0],
+            audio_system: crate::engine::audio::AudioSystem::new(),
         }
     }
 
@@ -1264,6 +1268,8 @@ impl App {
 
                 self.physics_world.bodies.clear();
 
+                self.audio_system.stop_all();
+
                 self.stop_scripting();
             }
 
@@ -1857,6 +1863,8 @@ impl App {
                         }
                     }
                 }
+
+                self.audio_system.update(&self.world, &self.project_manager.current_project);
 
                 self.script_contacted_last_frame =
                     contacted_this_frame;

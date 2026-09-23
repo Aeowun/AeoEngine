@@ -203,6 +203,117 @@ impl World {
         }
     }
 
+    // --- Audio Runtime Queries & Overrides ---
+
+    pub fn is_audio_playing(&self, cell_id: u64) -> bool {
+        if let Some(cell) = self.get_effective_cell_by_id(cell_id) {
+            if let Some(rs) = self.runtime_state.get(&cell.id) {
+                if let Some(playing) = rs.audio_playing {
+                    return playing;
+                }
+            }
+            return cell.playing;
+        }
+        false
+    }
+
+    pub fn is_audio_paused(&self, cell_id: u64) -> bool {
+        if let Some(cell) = self.get_effective_cell_by_id(cell_id) {
+            if let Some(rs) = self.runtime_state.get(&cell.id) {
+                if let Some(paused) = rs.audio_paused {
+                    return paused;
+                }
+            }
+        }
+        false
+    }
+
+    pub fn is_audio_looped(&self, cell_id: u64) -> bool {
+        if let Some(cell) = self.get_effective_cell_by_id(cell_id) {
+            if let Some(rs) = self.runtime_state.get(&cell.id) {
+                if let Some(looped) = rs.audio_looped {
+                    return looped;
+                }
+            }
+            return cell.looped;
+        }
+        false
+    }
+
+    pub fn get_audio_volume(&self, cell_id: u64) -> f32 {
+        if let Some(cell) = self.get_effective_cell_by_id(cell_id) {
+            if let Some(rs) = self.runtime_state.get(&cell.id) {
+                if let Some(vol) = rs.audio_volume {
+                    return vol;
+                }
+            }
+            return cell.volume;
+        }
+        1.0
+    }
+
+    pub fn get_audio_path(&self, cell_id: u64) -> String {
+        if let Some(cell) = self.get_effective_cell_by_id(cell_id) {
+            return cell.audio.clone();
+        }
+        String::new()
+    }
+
+    pub fn set_audio_playing_runtime(&mut self, cell_id: u64, playing: bool) {
+        if self.get_effective_cell_by_id(cell_id).is_some() {
+            let rs = self.runtime_state.entry(cell_id).or_default();
+            rs.audio_playing = Some(playing);
+            if playing {
+                rs.audio_paused = Some(false);
+            }
+        }
+    }
+
+    pub fn set_audio_paused_runtime(&mut self, cell_id: u64, paused: bool) {
+        if self.get_effective_cell_by_id(cell_id).is_some() {
+            let rs = self.runtime_state.entry(cell_id).or_default();
+            rs.audio_paused = Some(paused);
+        }
+    }
+
+    pub fn set_audio_looped_runtime(&mut self, cell_id: u64, looped: bool) {
+        if self.get_effective_cell_by_id(cell_id).is_some() {
+            let rs = self.runtime_state.entry(cell_id).or_default();
+            rs.audio_looped = Some(looped);
+        }
+    }
+
+    pub fn set_audio_volume_runtime(&mut self, cell_id: u64, volume: f32) {
+        if self.get_effective_cell_by_id(cell_id).is_some() {
+            let rs = self.runtime_state.entry(cell_id).or_default();
+            rs.audio_volume = Some(volume);
+        }
+    }
+
+    pub fn audio_play_runtime(&mut self, cell_id: u64) {
+        if self.get_effective_cell_by_id(cell_id).is_some() {
+            println!("[AUDIO] play requested for emitter {}", cell_id);
+            let rs = self.runtime_state.entry(cell_id).or_default();
+            rs.audio_playing = Some(true);
+            rs.audio_paused = Some(false);
+        }
+    }
+
+    pub fn audio_stop_runtime(&mut self, cell_id: u64) {
+        if self.get_effective_cell_by_id(cell_id).is_some() {
+            let rs = self.runtime_state.entry(cell_id).or_default();
+            rs.audio_playing = Some(false);
+            rs.audio_paused = Some(false);
+        }
+    }
+
+    pub fn audio_pause_runtime(&mut self, cell_id: u64) {
+        if self.get_effective_cell_by_id(cell_id).is_some() {
+            let rs = self.runtime_state.entry(cell_id).or_default();
+            rs.audio_paused = Some(true);
+        }
+    }
+
     /// Returns the effective color of a cell, accounting for runtime overrides.
     pub fn get_effective_color(&self, coord: WorldCoord) -> Vec3 {
         if let Some(cell) = self.get_effective_cell(coord) {
@@ -368,6 +479,7 @@ impl World {
             CellType::Block => Cell::new_block(),
             CellType::Light => Cell::new_light(),
             CellType::SpawnPoint => Cell::new_spawn_point(),
+            CellType::AudioEmitter => Cell::new_audio_emitter(),
             _ => {
                 let mut c = Cell::default();
                 c.cell_type = cell_type;
@@ -497,6 +609,7 @@ impl World {
                 CellType::Block => Cell::new_block(),
                 CellType::Light => Cell::new_light(),
                 CellType::SpawnPoint => Cell::new_spawn_point(),
+                CellType::AudioEmitter => Cell::new_audio_emitter(),
                 _ => {
                     let mut c = Cell::default();
                     c.cell_type = cell_type;

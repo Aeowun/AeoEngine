@@ -20,6 +20,7 @@ pub enum CellType {
     NPC,
     Light,
     SpawnPoint,
+    AudioEmitter,
 }
 
 impl CellType {
@@ -37,6 +38,12 @@ pub struct Cell {
     pub anchored: bool,
     pub texture: String,
     pub color_rgb: Vec3,
+
+    // Audio emitter properties
+    pub audio: String,
+    pub playing: bool,
+    pub looped: bool,
+    pub volume: f32,
 
     pub collision_events_enabled: bool,
 
@@ -69,6 +76,12 @@ pub struct RuntimeCellState {
     pub visual_offset: Option<Vec3>,
     pub attribute_overrides: BTreeMap<String, AttributeValue>,
     pub is_deleted: bool,
+
+    // Audio runtime state overrides
+    pub audio_playing: Option<bool>,
+    pub audio_paused: Option<bool>,
+    pub audio_looped: Option<bool>,
+    pub audio_volume: Option<f32>,
 }
 
 impl Default for Cell {
@@ -81,6 +94,10 @@ impl Default for Cell {
             anchored: true,
             texture: "None".to_string(),
             color_rgb: Vec3::new(0.5, 0.5, 0.5),
+            audio: String::new(),
+            playing: false,
+            looped: false,
+            volume: 1.0,
             collision_events_enabled: true,
             light_color: Vec3::ONE,
             light_intensity: 5.0,
@@ -126,6 +143,30 @@ impl Cell {
             light_enabled: true,
             entity_identity: None,
             attributes: BTreeMap::new(),
+            audio: String::new(),
+            playing: false,
+            looped: false,
+            volume: 1.0,
+        }
+    }
+
+    /// Creates a new audio emitter cell with standard defaults.
+    pub fn new_audio_emitter() -> Self {
+        Self {
+            id: 0,
+            cell_type: CellType::AudioEmitter,
+            // Audio emitters are authored markers and don't render as blocks themselves.
+            visible: false,
+            solid: false,
+            anchored: true,
+            collision_events_enabled: true,
+            texture: "speaker".to_string(),
+            color_rgb: Vec3::ONE,
+            audio: String::new(),
+            playing: false,
+            looped: false,
+            volume: 1.0,
+            ..Default::default()
         }
     }
 

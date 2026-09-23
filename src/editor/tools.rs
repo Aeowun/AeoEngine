@@ -602,8 +602,6 @@ fn draw_texture_browser(
         return;
     }
 
-    let catalog = get_texture_catalog(ctx);
-
     let mut open = state.open;
     let mut selected_texture_name: Option<String> = None;
 
@@ -786,12 +784,394 @@ fn draw_texture_browser(
 }
 
 // -----------------------------------------------------------------------------
+// Audio browser state
+// -----------------------------------------------------------------------------
+
+const AUDIO_BROWSER_ID: &str = "aeoengine_audio_browser";
+const AUDIO_CATALOG_ID: &str = "aeoengine_audio_catalog";
+
+/// Cached audio asset names (relative paths within .assets/audio).
+#[derive(Clone, Default)]
+struct AudioCatalog {
+    names: Vec<String>,
+}
+
+/// Persistent audio browser state.
+#[derive(Clone, Default)]
+struct AudioBrowserState {
+    open: bool,
+    search: String,
+}
+
+/// Recursively scan a directory for .wav files and return relative paths.
+fn scan_directory_wavs(current_dir: &Path, root_dir: &Path, names: &mut Vec<String>) {
+    if let Ok(entries) = fs::read_dir(current_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                scan_directory_wavs(&path, root_dir, names);
+            } else if path.is_file() {
+                let is_wav = path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.eq_ignore_ascii_case("wav"))
+                    .unwrap_or(false);
+
+                if is_wav {
+                    if let Ok(rel_path) = path.strip_prefix(root_dir) {
+                        let rel_str = rel_path.to_string_lossy().replace('\\', "/");
+                        names.push(rel_str);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Read available WAV audio asset paths.
+fn scan_audio_names(project_path: &Option<PathBuf>) -> Vec<String> {
+    let mut names = Vec::new();
+
+    let builtin_dir = Path::new(".assets/audio");
+    if builtin_dir.exists() {
+        scan_directory_wavs(builtin_dir, builtin_dir, &mut names);
+    }
+
+    if let Some(proj) = project_path {
+        let proj_dir = proj.join(".assets").join("audio");
+        if proj_dir.exists() {
+            scan_directory_wavs(&proj_dir, &proj_dir, &mut names);
+        }
+    }
+
+    names.sort_unstable();
+    names.dedup();
+    names
+}
+
+/// Load the audio catalog.
+fn load_audio_catalog(project_path: &Option<PathBuf>) -> AudioCatalog {
+    let names = scan_audio_names(project_path);
+    AudioCatalog { names }
+}
+
+/// Retrieve the cached audio catalog.
+fn get_audio_catalog(ctx: &egui::Context, project_path: &Option<PathBuf>) -> AudioCatalog {
+    let id = egui::Id::new(AUDIO_CATALOG_ID);
+
+    if let Some(catalog) = ctx.data(|data| data.get_temp::<AudioCatalog>(id)) {
+        return catalog;
+    }
+
+    let catalog = load_audio_catalog(project_path);
+    ctx.data_mut(|data| {
+        data.insert_temp(id, catalog.clone());
+    });
+
+    catalog
+}
+
+/// Force an audio catalog rebuild.
+fn refresh_audio_catalog(ctx: &egui::Context, project_path: &Option<PathBuf>) {
+    let catalog = load_audio_catalog(project_path);
+    ctx.data_mut(|data| {
+        data.insert_temp(egui::Id::new(AUDIO_CATALOG_ID), catalog);
+    });
+}
+
+/// Open the custom audio browser window.
+fn open_audio_browser(ctx: &egui::Context, project_path: &Option<PathBuf>) {
+    refresh_audio_catalog(ctx, project_path);
+
+    let id = egui::Id::new(AUDIO_BROWSER_ID);
+
+    ctx.data_mut(|data| {
+        let mut state = data
+            .get_temp::<AudioBrowserState>(id)
+            .unwrap_or_default();
+
+        state.open = true;
+
+        data.insert_temp(id, state);
+    });
+}
+
+/// Score an audio asset path against the current text.
+fn audio_match_score(query: &str, name: &str) -> Option<u32> {
+    let query = query.trim().to_lowercase();
+    let name = name.to_lowercase();
+
+    if query.is_empty() {
+        return None;
+    }
+
+    if name == query {
+        return Some(0);
+    }
+
+    if name.starts_with(&query) {
+        return Some(10);
+    }
+
+    if name.contains(&query) {
+        return Some(20);
+    }
+
+    let query_chars: Vec<char> = query.chars().collect();
+    let name_chars: Vec<char> = name.chars().collect();
+
+    if query_chars.is_empty() {
+        return None;
+    }
+
+    let mut query_index = 0;
+
+    for character in name_chars {
+        if query_index < query_chars.len() && character == query_chars[query_index] {
+            query_index += 1;
+        }
+    }
+
+    if query_index == query_chars.len() {
+        return Some(30);
+    }
+
+    None
+}
+
+/// Find the closest audio names for the inline suggestion list.
+fn audio_matches(catalog: &AudioCatalog, audio: &str) -> Vec<String> {
+    let mut matches: Vec<(u32, String)> = catalog
+        .names
+        .iter()
+        .filter_map(|name| audio_match_score(audio, name).map(|score| (score, name.clone())))
+        .collect();
+
+    matches.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+
+    matches.into_iter().take(6).map(|(_, name)| name).collect()
+}
+
+/// Draw the audio controls (TextEdit, Browse..., Import..., and inline suggestions).
+pub fn draw_audio_edit(
+    ui: &mut Ui,
+    audio: &mut String,
+    project_path: &Option<PathBuf>,
+) {
+    let catalog = get_audio_catalog(ui.ctx(), project_path);
+
+    ui.horizontal(|ui| {
+        ui.label("Audio:");
+
+        ui.add(
+            egui::TextEdit::singleline(audio)
+                .desired_width(140.0)
+                .hint_text("Audio asset path"),
+        );
+
+        if ui.button("Browse...").clicked() {
+            open_audio_browser(ui.ctx(), project_path);
+        }
+
+        if ui.button("Import...").clicked() {
+            import_audio(ui.ctx(), audio, project_path);
+        }
+    });
+
+    if !audio.trim().is_empty() {
+        let matches = audio_matches(&catalog, audio);
+
+        if !matches.is_empty() {
+            ui.add_space(3.0);
+
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.set_min_width(140.0);
+
+                for match_name in matches {
+                    let selected = match_name == audio.as_str();
+
+                    let label = egui::SelectableLabel::new(selected, &match_name);
+
+                    if ui.add(label).clicked() {
+                        *audio = match_name;
+                    }
+                }
+            });
+        }
+    }
+}
+
+/// Import a WAV file into the audio directory.
+pub fn import_audio(
+    ctx: &egui::Context,
+    audio: &mut String,
+    project_path: &Option<PathBuf>,
+) {
+    let Some(path) = rfd::FileDialog::new()
+        .add_filter("WAV Audio", &["wav"])
+        .pick_file()
+    else {
+        return;
+    };
+
+    let dest_dir = if let Some(proj) = project_path {
+        proj.join(".assets").join("audio")
+    } else {
+        PathBuf::from(".assets/audio")
+    };
+
+    if let Err(error) = fs::create_dir_all(&dest_dir) {
+        eprintln!(
+            "[EDITOR][AUDIO] Failed to create '{}': {}",
+            dest_dir.display(),
+            error
+        );
+        return;
+    }
+
+    let Some(file_name) = path.file_name().map(|name| name.to_string_lossy().to_string()) else {
+        eprintln!("[EDITOR][AUDIO] Imported file has no filename.");
+        return;
+    };
+
+    let mut destination = dest_dir.join(&file_name);
+
+    if destination.exists() {
+        let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "audio".to_string());
+        let mut index = 1;
+        loop {
+            let candidate = dest_dir.join(format!("{}_{}.wav", stem, index));
+            if !candidate.exists() {
+                destination = candidate;
+                break;
+            }
+            index += 1;
+        }
+    }
+
+    match fs::copy(&path, &destination) {
+        Ok(_) => {
+            if let Ok(rel_path) = destination.strip_prefix(&dest_dir) {
+                let rel_str = rel_path.to_string_lossy().replace('\\', "/");
+                *audio = rel_str;
+            } else if let Some(name) = destination.file_name().map(|n| n.to_string_lossy().to_string()) {
+                *audio = name;
+            }
+
+            refresh_audio_catalog(ctx, project_path);
+        }
+        Err(error) => {
+            eprintln!(
+                "[EDITOR][AUDIO] Failed to copy '{}' -> '{}': {}",
+                path.display(),
+                destination.display(),
+                error
+            );
+        }
+    }
+}
+
+/// Draw the custom audio browser window.
+fn draw_audio_browser(
+    ctx: &egui::Context,
+    selected_audio: &mut String,
+    project_path: &Option<PathBuf>,
+) {
+    let id = egui::Id::new(AUDIO_BROWSER_ID);
+
+    let mut state = ctx
+        .data(|data| data.get_temp::<AudioBrowserState>(id))
+        .unwrap_or_default();
+
+    if !state.open {
+        return;
+    }
+
+    let mut open = state.open;
+    let mut chosen_audio_name: Option<String> = None;
+
+    egui::Window::new("Audio Browser")
+        .open(&mut open)
+        .default_size(egui::vec2(600.0, 400.0))
+        .min_size(egui::vec2(360.0, 280.0))
+        .resizable(true)
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Search:");
+
+                ui.add(
+                    egui::TextEdit::singleline(&mut state.search)
+                        .desired_width(240.0)
+                        .hint_text("Filter audio assets..."),
+                );
+
+                if ui.button("Refresh").clicked() {
+                    refresh_audio_catalog(ctx, project_path);
+                }
+            });
+
+            ui.separator();
+
+            let catalog = get_audio_catalog(ctx, project_path);
+
+            let search = state.search.trim().to_lowercase();
+
+            let mut names: Vec<&String> = catalog
+                .names
+                .iter()
+                .filter(|name| search.is_empty() || name.to_lowercase().contains(&search))
+                .collect();
+
+            names.sort();
+
+            if names.is_empty() {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(24.0);
+
+                    if catalog.names.is_empty() {
+                        ui.label("No WAV audio assets found.");
+                    } else {
+                        ui.label("No audio assets match the search.");
+                    }
+                });
+            } else {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        for name in names {
+                            let is_selected = selected_audio.as_str() == name.as_str();
+
+                            ui.horizontal(|ui| {
+                                ui.label("🎵");
+                                if ui.selectable_label(is_selected, name).clicked() {
+                                    chosen_audio_name = Some(name.clone());
+                                }
+                            });
+                        }
+                    });
+            }
+        });
+
+    if let Some(name) = chosen_audio_name {
+        *selected_audio = name;
+        open = false;
+    }
+
+    state.open = open;
+
+    ctx.data_mut(|data| {
+        data.insert_temp(id, state);
+    });
+}
+
+// -----------------------------------------------------------------------------
 // Main toolbar
 // -----------------------------------------------------------------------------
 
 pub fn draw_tool_bar(
     ui: &mut Ui,
     editor: &mut Editor,
+    project_path: &Option<PathBuf>,
 ) {
     // Draw the actual toolbar first.
     //
@@ -953,6 +1333,20 @@ pub fn draw_tool_bar(
 
                         ui.close_menu();
                     }
+
+                    if ui
+                        .selectable_label(
+                            editor.build_template.cell_type
+                                == crate::world::CellType::AudioEmitter,
+                            "Audio Emitter",
+                        )
+                        .clicked()
+                    {
+                        editor.build_template =
+                            crate::world::Cell::new_audio_emitter();
+
+                        ui.close_menu();
+                    }
                 },
             );
 
@@ -1008,16 +1402,20 @@ pub fn draw_tool_bar(
     });
 
     // -------------------------------------------------------------------------
-    // Texture browser
+    // Texture & Audio browsers
     // -------------------------------------------------------------------------
     //
     // IMPORTANT:
     // This is intentionally outside the toolbar's ui.horizontal closure.
-    //
-    // The Rendering menu can close normally without affecting the browser.
     draw_texture_browser(
         ui.ctx(),
         &mut editor.build_template.texture,
+    );
+
+    draw_audio_browser(
+        ui.ctx(),
+        &mut editor.build_template.audio,
+        project_path,
     );
 }
 
