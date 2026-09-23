@@ -1,6 +1,9 @@
 use std::mem;
 use std::ptr;
 
+const VERTEX_3D_FLOATS: usize = 10;
+const BLOCK_VERTEX_FLOATS: usize = 12;
+
 pub fn upload_vertices_2d(vertices: &[f32]) -> (u32, u32) {
     let mut vao = 0;
     let mut vbo = 0;
@@ -8,8 +11,10 @@ pub fn upload_vertices_2d(vertices: &[f32]) -> (u32, u32) {
     unsafe {
         gl::GenVertexArrays(1, &mut vao);
         gl::GenBuffers(1, &mut vbo);
+
         gl::BindVertexArray(vao);
         gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+
         gl::BufferData(
             gl::ARRAY_BUFFER,
             (vertices.len() * mem::size_of::<f32>()) as isize,
@@ -18,8 +23,19 @@ pub fn upload_vertices_2d(vertices: &[f32]) -> (u32, u32) {
         );
 
         let stride = (5 * mem::size_of::<f32>()) as i32;
-        gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, ptr::null());
+
+        // Position.
+        gl::VertexAttribPointer(
+            0,
+            2,
+            gl::FLOAT,
+            gl::FALSE,
+            stride,
+            ptr::null(),
+        );
         gl::EnableVertexAttribArray(0);
+
+        // Color.
         gl::VertexAttribPointer(
             1,
             3,
@@ -29,8 +45,10 @@ pub fn upload_vertices_2d(vertices: &[f32]) -> (u32, u32) {
             (2 * mem::size_of::<f32>()) as *const _,
         );
         gl::EnableVertexAttribArray(1);
+
         gl::BindVertexArray(0);
     }
+
     (vao, vbo)
 }
 
@@ -41,8 +59,10 @@ pub fn upload_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
     unsafe {
         gl::GenVertexArrays(1, &mut vao);
         gl::GenBuffers(1, &mut vbo);
+
         gl::BindVertexArray(vao);
         gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+
         gl::BufferData(
             gl::ARRAY_BUFFER,
             (vertices.len() * mem::size_of::<f32>()) as isize,
@@ -50,12 +70,20 @@ pub fn upload_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
             gl::STATIC_DRAW,
         );
 
-        // Stride is 10: pos(3), normal(3), color(4)
-        let stride = (10 * mem::size_of::<f32>()) as i32;
-        // Position
-        gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, stride, ptr::null());
+        let stride = (VERTEX_3D_FLOATS * mem::size_of::<f32>()) as i32;
+
+        // Position.
+        gl::VertexAttribPointer(
+            0,
+            3,
+            gl::FLOAT,
+            gl::FALSE,
+            stride,
+            ptr::null(),
+        );
         gl::EnableVertexAttribArray(0);
-        // Normal
+
+        // Normal.
         gl::VertexAttribPointer(
             1,
             3,
@@ -65,7 +93,8 @@ pub fn upload_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
             (3 * mem::size_of::<f32>()) as *const _,
         );
         gl::EnableVertexAttribArray(1);
-        // Color
+
+        // Color.
         gl::VertexAttribPointer(
             2,
             4,
@@ -78,15 +107,26 @@ pub fn upload_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
 
         gl::BindVertexArray(0);
     }
-    (vao, vbo, (vertices.len() / 10) as i32)
+
+    (
+        vao,
+        vbo,
+        (vertices.len() / VERTEX_3D_FLOATS) as i32,
+    )
 }
 
-pub fn add_line(vertices: &mut Vec<f32>, a: [f32; 3], b: [f32; 3], color: [f32; 4]) {
-    let normal = [0.0, 1.0, 0.0]; // Dummy normal for lines
-    vertices.extend_from_slice(&[
-        a[0], a[1], a[2], normal[0], normal[1], normal[2], color[0], color[1], color[2], color[3],
-        b[0], b[1], b[2], normal[0], normal[1], normal[2], color[0], color[1], color[2], color[3],
-    ]);
+pub fn add_line(
+    vertices: &mut Vec<f32>,
+    a: [f32; 3],
+    b: [f32; 3],
+    color: [f32; 4],
+) {
+    // Lines do not use lighting, so the normal is only present to match the
+    // shared 3D vertex format.
+    let normal = [0.0, 1.0, 0.0];
+
+    add_vertex(vertices, a, normal, color);
+    add_vertex(vertices, b, normal, color);
 }
 
 pub fn add_quad(
@@ -107,9 +147,22 @@ pub fn add_quad(
     add_vertex(vertices, v4, normal, color);
 }
 
-fn add_vertex(vertices: &mut Vec<f32>, pos: [f32; 3], normal: [f32; 3], color: [f32; 4]) {
+fn add_vertex(
+    vertices: &mut Vec<f32>,
+    position: [f32; 3],
+    normal: [f32; 3],
+    color: [f32; 4],
+) {
     vertices.extend_from_slice(&[
-        pos[0], pos[1], pos[2], normal[0], normal[1], normal[2], color[0], color[1], color[2],
+        position[0],
+        position[1],
+        position[2],
+        normal[0],
+        normal[1],
+        normal[2],
+        color[0],
+        color[1],
+        color[2],
         color[3],
     ]);
 }
@@ -134,14 +187,24 @@ pub fn add_block_quad(
 
 fn add_block_vertex(
     vertices: &mut Vec<f32>,
-    pos: [f32; 3],
+    position: [f32; 3],
     normal: [f32; 3],
     color: [f32; 4],
     uv: [f32; 2],
 ) {
     vertices.extend_from_slice(&[
-        pos[0], pos[1], pos[2], normal[0], normal[1], normal[2], color[0], color[1], color[2],
-        color[3], uv[0], uv[1],
+        position[0],
+        position[1],
+        position[2],
+        normal[0],
+        normal[1],
+        normal[2],
+        color[0],
+        color[1],
+        color[2],
+        color[3],
+        uv[0],
+        uv[1],
     ]);
 }
 
@@ -152,8 +215,10 @@ pub fn upload_block_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
     unsafe {
         gl::GenVertexArrays(1, &mut vao);
         gl::GenBuffers(1, &mut vbo);
+
         gl::BindVertexArray(vao);
         gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+
         gl::BufferData(
             gl::ARRAY_BUFFER,
             (vertices.len() * mem::size_of::<f32>()) as isize,
@@ -161,12 +226,20 @@ pub fn upload_block_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
             gl::STATIC_DRAW,
         );
 
-        // Stride is 12: pos(3), normal(3), color(4), uv(2)
-        let stride = (12 * mem::size_of::<f32>()) as i32;
-        // Position
-        gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, stride, ptr::null());
+        let stride = (BLOCK_VERTEX_FLOATS * mem::size_of::<f32>()) as i32;
+
+        // Position.
+        gl::VertexAttribPointer(
+            0,
+            3,
+            gl::FLOAT,
+            gl::FALSE,
+            stride,
+            ptr::null(),
+        );
         gl::EnableVertexAttribArray(0);
-        // Normal
+
+        // Normal.
         gl::VertexAttribPointer(
             1,
             3,
@@ -176,7 +249,8 @@ pub fn upload_block_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
             (3 * mem::size_of::<f32>()) as *const _,
         );
         gl::EnableVertexAttribArray(1);
-        // Color
+
+        // Color.
         gl::VertexAttribPointer(
             2,
             4,
@@ -186,7 +260,8 @@ pub fn upload_block_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
             (6 * mem::size_of::<f32>()) as *const _,
         );
         gl::EnableVertexAttribArray(2);
-        // UV
+
+        // UV.
         gl::VertexAttribPointer(
             3,
             2,
@@ -199,18 +274,29 @@ pub fn upload_block_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
 
         gl::BindVertexArray(0);
     }
-    (vao, vbo, (vertices.len() / 12) as i32)
+
+    (
+        vao,
+        vbo,
+        (vertices.len() / BLOCK_VERTEX_FLOATS) as i32,
+    )
 }
 
-/// Dynamic mesh upload and draw for character pose updates.
+/// Uploads and draws a dynamic mesh used by runtime character rendering.
+///
+/// The mesh is intentionally short-lived: the VAO and VBO are created for
+/// the draw and released immediately afterward.
 pub fn upload_and_draw_mesh_3d(vertices: &[f32]) {
     unsafe {
         let mut vao = 0;
         let mut vbo = 0;
+
         gl::GenVertexArrays(1, &mut vao);
         gl::GenBuffers(1, &mut vbo);
+
         gl::BindVertexArray(vao);
         gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+
         gl::BufferData(
             gl::ARRAY_BUFFER,
             (vertices.len() * mem::size_of::<f32>()) as isize,
@@ -218,9 +304,20 @@ pub fn upload_and_draw_mesh_3d(vertices: &[f32]) {
             gl::STREAM_DRAW,
         );
 
-        let stride = (10 * mem::size_of::<f32>()) as i32;
-        gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, stride, ptr::null());
+        let stride = (VERTEX_3D_FLOATS * mem::size_of::<f32>()) as i32;
+
+        // Position.
+        gl::VertexAttribPointer(
+            0,
+            3,
+            gl::FLOAT,
+            gl::FALSE,
+            stride,
+            ptr::null(),
+        );
         gl::EnableVertexAttribArray(0);
+
+        // Normal.
         gl::VertexAttribPointer(
             1,
             3,
@@ -230,6 +327,8 @@ pub fn upload_and_draw_mesh_3d(vertices: &[f32]) {
             (3 * mem::size_of::<f32>()) as *const _,
         );
         gl::EnableVertexAttribArray(1);
+
+        // Color.
         gl::VertexAttribPointer(
             2,
             4,
@@ -240,7 +339,11 @@ pub fn upload_and_draw_mesh_3d(vertices: &[f32]) {
         );
         gl::EnableVertexAttribArray(2);
 
-        gl::DrawArrays(gl::TRIANGLES, 0, (vertices.len() / 10) as i32);
+        gl::DrawArrays(
+            gl::TRIANGLES,
+            0,
+            (vertices.len() / VERTEX_3D_FLOATS) as i32,
+        );
 
         gl::BindVertexArray(0);
         gl::DeleteBuffers(1, &vbo);

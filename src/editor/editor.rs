@@ -610,7 +610,7 @@ impl Editor {
                                 ui.add_space(4.0);
 
                                 ui.horizontal(|ui| {
-                                    egui::ComboBox::from_id_source("attach_script_combo")
+                                    egui::ComboBox::from_id_salt("attach_script_combo")
                                         .selected_text("Attach Script")
                                         .show_ui(ui, |ui| {
                                             let scripts = &self.script_editor.scripts_list;
@@ -875,7 +875,7 @@ impl Editor {
                                         .hint_text("Name"));
 
                                     let prev_type = self.attribute_add_type;
-                                    egui::ComboBox::from_id_source("attr_type_combo")
+                                    egui::ComboBox::from_id_salt("attr_type_combo")
                                         .selected_text(format!("{:?}", self.attribute_add_type))
                                         .width(80.0)
                                         .show_ui(ui, |ui| {
@@ -1208,7 +1208,7 @@ impl Editor {
                     ui.horizontal(|ui| {
                         ui.label("Sky:");
                         let mut current_preset = world.sky.preset.clone();
-                        egui::ComboBox::from_id_source("sky_preset_combo")
+                        egui::ComboBox::from_id_salt("sky_preset_combo")
                             .selected_text(&current_preset)
                             .show_ui(ui, |ui| {
                                 for option in &["Temperate", "Tropical", "Desert", "Snowy", "Mars"]

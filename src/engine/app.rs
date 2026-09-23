@@ -1271,6 +1271,8 @@ impl App {
                 self.audio_system.stop_all();
 
                 self.stop_scripting();
+
+                self.world.clear_runtime_state();
             }
 
             self.last_mode = self.editor.mode;
