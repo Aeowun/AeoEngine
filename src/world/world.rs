@@ -100,6 +100,12 @@ pub struct World {
 
     /// Selected character package name for spawning.
     pub selected_character: String,
+
+    /// Selected controller profile name.
+    pub selected_controller: String,
+
+    /// Selected camera profile name.
+    pub selected_camera: String,
 }
 
 impl World {
@@ -119,6 +125,8 @@ impl World {
             script_bindings: Vec::new(),
             disabled_scripts: Vec::new(),
             selected_character: "custom".to_string(),
+            selected_controller: "thirdPerson_Controller".to_string(),
+            selected_camera: "thirdPerson".to_string(),
         }
     }
 

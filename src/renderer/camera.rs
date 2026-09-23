@@ -122,8 +122,15 @@ pub const DEFAULT_HEIGHT: f32 = 3.0;
 
 pub const LOOK_HEIGHT: f32 = 1.0;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CameraMode {
+    ThirdPerson,
+    FirstPerson,
+}
+
 /// A dedicated runtime camera that follows an active character.
 pub struct GameplayCamera {
+    pub mode: CameraMode,
     pub distance: f32,
     pub height: f32,
     pub look_height: f32,
@@ -138,6 +145,7 @@ pub struct GameplayCamera {
 impl GameplayCamera {
     pub fn new() -> Self {
         Self {
+            mode: CameraMode::ThirdPerson,
             distance: DEFAULT_DISTANCE,
             height: DEFAULT_HEIGHT,
             look_height: LOOK_HEIGHT,
@@ -147,6 +155,14 @@ impl GameplayCamera {
 
             current_position: Vec3::ZERO,
             current_target: Vec3::ZERO,
+        }
+    }
+
+    pub fn set_mode_from_name(&mut self, name: &str) {
+        if name == "firstPerson" {
+            self.mode = CameraMode::FirstPerson;
+        } else {
+            self.mode = CameraMode::ThirdPerson;
         }
     }
 
@@ -180,19 +196,35 @@ impl GameplayCamera {
     pub fn update(&mut self, character: &crate::character::Character, world: &World) {
         let char_pos = character.transform.position;
 
-        self.current_target = char_pos + Vec3::Y * self.look_height;
+        match self.mode {
+            CameraMode::ThirdPerson => {
+                self.current_target = char_pos + Vec3::Y * self.look_height;
 
-        let cos_pitch = self.pitch.cos();
+                let cos_pitch = self.pitch.cos();
 
-        let follow_offset = Vec3::new(
-            self.distance * cos_pitch * self.yaw.sin(),
-            self.distance * self.pitch.sin() + self.height,
-            self.distance * cos_pitch * self.yaw.cos(),
-        );
+                let follow_offset = Vec3::new(
+                    self.distance * cos_pitch * self.yaw.sin(),
+                    self.distance * self.pitch.sin() + self.height,
+                    self.distance * cos_pitch * self.yaw.cos(),
+                );
 
-        let desired_pos = char_pos + follow_offset;
+                let desired_pos = char_pos + follow_offset;
 
-        self.current_position = self.resolve_collision(self.current_target, desired_pos, world);
+                self.current_position = self.resolve_collision(self.current_target, desired_pos, world);
+            }
+            CameraMode::FirstPerson => {
+                self.current_position = char_pos + Vec3::Y * 1.5;
+                let cos_pitch = self.pitch.cos();
+                let sin_pitch = self.pitch.sin();
+                let forward = Vec3::new(
+                    -cos_pitch * self.yaw.sin(),
+                    sin_pitch,
+                    -cos_pitch * self.yaw.cos(),
+                )
+                .normalize();
+                self.current_target = self.current_position + forward;
+            }
+        }
     }
 
     fn resolve_collision(&self, target: Vec3, desired: Vec3, world: &World) -> Vec3 {

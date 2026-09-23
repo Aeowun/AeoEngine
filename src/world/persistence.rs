@@ -64,6 +64,8 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
     }
 
     writeln!(file, "SELECTED_CHARACTER {}", world.selected_character)?;
+    writeln!(file, "SELECTED_CONTROLLER {}", world.selected_controller)?;
+    writeln!(file, "SELECTED_CAMERA {}", world.selected_camera)?;
 
     for coord in world.active_blocks() {
         if let Some(cell) = world.get(coord) {
@@ -321,6 +323,16 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
         if parts[0] == "SELECTED_CHARACTER" && parts.len() >= 2 {
             world.selected_character = parts[1].to_string();
+            continue;
+        }
+
+        if parts[0] == "SELECTED_CONTROLLER" && parts.len() >= 2 {
+            world.selected_controller = parts[1].to_string();
+            continue;
+        }
+
+        if parts[0] == "SELECTED_CAMERA" && parts.len() >= 2 {
+            world.selected_camera = parts[1].to_string();
             continue;
         }
 

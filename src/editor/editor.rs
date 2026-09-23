@@ -1246,6 +1246,84 @@ impl Editor {
                         }
                     }
                 });
+
+            // --- CONTROLLER ---
+            egui::CollapsingHeader::new("CONTROLLER")
+                .default_open(true)
+                .show(ui, |ui| {
+                    let available = if let Some(path) = project_path {
+                        crate::project::discover_controllers(path)
+                    } else {
+                        vec!["thirdPerson_Controller".to_string()]
+                    };
+
+                    ui.horizontal(|ui| {
+                        ui.label("Controller:");
+                        let mut current = world.selected_controller.clone();
+                        let mut changed = false;
+
+                        egui::ComboBox::from_id_salt("world_controller_combo")
+                            .selected_text(&current)
+                            .show_ui(ui, |ui| {
+                                for ctrl_name in available {
+                                    if ui
+                                        .selectable_value(
+                                            &mut current,
+                                            ctrl_name.clone(),
+                                            &ctrl_name,
+                                        )
+                                        .clicked()
+                                    {
+                                        changed = true;
+                                    }
+                                }
+                            });
+
+                        if changed {
+                            world.selected_controller = current;
+                            self.needs_save = true;
+                        }
+                    });
+                });
+
+            // --- CAMERA ---
+            egui::CollapsingHeader::new("CAMERA")
+                .default_open(true)
+                .show(ui, |ui| {
+                    let available = if let Some(path) = project_path {
+                        crate::project::discover_cameras(path)
+                    } else {
+                        vec!["thirdPerson".to_string(), "firstPerson".to_string()]
+                    };
+
+                    ui.horizontal(|ui| {
+                        ui.label("Camera:");
+                        let mut current = world.selected_camera.clone();
+                        let mut changed = false;
+
+                        egui::ComboBox::from_id_salt("world_camera_combo")
+                            .selected_text(&current)
+                            .show_ui(ui, |ui| {
+                                for cam_name in available {
+                                    if ui
+                                        .selectable_value(
+                                            &mut current,
+                                            cam_name.clone(),
+                                            &cam_name,
+                                        )
+                                        .clicked()
+                                    {
+                                        changed = true;
+                                    }
+                                }
+                            });
+
+                        if changed {
+                            world.selected_camera = current;
+                            self.needs_save = true;
+                        }
+                    });
+                });
         });
     }
 

@@ -77,6 +77,8 @@ impl ProjectManager {
             fs::create_dir_all(&scripts_path).ok();
         }
         ensure_project_characters(&project_path);
+        ensure_project_controllers(&project_path);
+        ensure_project_cameras(&project_path);
 
         self.add_recent(project_path.clone());
         self.current_project = Some(project_path.clone());
@@ -90,6 +92,8 @@ impl ProjectManager {
                 fs::create_dir_all(&scripts_path).ok();
             }
             ensure_project_characters(&path);
+            ensure_project_controllers(&path);
+            ensure_project_cameras(&path);
 
             self.add_recent(path.clone());
             self.current_project = Some(path);
@@ -175,6 +179,92 @@ pub fn discover_characters(project_path: &std::path::Path) -> Vec<String> {
     names.sort();
     if names.is_empty() {
         names.push("custom".to_string());
+    }
+    names
+}
+
+pub fn ensure_project_controllers(project_path: &std::path::Path) {
+    let ctrl_dir = project_path.join("controllers");
+    if !ctrl_dir.exists() {
+        let _ = fs::create_dir_all(&ctrl_dir);
+    }
+
+    let tp_dir = ctrl_dir.join("thirdPerson_Controller");
+    if !tp_dir.exists() {
+        let _ = fs::create_dir_all(&tp_dir);
+        let pkg = r#"{
+  "name": "thirdPerson_Controller",
+  "type": "third_person"
+}"#;
+        let _ = fs::write(tp_dir.join("package.json"), pkg);
+    }
+}
+
+pub fn discover_controllers(project_path: &std::path::Path) -> Vec<String> {
+    ensure_project_controllers(project_path);
+    let mut names = Vec::new();
+    let ctrl_dir = project_path.join("controllers");
+    if let Ok(entries) = fs::read_dir(&ctrl_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    names.push(name.to_string());
+                }
+            }
+        }
+    }
+    names.sort();
+    if names.is_empty() {
+        names.push("thirdPerson_Controller".to_string());
+    }
+    names
+}
+
+pub fn ensure_project_cameras(project_path: &std::path::Path) {
+    let cam_dir = project_path.join("cameras");
+    if !cam_dir.exists() {
+        let _ = fs::create_dir_all(&cam_dir);
+    }
+
+    let tp_dir = cam_dir.join("thirdPerson");
+    if !tp_dir.exists() {
+        let _ = fs::create_dir_all(&tp_dir);
+        let pkg = r#"{
+  "name": "thirdPerson",
+  "type": "third_person"
+}"#;
+        let _ = fs::write(tp_dir.join("package.json"), pkg);
+    }
+
+    let fp_dir = cam_dir.join("firstPerson");
+    if !fp_dir.exists() {
+        let _ = fs::create_dir_all(&fp_dir);
+        let pkg = r#"{
+  "name": "firstPerson",
+  "type": "first_person"
+}"#;
+        let _ = fs::write(fp_dir.join("package.json"), pkg);
+    }
+}
+
+pub fn discover_cameras(project_path: &std::path::Path) -> Vec<String> {
+    ensure_project_cameras(project_path);
+    let mut names = Vec::new();
+    let cam_dir = project_path.join("cameras");
+    if let Ok(entries) = fs::read_dir(&cam_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    names.push(name.to_string());
+                }
+            }
+        }
+    }
+    names.sort();
+    if names.is_empty() {
+        names.push("thirdPerson".to_string());
     }
     names
 }

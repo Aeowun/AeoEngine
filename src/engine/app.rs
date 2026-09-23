@@ -736,6 +736,8 @@ impl App {
 
                 self.saved_editor_camera = Some(self.editor.camera.clone());
 
+                self.gameplay_camera.set_mode_from_name(&self.world.selected_camera);
+
                 self.physics_world.register_from_world(&self.world);
 
                 let spawned_id = self
