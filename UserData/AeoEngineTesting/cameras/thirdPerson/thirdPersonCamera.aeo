@@ -1,0 +1,44 @@
+entity ThirdPersonCamera {
+    player = nil
+
+    distance = 6.0
+    height = 2.0
+    look_height = 1.0
+
+    yaw = 0.785
+    pitch = 0.35
+
+    fn constructor(player_object) {
+        player = player_object
+    }
+
+    fn update(dt) {
+        if player == nil { return }
+
+        const orbit_delta = input.get_orbit_delta()
+        yaw = yaw - orbit_delta[0] * 0.005
+        pitch = math.clamp(pitch + orbit_delta[1] * 0.005, -0.3, 1.4)
+
+        const char_pos = player.position
+        const target = [char_pos[0], char_pos[1] + look_height, char_pos[2]]
+
+        const cos_pitch = math.cos(pitch)
+        const follow_offset = [
+            distance * cos_pitch * math.sin(yaw),
+            distance * math.sin(pitch) + height,
+            distance * cos_pitch * math.cos(yaw)
+        ]
+
+        const desired_pos = [
+            char_pos[0] + follow_offset[0],
+            char_pos[1] + follow_offset[1],
+            char_pos[2] + follow_offset[2]
+        ]
+
+        const actual_pos = physics.resolve_camera_collision(target, desired_pos)
+
+        camera.set_position(actual_pos[0], actual_pos[1], actual_pos[2])
+        camera.set_target(target[0], target[1], target[2])
+        camera.set_orientation(yaw, pitch)
+    }
+}
