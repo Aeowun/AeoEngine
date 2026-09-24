@@ -106,6 +106,12 @@ pub struct World {
 
     /// Selected camera profile name.
     pub selected_camera: String,
+
+    /// Default Play-mode mouse cursor visibility setting.
+    pub cursor_visible: bool,
+
+    /// Default Play-mode mouse screen/cursor locking setting.
+    pub screen_locked: bool,
 }
 
 impl World {
@@ -127,6 +133,8 @@ impl World {
             selected_character: "custom".to_string(),
             selected_controller: "thirdPerson_Controller".to_string(),
             selected_camera: "thirdPerson".to_string(),
+            cursor_visible: false,
+            screen_locked: true,
         }
     }
 

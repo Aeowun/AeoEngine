@@ -1,4 +1,5 @@
 use crate::engine::entity::{EntityId, EntityManager};
+use crate::engine::mouse::MouseController;
 use crate::scripting::api::EngineHost;
 use crate::scripting::value::{HandleKind, MapKey, Value};
 use crate::world::cell::AttributeValue;
@@ -19,6 +20,7 @@ use std::collections::BTreeMap;
 pub struct ScriptHostBridge<'a> {
     pub entity_manager: &'a mut EntityManager,
     pub world: &'a mut World,
+    pub mouse: &'a mut MouseController,
 
     pub dynamic_properties:
         &'a mut std::collections::HashMap<
@@ -367,6 +369,22 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         name: &str,
     ) -> Result<Option<Value>, String> {
         match kind {
+            HandleKind::Mouse => {
+                if id != 0 {
+                    return Err("Invalid Mouse handle".to_string());
+                }
+
+                match name {
+                    "setCursorVisible" => {
+                        return Ok(Some(Value::Bool(self.mouse.cursor_visible)));
+                    }
+                    "setScreenLocked" => {
+                        return Ok(Some(Value::Bool(self.mouse.screen_locked)));
+                    }
+                    _ => {}
+                }
+            }
+
             HandleKind::Cell | HandleKind::Light => {
                 if let Some(cell) =
                     self.world.get_effective_cell_by_id(id)
@@ -666,6 +684,26 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         value: Value,
     ) -> Result<bool, String> {
         match kind {
+            HandleKind::Mouse => {
+                if id != 0 {
+                    return Err("Invalid Mouse handle".to_string());
+                }
+
+                match name {
+                    "setCursorVisible" => {
+                        self.mouse.cursor_visible = value.as_bool()?;
+                        return Ok(true);
+                    }
+
+                    "setScreenLocked" => {
+                        self.mouse.screen_locked = value.as_bool()?;
+                        return Ok(true);
+                    }
+
+                    _ => {}
+                }
+            }
+
             HandleKind::Cell | HandleKind::Light => {
                 if self
                     .world
@@ -1314,10 +1352,12 @@ mod tests {
         let mut pending_disable_scripts = Vec::new();
         let mut runtime_ui =
             crate::engine::ui::RuntimeUi::new();
+        let mut mouse = MouseController::default();
 
         let bridge = ScriptHostBridge {
             entity_manager: &mut entity_manager,
             world: &mut world,
+            mouse: &mut mouse,
             dynamic_properties: &mut dynamic_properties,
             pending_events: &mut pending_events,
             test_results: &mut test_results,
@@ -1387,10 +1427,12 @@ mod tests {
         let mut pending_disable_scripts = Vec::new();
         let mut runtime_ui =
             crate::engine::ui::RuntimeUi::new();
+        let mut mouse = MouseController::default();
 
         let mut bridge = ScriptHostBridge {
             entity_manager: &mut entity_manager,
             world: &mut world,
+            mouse: &mut mouse,
             dynamic_properties: &mut dynamic_properties,
             pending_events: &mut pending_events,
             test_results: &mut test_results,
@@ -1517,10 +1559,12 @@ mod tests {
         let mut pending_disable_scripts = Vec::new();
         let mut runtime_ui =
             crate::engine::ui::RuntimeUi::new();
+        let mut mouse = MouseController::default();
 
         let mut bridge = ScriptHostBridge {
             entity_manager: &mut entity_manager,
             world: &mut world,
+            mouse: &mut mouse,
             dynamic_properties: &mut dynamic_properties,
             pending_events: &mut pending_events,
             test_results: &mut test_results,
@@ -1592,10 +1636,12 @@ mod tests {
         let mut pending_disable_scripts = Vec::new();
         let mut runtime_ui =
             crate::engine::ui::RuntimeUi::new();
+        let mut mouse = MouseController::default();
 
         let mut bridge = ScriptHostBridge {
             entity_manager: &mut entity_manager,
             world: &mut world,
+            mouse: &mut mouse,
             dynamic_properties: &mut dynamic_properties,
             pending_events: &mut pending_events,
             test_results: &mut test_results,
@@ -1626,5 +1672,55 @@ mod tests {
                 }),
             Some(original_position)
         );
+    }
+
+    #[test]
+    fn test_mouse_controller_script_properties() {
+        let mut world = World::new();
+        let mut entity_manager = EntityManager::new();
+        let mut dynamic_properties = std::collections::HashMap::new();
+        let mut pending_events = Vec::new();
+        let mut test_results = std::collections::BTreeMap::new();
+        let mut pending_enable_scripts = Vec::new();
+        let mut pending_disable_scripts = Vec::new();
+        let mut runtime_ui = crate::engine::ui::RuntimeUi::new();
+        let mut mouse = MouseController::default();
+
+        let mut bridge = ScriptHostBridge {
+            entity_manager: &mut entity_manager,
+            world: &mut world,
+            mouse: &mut mouse,
+            dynamic_properties: &mut dynamic_properties,
+            pending_events: &mut pending_events,
+            test_results: &mut test_results,
+            pending_enable_scripts: &mut pending_enable_scripts,
+            pending_disable_scripts: &mut pending_disable_scripts,
+            runtime_ui: &mut runtime_ui,
+            viewport_size: [1280.0, 720.0],
+            move_input: glam::Vec2::ZERO,
+            jump_requested: false,
+            orbit_delta: [0.0, 0.0],
+            character_system: None,
+            gameplay_camera: None,
+        };
+
+        bridge.mouse.set_play_defaults();
+        assert_eq!(bridge.mouse.cursor_visible, false);
+        assert_eq!(bridge.mouse.screen_locked, true);
+
+        assert_eq!(
+            bridge.get_property(HandleKind::Mouse, 0, "setCursorVisible").unwrap(),
+            Some(Value::Bool(false))
+        );
+        assert_eq!(
+            bridge.get_property(HandleKind::Mouse, 0, "setScreenLocked").unwrap(),
+            Some(Value::Bool(true))
+        );
+
+        assert!(bridge.set_property(HandleKind::Mouse, 0, "setCursorVisible", Value::Bool(true)).unwrap());
+        assert!(bridge.set_property(HandleKind::Mouse, 0, "setScreenLocked", Value::Bool(false)).unwrap());
+
+        assert_eq!(bridge.mouse.cursor_visible, true);
+        assert_eq!(bridge.mouse.screen_locked, false);
     }
 }

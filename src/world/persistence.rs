@@ -51,6 +51,13 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
         }
     )?;
 
+    // Save global mouse settings.
+    writeln!(
+        file,
+        "MOUSE {} {}",
+        world.cursor_visible, world.screen_locked
+    )?;
+
     for binding in &world.script_bindings {
         writeln!(
             file,
@@ -294,6 +301,12 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
             }
             world.lighting.global_light_intensity = parts[9].parse::<f32>().unwrap_or(1.0);
             world.lighting.ambient_intensity = parts[10].parse::<f32>().unwrap_or(0.2);
+            continue;
+        }
+
+        if parts[0] == "MOUSE" && parts.len() >= 3 {
+            world.cursor_visible = parts[1].parse::<bool>().unwrap_or(false);
+            world.screen_locked = parts[2].parse::<bool>().unwrap_or(true);
             continue;
         }
 
@@ -1181,6 +1194,24 @@ mod tests {
 
         let cell = world.get(WorldCoord::new(0, 0, 0)).unwrap();
         assert!(cell.attributes.is_empty());
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_world_mouse_settings_persistence() {
+        let mut world = World::new();
+        world.cursor_visible = true;
+        world.screen_locked = false;
+
+        let path = Path::new("test_mouse_settings.dat");
+        save_world(&world, path).unwrap();
+
+        let mut loaded_world = World::new();
+        load_world(&mut loaded_world, path).unwrap();
+
+        assert_eq!(loaded_world.cursor_visible, true);
+        assert_eq!(loaded_world.screen_locked, false);
 
         fs::remove_file(path).ok();
     }

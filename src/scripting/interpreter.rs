@@ -3883,6 +3883,7 @@ impl Interpreter {
             || name == "camera"
             || name == "physics"
             || name == "player"
+            || name == "get"
         {
             return Ok(Value::Namespace(name.to_string()));
         }

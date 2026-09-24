@@ -122,7 +122,7 @@ fn main() {
         None,
     );
 
-    let mut play_cursor_captured = false;
+    let mut last_applied_mouse: Option<(bool, bool)> = None;
 
     event_loop
         .run(move |event, elwt| match event {
@@ -161,34 +161,27 @@ fn main() {
             Event::AboutToWait => {
                 app.update(egui_state.egui_ctx());
 
-                let play_mode = app.view == engine::View::Editor
-                    && app.editor.mode == engine::EditorMode::Play
-                    && app.character_system.has_characters();
+                let current_mouse = (
+                    app.mouse.cursor_visible,
+                    app.mouse.screen_locked,
+                );
 
-                if play_mode && !play_cursor_captured {
-                    match window.set_cursor_grab(CursorGrabMode::Locked) {
-                        Ok(()) => {
-                            window.set_cursor_visible(false);
+                if last_applied_mouse != Some(current_mouse) {
+                    let grab_mode = if app.mouse.screen_locked {
+                        CursorGrabMode::Locked
+                    } else {
+                        CursorGrabMode::None
+                    };
 
-                            play_cursor_captured = true;
-                        }
-
-                        Err(error) => {
-                            eprintln!("Failed to capture Play mode cursor: {}", error);
-                        }
-                    }
-                } else if !play_mode && play_cursor_captured {
-                    match window.set_cursor_grab(CursorGrabMode::None) {
-                        Ok(()) => {
-                            window.set_cursor_visible(true);
-
-                            play_cursor_captured = false;
-                        }
-
-                        Err(error) => {
-                            eprintln!("Failed to release Play mode cursor: {}", error);
+                    if let Err(_err) = window.set_cursor_grab(grab_mode) {
+                        if app.mouse.screen_locked {
+                            let _ = window.set_cursor_grab(CursorGrabMode::Confined);
                         }
                     }
+
+                    window.set_cursor_visible(app.mouse.cursor_visible);
+
+                    last_applied_mouse = Some(current_mouse);
                 }
 
                 app.render();

@@ -14,6 +14,7 @@ pub enum HandleKind {
     Cell,
     Ui,
     Sound,
+    Mouse,
 }
 
 impl HandleKind {
@@ -24,6 +25,7 @@ impl HandleKind {
             Self::Cell => "Cell",
             Self::Ui => "Ui",
             Self::Sound => "Sound",
+            Self::Mouse => "Mouse",
         }
     }
 }

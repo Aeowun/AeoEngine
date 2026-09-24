@@ -3841,9 +3841,11 @@ entity Test {
         let mut pending_enable_scripts = Vec::new();
         let mut pending_disable_scripts = Vec::new();
         let mut runtime_ui = crate::engine::ui::RuntimeUi::new();
+        let mut mouse = crate::engine::mouse::MouseController::default();
         let mut bridge = crate::scripting::host::ScriptHostBridge {
             entity_manager: &mut th.entity_manager,
             world: &mut th.world,
+            mouse: &mut mouse,
             dynamic_properties: &mut dynamic_properties,
             pending_events: &mut pending_events,
             test_results: &mut test_results,
@@ -4620,10 +4622,12 @@ entity Trigger {
 
         // 2. Play mode mutations
         let mut runtime_ui = crate::engine::ui::RuntimeUi::new();
+        let mut mouse = crate::engine::mouse::MouseController::default();
         {
             let mut bridge = crate::scripting::host::ScriptHostBridge {
                 entity_manager: &mut em,
                 world: &mut world,
+                mouse: &mut mouse,
                 dynamic_properties: &mut dynamic_properties,
                 pending_events: &mut pending_events,
                 test_results: &mut test_results,

@@ -29,6 +29,24 @@ pub fn call_stdlib_function(
     _host: &mut HostContext,
 ) -> Result<Option<Value>, String> {
     match object_name {
+        "get" => {
+            let res = match method_name {
+                "mouse" => {
+                    if !args.is_empty() {
+                        return Err("get.mouse expects no arguments".to_string());
+                    }
+
+                    Value::Handle {
+                        kind: HandleKind::Mouse,
+                        id: 0,
+                    }
+                }
+
+                _ => return Ok(None),
+            };
+
+            return Ok(Some(res));
+        }
         "input" => {
             match method_name {
                 "get_move_vector" => {

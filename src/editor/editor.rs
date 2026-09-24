@@ -1242,6 +1242,63 @@ impl Editor {
                     });
                 });
 
+            // --- MOUSE ---
+            egui::CollapsingHeader::new("MOUSE")
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Cursor:");
+                        let mut visible_selected = world.cursor_visible;
+                        let mut changed = false;
+                        egui::ComboBox::from_id_salt("world_cursor_visible_combo")
+                            .selected_text(if visible_selected { "Visible" } else { "Hidden" })
+                            .show_ui(ui, |ui| {
+                                if ui
+                                    .selectable_value(&mut visible_selected, false, "Hidden")
+                                    .clicked()
+                                {
+                                    changed = true;
+                                }
+                                if ui
+                                    .selectable_value(&mut visible_selected, true, "Visible")
+                                    .clicked()
+                                {
+                                    changed = true;
+                                }
+                            });
+                        if changed {
+                            world.cursor_visible = visible_selected;
+                            self.needs_save = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Screen:");
+                        let mut locked_selected = world.screen_locked;
+                        let mut changed = false;
+                        egui::ComboBox::from_id_salt("world_screen_locked_combo")
+                            .selected_text(if locked_selected { "Locked" } else { "Unlocked" })
+                            .show_ui(ui, |ui| {
+                                if ui
+                                    .selectable_value(&mut locked_selected, true, "Locked")
+                                    .clicked()
+                                {
+                                    changed = true;
+                                }
+                                if ui
+                                    .selectable_value(&mut locked_selected, false, "Unlocked")
+                                    .clicked()
+                                {
+                                    changed = true;
+                                }
+                            });
+                        if changed {
+                            world.screen_locked = locked_selected;
+                            self.needs_save = true;
+                        }
+                    });
+                });
+
             // --- CHARACTER ---
             egui::CollapsingHeader::new("CHARACTER")
                 .default_open(true)

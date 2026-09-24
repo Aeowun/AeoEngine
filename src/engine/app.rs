@@ -101,6 +101,7 @@ pub struct App {
     pub is_middle_mouse_down: bool,
     pub last_cursor_pos: Option<(f64, f64)>,
     pub mouse_pos: (f64, f64),
+    pub mouse: crate::engine::mouse::MouseController,
 
     pub rmb_edge_scroll_velocity: glam::Vec2,
     pub last_set_cursor_pos: Option<(f64, f64)>,
@@ -192,6 +193,7 @@ impl App {
             is_middle_mouse_down: false,
             last_cursor_pos: None,
             mouse_pos: (0.0, 0.0),
+            mouse: crate::engine::mouse::MouseController::default(),
 
             rmb_edge_scroll_velocity: glam::Vec2::ZERO,
             last_set_cursor_pos: None,
@@ -1238,6 +1240,11 @@ impl App {
                             .as_deref(),
                     );
 
+                self.mouse.apply_world_defaults(
+                    self.world.cursor_visible,
+                    self.world.screen_locked,
+                );
+
                 self.start_scripting();
 
                 if let Some(_character_id) = spawned_id {
@@ -1271,6 +1278,7 @@ impl App {
                 self.audio_system.stop_all();
 
                 self.stop_scripting();
+                self.mouse.set_editor_defaults();
 
                 self.world.clear_runtime_state();
             }
@@ -1308,6 +1316,9 @@ impl App {
 
                             world:
                                 &mut self.world,
+
+                            mouse:
+                                &mut self.mouse,
 
                             dynamic_properties:
                                 &mut self
@@ -1521,6 +1532,9 @@ impl App {
                 let world =
                     &mut self.world;
 
+                let mouse =
+                    &mut self.mouse;
+
                 let dynamic_properties =
                     &mut self.script_dynamic_properties;
 
@@ -1583,6 +1597,7 @@ impl App {
                                 ScriptHostBridge {
                                     entity_manager,
                                     world,
+                                    mouse,
 
                                     dynamic_properties,
                                     pending_events,
@@ -1671,6 +1686,7 @@ impl App {
                             let mut bridge = ScriptHostBridge {
                                 entity_manager,
                                 world,
+                                mouse,
                                 dynamic_properties,
                                 pending_events,
                                 test_results,
@@ -1734,6 +1750,9 @@ impl App {
 
                             world:
                                 &mut self.world,
+
+                            mouse:
+                                &mut self.mouse,
 
                             viewport_size: [
                                 self.renderer.width(),
@@ -2009,6 +2028,9 @@ impl App {
             return;
         };
 
+        let controller_name = self.world.selected_controller.clone();
+        let camera_name = self.world.selected_camera.clone();
+
         match ScriptScene::load_from_bindings(
             project_path,
             &self.world,
@@ -2017,242 +2039,81 @@ impl App {
             0.0,
         ) {
             Ok(mut scene) => {
-                /*
-                 * Start the scene through the real runtime bridge rather
-                 * than a bare EntityManager host.
-                 *
-                 * This matters because explicit player.set_position() calls
-                 * made during script startup must reach CharacterSystem too.
-                 */
-                let mut bridge =
-                    ScriptHostBridge {
-                        entity_manager:
-                            &mut self.entity_manager,
+                let mut bridge = ScriptHostBridge {
+                    entity_manager: &mut self.entity_manager,
+                    world: &mut self.world,
+                    mouse: &mut self.mouse,
+                    dynamic_properties: &mut self.script_dynamic_properties,
+                    pending_events: &mut self.script_pending_events,
+                    test_results: &mut self.script_test_results,
+                    pending_enable_scripts: &mut self.script_pending_enable,
+                    pending_disable_scripts: &mut self.script_pending_disable,
+                    runtime_ui: &mut self.runtime_ui,
+                    viewport_size: [self.renderer.width(), self.renderer.height()],
+                    move_input: glam::Vec2::ZERO,
+                    jump_requested: false,
+                    orbit_delta: [0.0, 0.0],
+                    character_system: Some(&mut self.character_system),
+                    gameplay_camera: Some(&mut self.gameplay_camera),
+                };
 
-                        world:
-                            &mut self.world,
+                let mut context = HostContext {
+                    delta_time: 0.0,
+                    engine: &mut bridge,
+                };
 
-                        dynamic_properties:
-                            &mut self
-                                .script_dynamic_properties,
-
-                        pending_events:
-                            &mut self
-                                .script_pending_events,
-
-                        test_results:
-                            &mut self
-                                .script_test_results,
-
-                        pending_enable_scripts:
-                            &mut self
-                                .script_pending_enable,
-
-                        pending_disable_scripts:
-                            &mut self
-                                .script_pending_disable,
-
-                        runtime_ui:
-                            &mut self.runtime_ui,
-
-                        viewport_size: [
-                            self.renderer.width(),
-                            self.renderer.height(),
-                        ],
-
-                        move_input:
-                            glam::Vec2::ZERO,
-
-                        jump_requested:
-                            false,
-
-                        orbit_delta:
-                            [0.0, 0.0],
-
-                        character_system:
-                            Some(
-                                &mut self.character_system,
-                            ),
-
-                        gameplay_camera:
-                            Some(
-                                &mut self.gameplay_camera,
-                            ),
-                    };
-
-                let mut context =
-                    HostContext {
-                        delta_time: 0.0,
-                        engine: &mut bridge,
-                    };
-
-                if let Err(error) =
-                    scene.start(&mut context)
-                {
-                    self.editor
-                        .terminal_output
-                        .push_str(
-                            &format!(
-                                "[{}] [ERROR] Scripting startup error: {}\n",
-                                get_timestamp(),
-                                error
-                            ),
-                        );
-                } else {
-                    let controller_name =
-                        self.world
-                            .selected_controller
-                            .clone();
-
-                    let camera_name =
-                        self.world
-                            .selected_camera
-                            .clone();
-
-                    let player_value =
-                        Value::Namespace(
-                            "player".to_string(),
-                        );
-
-                    let camera_value =
-                        Value::Namespace(
-                            "camera".to_string(),
-                        );
-
-                    let input_value =
-                        Value::Namespace(
-                            "input".to_string(),
-                        );
-
-                    let mut bridge =
-                        ScriptHostBridge {
-                            entity_manager:
-                                &mut self.entity_manager,
-
-                            world:
-                                &mut self.world,
-
-                            dynamic_properties:
-                                &mut self
-                                    .script_dynamic_properties,
-
-                            pending_events:
-                                &mut self
-                                    .script_pending_events,
-
-                            test_results:
-                                &mut self
-                                    .script_test_results,
-
-                            pending_enable_scripts:
-                                &mut self
-                                    .script_pending_enable,
-
-                            pending_disable_scripts:
-                                &mut self
-                                    .script_pending_disable,
-
-                            runtime_ui:
-                                &mut self.runtime_ui,
-
-                            viewport_size: [
-                                self.renderer.width(),
-                                self.renderer.height(),
-                            ],
-
-                            move_input:
-                                glam::Vec2::ZERO,
-
-                            jump_requested:
-                                false,
-
-                            orbit_delta:
-                                [0.0, 0.0],
-
-                            character_system:
-                                Some(
-                                    &mut self.character_system,
-                                ),
-
-                            gameplay_camera:
-                                Some(
-                                    &mut self.gameplay_camera,
-                                ),
-                        };
-
-                    let mut context =
-                        HostContext {
-                            delta_time: 0.0,
-                            engine: &mut bridge,
-                        };
-
-                    let controller_class =
-                        match controller_name.as_str() {
-                            "thirdPerson_Controller" => {
-                                "ThirdPersonController"
-                            }
-
-                            other => other,
-                        };
-
-                    if let Ok(object) =
-                        scene.instantiate_script_object(
-                            controller_class,
-                            vec![
-                                player_value.clone(),
-                                camera_value.clone(),
-                                input_value.clone(),
-                            ],
-                            &mut context,
-                        )
-                    {
-                        self.controller_object =
-                            Some(object);
-                    }
-
-                    let camera_class =
-                        match camera_name.as_str() {
-                            "thirdPerson" => {
-                                "ThirdPersonCamera"
-                            }
-
-                            "firstPerson" => {
-                                "FirstPersonCamera"
-                            }
-
-                            "topDown" => {
-                                "TopDownCamera"
-                            }
-
-                            other => other,
-                        };
-
-                    if let Ok(object) =
-                        scene.instantiate_script_object(
-                            camera_class,
-                            vec![
-                                player_value,
-                            ],
-                            &mut context,
-                        )
-                    {
-                        self.camera_object =
-                            Some(object);
-                    }
-
-                    self.script_scene =
-                        Some(scene);
-                }
-            }
-
-            Err(error) => {
-                self.editor
-                    .terminal_output
-                    .push_str(&format!(
-                        "[{}] [ERROR] Scripting load error: {}\n",
+                if let Err(error) = scene.start(&mut context) {
+                    self.editor.terminal_output.push_str(&format!(
+                        "[{}] [ERROR] Scripting startup error: {}\n",
                         get_timestamp(),
                         error
                     ));
+                } else {
+                    let player_value = Value::Namespace("player".to_string());
+                    let camera_value = Value::Namespace("camera".to_string());
+                    let input_value = Value::Namespace("input".to_string());
+
+                    let controller_class = match controller_name.as_str() {
+                        "thirdPerson_Controller" => "ThirdPersonController",
+                        other => other,
+                    };
+
+                    if let Ok(object) = scene.instantiate_script_object(
+                        controller_class,
+                        vec![
+                            player_value.clone(),
+                            camera_value.clone(),
+                            input_value.clone(),
+                        ],
+                        &mut context,
+                    ) {
+                        self.controller_object = Some(object);
+                    }
+
+                    let camera_class = match camera_name.as_str() {
+                        "thirdPerson" => "ThirdPersonCamera",
+                        "firstPerson" => "FirstPersonCamera",
+                        "topDown" => "TopDownCamera",
+                        other => other,
+                    };
+
+                    if let Ok(object) = scene.instantiate_script_object(
+                        camera_class,
+                        vec![player_value],
+                        &mut context,
+                    ) {
+                        self.camera_object = Some(object);
+                    }
+
+                    self.script_scene = Some(scene);
+                }
+            }
+            Err(error) => {
+                self.editor.terminal_output.push_str(&format!(
+                    "[{}] [ERROR] Scripting load error: {}\n",
+                    get_timestamp(),
+                    error
+                ));
             }
         }
     }
@@ -2269,6 +2130,9 @@ impl App {
 
                     world:
                         &mut self.world,
+
+                    mouse:
+                        &mut self.mouse,
 
                     dynamic_properties:
                         &mut self
@@ -2361,6 +2225,9 @@ impl App {
 
                     world:
                         &mut self.world,
+
+                    mouse:
+                        &mut self.mouse,
 
                     viewport_size:
                         [

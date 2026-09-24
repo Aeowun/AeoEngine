@@ -662,6 +662,6 @@ pub fn call_host_member(
             _ => Ok(None),
         },
 
-        HandleKind::Ui | HandleKind::Sound => Ok(None),
+        HandleKind::Ui | HandleKind::Sound | HandleKind::Mouse => Ok(None),
     }
 }
