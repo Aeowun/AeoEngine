@@ -374,12 +374,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         Some((HandleKind::Entity, entity_id.0))
     }
 
-    fn get_property(
-        &self,
-        kind: HandleKind,
-        id: u64,
-        name: &str,
-    ) -> Result<Option<Value>, String> {
+    fn get_property(&self, kind: HandleKind, id: u64, name: &str) -> Result<Option<Value>, String> {
         match kind {
             HandleKind::Mouse => {
                 if id != 0 {
@@ -439,9 +434,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                         "visible" => {
                             if let Some(coord) = self.world.resolve_cell_id(id) {
-                                return Ok(Some(Value::Bool(
-                                    self.world.is_cell_visible(coord),
-                                )));
+                                return Ok(Some(Value::Bool(self.world.is_cell_visible(coord))));
                             }
 
                             if let Some(runtime_state) = self.world.runtime_state.get(&id) {
@@ -455,9 +448,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                         "enabled" => {
                             if let Some(coord) = self.world.resolve_cell_id(id) {
-                                return Ok(Some(Value::Bool(
-                                    self.world.is_light_enabled(coord),
-                                )));
+                                return Ok(Some(Value::Bool(self.world.is_light_enabled(coord))));
                             }
 
                             if let Some(runtime_state) = self.world.runtime_state.get(&id) {
@@ -485,9 +476,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                         "anchored" => {
                             if let Some(coord) = self.world.resolve_cell_id(id) {
-                                return Ok(Some(Value::Bool(
-                                    self.world.is_cell_anchored(coord),
-                                )));
+                                return Ok(Some(Value::Bool(self.world.is_cell_anchored(coord))));
                             }
 
                             if let Some(runtime_state) = self.world.runtime_state.get(&id) {
@@ -607,8 +596,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                     "velocity" => {
                         if let Some(character_system) = self.character_system.as_deref() {
-                            if let Some(velocity) =
-                                character_system.get_entity_velocity(entity_id)
+                            if let Some(velocity) = character_system.get_entity_velocity(entity_id)
                             {
                                 return Ok(Some(Value::array(vec![
                                     Value::Number(velocity.x as f64),
@@ -623,9 +611,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                     "facing" => {
                         if let Some(character_system) = self.character_system.as_deref() {
-                            if let Some(facing) =
-                                character_system.get_entity_facing(entity_id)
-                            {
+                            if let Some(facing) = character_system.get_entity_facing(entity_id) {
                                 return Ok(Some(Value::array(vec![
                                     Value::Number(facing.x as f64),
                                     Value::Number(facing.y as f64),
@@ -638,9 +624,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                     "grounded" => {
                         if let Some(character_system) = self.character_system.as_deref() {
-                            if let Some(grounded) =
-                                character_system.is_entity_grounded(entity_id)
-                            {
+                            if let Some(grounded) = character_system.is_entity_grounded(entity_id) {
                                 return Ok(Some(Value::Bool(grounded)));
                             }
                         }
@@ -662,9 +646,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                     "health" => {
                         if let Some(character_system) = self.character_system.as_deref() {
-                            if let Some(health) =
-                                character_system.get_entity_health(entity_id)
-                            {
+                            if let Some(health) = character_system.get_entity_health(entity_id) {
                                 return Ok(Some(Value::Number(health as f64)));
                             }
                         }
@@ -686,9 +668,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                     "alive" => {
                         if let Some(character_system) = self.character_system.as_deref() {
-                            if let Some(alive) =
-                                character_system.is_entity_alive(entity_id)
-                            {
+                            if let Some(alive) = character_system.is_entity_alive(entity_id) {
                                 return Ok(Some(Value::Bool(alive)));
                             }
                         }
@@ -703,8 +683,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
             HandleKind::Sound => match name {
                 "playing" => {
                     return Ok(Some(Value::Bool(
-                        self.world.is_audio_playing(id)
-                            && !self.world.is_audio_paused(id),
+                        self.world.is_audio_playing(id) && !self.world.is_audio_paused(id),
                     )));
                 }
 
@@ -713,9 +692,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                 }
 
                 "volume" => {
-                    return Ok(Some(Value::Number(
-                        self.world.get_audio_volume(id) as f64,
-                    )));
+                    return Ok(Some(Value::Number(self.world.get_audio_volume(id) as f64)));
                 }
 
                 _ => {}
@@ -764,7 +741,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                             if borrowed.elements.len() != 3 {
                                 return Err(
-                                    "position must be a basket of 3 numbers [x, y, z]".to_string(),
+                                    "position must be a basket of 3 numbers [x, y, z]".to_string()
                                 );
                             }
 
@@ -784,8 +761,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                                 cell.entity_identity = Some(name.to_string());
                             } else {
                                 return Err(
-                                    "Cannot change name of an authored cell at runtime"
-                                        .to_string(),
+                                    "Cannot change name of an authored cell at runtime".to_string()
                                 );
                             }
 
@@ -827,8 +803,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                             if let Some(coord) = self.world.resolve_cell_id(id) {
                                 self.world.set_cell_solid_runtime(coord, solid);
                             } else {
-                                self.world.runtime_state.entry(id).or_default().solid =
-                                    Some(solid);
+                                self.world.runtime_state.entry(id).or_default().solid = Some(solid);
                             }
 
                             return Ok(true);
@@ -840,11 +815,8 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                             if let Some(coord) = self.world.resolve_cell_id(id) {
                                 self.world.set_cell_anchored_runtime(coord, anchored);
                             } else {
-                                self.world
-                                    .runtime_state
-                                    .entry(id)
-                                    .or_default()
-                                    .anchored = Some(anchored);
+                                self.world.runtime_state.entry(id).or_default().anchored =
+                                    Some(anchored);
                             }
 
                             return Ok(true);
@@ -856,7 +828,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                             if borrowed.elements.len() != 3 {
                                 return Err(
-                                    "color must be a basket of 3 numbers [r, g, b]".to_string(),
+                                    "color must be a basket of 3 numbers [r, g, b]".to_string()
                                 );
                             }
 
@@ -882,7 +854,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                             if borrowed.elements.len() != 3 {
                                 return Err(
-                                    "offset must be a basket of 3 numbers [x, y, z]".to_string(),
+                                    "offset must be a basket of 3 numbers [x, y, z]".to_string()
                                 );
                             }
 
@@ -923,9 +895,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                         let borrowed = basket.borrow();
 
                         if borrowed.elements.len() != 3 {
-                            return Err(
-                                "Entity.position must be [x, y, z]".to_string()
-                            );
+                            return Err("Entity.position must be [x, y, z]".to_string());
                         }
 
                         let position = Vec3::new(
@@ -944,9 +914,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                         let borrowed = basket.borrow();
 
                         if borrowed.elements.len() != 3 {
-                            return Err(
-                                "Entity.velocity must be [x, y, z]".to_string()
-                            );
+                            return Err("Entity.velocity must be [x, y, z]".to_string());
                         }
 
                         let velocity = Vec3::new(
@@ -955,17 +923,12 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                             borrowed.elements[2].as_number()? as f32,
                         );
 
-                        let Some(character_system) = self.character_system.as_deref_mut()
-                        else {
-                            return Err(
-                                "CharacterSystem not available".to_string()
-                            );
+                        let Some(character_system) = self.character_system.as_deref_mut() else {
+                            return Err("CharacterSystem not available".to_string());
                         };
 
                         if !character_system.set_entity_velocity(entity_id, velocity) {
-                            return Err(
-                                "Entity does not reference a runtime character".to_string()
-                            );
+                            return Err("Entity does not reference a runtime character".to_string());
                         }
 
                         return Ok(true);
@@ -976,29 +939,18 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                         let borrowed = basket.borrow();
 
                         if borrowed.elements.len() != 2 {
-                            return Err(
-                                "Entity.facing must be [x, z]".to_string()
-                            );
+                            return Err("Entity.facing must be [x, z]".to_string());
                         }
 
                         let x = borrowed.elements[0].as_number()? as f32;
                         let z = borrowed.elements[1].as_number()? as f32;
 
-                        let Some(character_system) = self.character_system.as_deref_mut()
-                        else {
-                            return Err(
-                                "CharacterSystem not available".to_string()
-                            );
+                        let Some(character_system) = self.character_system.as_deref_mut() else {
+                            return Err("CharacterSystem not available".to_string());
                         };
 
-                        if !character_system.set_entity_facing_direction(
-                            entity_id,
-                            x,
-                            z,
-                        ) {
-                            return Err(
-                                "Entity does not reference a runtime character".to_string()
-                            );
+                        if !character_system.set_entity_facing_direction(entity_id, x, z) {
+                            return Err("Entity does not reference a runtime character".to_string());
                         }
 
                         return Ok(true);
@@ -1007,11 +959,8 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                     "animation" => {
                         let animation = value.as_string()?;
 
-                        let Some(character_system) = self.character_system.as_deref_mut()
-                        else {
-                            return Err(
-                                "CharacterSystem not available".to_string()
-                            );
+                        let Some(character_system) = self.character_system.as_deref_mut() else {
+                            return Err("CharacterSystem not available".to_string());
                         };
 
                         character_system.set_entity_animation(entity_id, animation)?;
@@ -1022,17 +971,12 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                     "health" => {
                         let health = value.as_number()? as f32;
 
-                        let Some(character_system) = self.character_system.as_deref_mut()
-                        else {
-                            return Err(
-                                "CharacterSystem not available".to_string()
-                            );
+                        let Some(character_system) = self.character_system.as_deref_mut() else {
+                            return Err("CharacterSystem not available".to_string());
                         };
 
                         if !character_system.set_entity_health(entity_id, health) {
-                            return Err(
-                                "Entity does not reference a runtime character".to_string()
-                            );
+                            return Err("Entity does not reference a runtime character".to_string());
                         }
 
                         return Ok(true);
@@ -1041,27 +985,19 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                     "max_health" => {
                         let max_health = value.as_number()? as f32;
 
-                        let Some(character_system) = self.character_system.as_deref_mut()
-                        else {
-                            return Err(
-                                "CharacterSystem not available".to_string()
-                            );
+                        let Some(character_system) = self.character_system.as_deref_mut() else {
+                            return Err("CharacterSystem not available".to_string());
                         };
 
                         if !character_system.set_entity_max_health(entity_id, max_health) {
-                            return Err(
-                                "Entity does not reference a runtime character".to_string()
-                            );
+                            return Err("Entity does not reference a runtime character".to_string());
                         }
 
                         return Ok(true);
                     }
 
                     "id" | "name" | "grounded" | "alive" => {
-                        return Err(format!(
-                            "Entity.{} is read-only",
-                            name
-                        ));
+                        return Err(format!("Entity.{} is read-only", name));
                     }
 
                     _ => {}
@@ -1128,10 +1064,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
             HandleKind::Cell | HandleKind::Light => match name {
                 "getObject" => {
                     if !arguments.is_empty() {
-                        return Err(format!(
-                            "{}.getObject() expects 0 arguments",
-                            kind.name()
-                        ));
+                        return Err(format!("{}.getObject() expects 0 arguments", kind.name()));
                     }
 
                     if let Some((kind, id)) = self.get_cell_object(id) {
@@ -1143,10 +1076,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                 "is_enabled" => {
                     if !arguments.is_empty() {
-                        return Err(format!(
-                            "{}.is_enabled() expects 0 arguments",
-                            kind.name()
-                        ));
+                        return Err(format!("{}.is_enabled() expects 0 arguments", kind.name()));
                     }
 
                     Ok(self
@@ -1176,34 +1106,24 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                 let entity_id = EntityId(id);
 
                 if !self.entity_manager.validate_handle(id) {
-                    return Err(
-                        "entity method called on an invalid handle".to_string()
-                    );
+                    return Err("entity method called on an invalid handle".to_string());
                 }
 
                 match name {
                     "is_valid" => {
                         if !arguments.is_empty() {
-                            return Err(
-                                "entity.is_valid() expects 0 arguments".to_string()
-                            );
+                            return Err("entity.is_valid() expects 0 arguments".to_string());
                         }
 
-                        Ok(Some(Value::Bool(
-                            self.entity_manager.validate_handle(id),
-                        )))
+                        Ok(Some(Value::Bool(self.entity_manager.validate_handle(id))))
                     }
 
                     "name" => {
                         if !arguments.is_empty() {
-                            return Err(
-                                "entity.name() expects 0 arguments".to_string()
-                            );
+                            return Err("entity.name() expects 0 arguments".to_string());
                         }
 
-                        if let Some(entity_name) =
-                            self.entity_manager.get_name(entity_id)
-                        {
+                        if let Some(entity_name) = self.entity_manager.get_name(entity_id) {
                             Ok(Some(Value::String(entity_name.to_string())))
                         } else {
                             Ok(Some(Value::Nil))
@@ -1213,8 +1133,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                     "set_position" => {
                         if arguments.len() != 3 {
                             return Err(
-                                "entity.set_position() expects 3 arguments (x, y, z)"
-                                    .to_string(),
+                                "entity.set_position() expects 3 arguments (x, y, z)".to_string()
                             );
                         }
 
@@ -1222,10 +1141,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                         let y = arguments[1].as_number()? as f32;
                         let z = arguments[2].as_number()? as f32;
 
-                        self.set_position(
-                            id,
-                            Vec3::new(x, y, z),
-                        );
+                        self.set_position(id, Vec3::new(x, y, z));
 
                         Ok(Some(Value::Nil))
                     }
@@ -1233,8 +1149,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                     "translate" => {
                         if arguments.len() != 3 {
                             return Err(
-                                "entity.translate() expects 3 arguments (x, y, z)"
-                                    .to_string(),
+                                "entity.translate() expects 3 arguments (x, y, z)".to_string()
                             );
                         }
 
@@ -1243,10 +1158,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                         let dz = arguments[2].as_number()? as f32;
 
                         if let Some(position) = self.get_position(id) {
-                            self.set_position(
-                                id,
-                                position + Vec3::new(dx, dy, dz),
-                            );
+                            self.set_position(id, position + Vec3::new(dx, dy, dz));
                         }
 
                         Ok(Some(Value::Nil))
@@ -1255,8 +1167,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                     "jump" => {
                         if arguments.len() > 1 {
                             return Err(
-                                "entity.jump() expects 0 or 1 argument (impulse)"
-                                    .to_string(),
+                                "entity.jump() expects 0 or 1 argument (impulse)".to_string()
                             );
                         }
 
@@ -1266,22 +1177,12 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                             arguments[0].as_number()? as f32
                         };
 
-                        let Some(character_system) =
-                            self.character_system.as_deref_mut()
-                        else {
-                            return Err(
-                                "CharacterSystem not available".to_string()
-                            );
+                        let Some(character_system) = self.character_system.as_deref_mut() else {
+                            return Err("CharacterSystem not available".to_string());
                         };
 
-                        if !character_system.jump_entity(
-                            entity_id,
-                            impulse,
-                        ) {
-                            return Err(
-                                "Entity does not reference a runtime character"
-                                    .to_string(),
-                            );
+                        if !character_system.jump_entity(entity_id, impulse) {
+                            return Err("Entity does not reference a runtime character".to_string());
                         }
 
                         Ok(Some(Value::Nil))
@@ -1289,32 +1190,17 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                     "damage" => {
                         if arguments.len() != 1 {
-                            return Err(
-                                "entity.damage() expects 1 argument (amount)"
-                                    .to_string(),
-                            );
+                            return Err("entity.damage() expects 1 argument (amount)".to_string());
                         }
 
                         let amount = arguments[0].as_number()? as f32;
 
-                        let Some(character_system) =
-                            self.character_system.as_deref_mut()
-                        else {
-                            return Err(
-                                "CharacterSystem not available".to_string()
-                            );
+                        let Some(character_system) = self.character_system.as_deref_mut() else {
+                            return Err("CharacterSystem not available".to_string());
                         };
 
-                        let Some(health) =
-                            character_system.damage_entity(
-                                entity_id,
-                                amount,
-                            )
-                        else {
-                            return Err(
-                                "Entity does not reference a runtime character"
-                                    .to_string(),
-                            );
+                        let Some(health) = character_system.damage_entity(entity_id, amount) else {
+                            return Err("Entity does not reference a runtime character".to_string());
                         };
 
                         Ok(Some(Value::Number(health as f64)))
@@ -1322,32 +1208,17 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                     "heal" => {
                         if arguments.len() != 1 {
-                            return Err(
-                                "entity.heal() expects 1 argument (amount)"
-                                    .to_string(),
-                            );
+                            return Err("entity.heal() expects 1 argument (amount)".to_string());
                         }
 
                         let amount = arguments[0].as_number()? as f32;
 
-                        let Some(character_system) =
-                            self.character_system.as_deref_mut()
-                        else {
-                            return Err(
-                                "CharacterSystem not available".to_string()
-                            );
+                        let Some(character_system) = self.character_system.as_deref_mut() else {
+                            return Err("CharacterSystem not available".to_string());
                         };
 
-                        let Some(health) =
-                            character_system.heal_entity(
-                                entity_id,
-                                amount,
-                            )
-                        else {
-                            return Err(
-                                "Entity does not reference a runtime character"
-                                    .to_string(),
-                            );
+                        let Some(health) = character_system.heal_entity(entity_id, amount) else {
+                            return Err("Entity does not reference a runtime character".to_string());
                         };
 
                         Ok(Some(Value::Number(health as f64)))
@@ -1355,15 +1226,10 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
                     "destroy" => {
                         if !arguments.is_empty() {
-                            return Err(
-                                "entity.destroy() expects 0 arguments"
-                                    .to_string(),
-                            );
+                            return Err("entity.destroy() expects 0 arguments".to_string());
                         }
 
-                        if let Some(character_system) =
-                            self.character_system.as_deref_mut()
-                        {
+                        if let Some(character_system) = self.character_system.as_deref_mut() {
                             character_system.destroy_entity(entity_id);
                         }
 
@@ -1378,8 +1244,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                     "find_path" => {
                         if arguments.len() != 1 {
                             return Err(
-                                "entity.find_path() expects 1 argument ([x, y, z])"
-                                    .to_string(),
+                                "entity.find_path() expects 1 argument ([x, y, z])".to_string()
                             );
                         }
 
@@ -1387,10 +1252,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                         let borrowed = basket.borrow();
 
                         if borrowed.elements.len() != 3 {
-                            return Err(
-                                "entity.find_path() target must be [x, y, z]"
-                                    .to_string(),
-                            );
+                            return Err("entity.find_path() target must be [x, y, z]".to_string());
                         }
 
                         let target = Vec3::new(
@@ -1399,20 +1261,12 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
                             borrowed.elements[2].as_number()? as f32,
                         );
 
-                        let Some(character_system) =
-                            self.character_system.as_deref()
-                        else {
-                            return Err(
-                                "CharacterSystem not available".to_string()
-                            );
+                        let Some(character_system) = self.character_system.as_deref() else {
+                            return Err("CharacterSystem not available".to_string());
                         };
 
                         let Some(path) =
-                            character_system.find_path_for_entity(
-                                entity_id,
-                                self.world,
-                                target,
-                            )
+                            character_system.find_path_for_entity(entity_id, self.world, target)
                         else {
                             return Ok(Some(Value::Nil));
                         };
@@ -1527,25 +1381,14 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         self.entity_manager.validate_handle(id)
     }
 
-    fn get_script_property(
-        &self,
-        kind: HandleKind,
-        id: u64,
-        name: &str,
-    ) -> Option<Value> {
+    fn get_script_property(&self, kind: HandleKind, id: u64, name: &str) -> Option<Value> {
         self.dynamic_properties
             .get(&(kind, id))
             .and_then(|properties| properties.get(name))
             .cloned()
     }
 
-    fn set_script_property(
-        &mut self,
-        kind: HandleKind,
-        id: u64,
-        name: String,
-        value: Value,
-    ) {
+    fn set_script_property(&mut self, kind: HandleKind, id: u64, name: String, value: Value) {
         self.dynamic_properties
             .entry((kind, id))
             .or_default()
@@ -1564,12 +1407,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         self.runtime_ui.get_property(id, name)
     }
 
-    fn set_ui_property(
-        &mut self,
-        id: u64,
-        name: &str,
-        value: Value,
-    ) -> Result<bool, String> {
+    fn set_ui_property(&mut self, id: u64, name: &str, value: Value) -> Result<bool, String> {
         self.runtime_ui.set_property(id, name, value)
     }
 
@@ -1604,15 +1442,13 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
     fn set_camera_position(&mut self, position: [f32; 3]) {
         if let Some(ref mut camera) = self.gameplay_camera {
-            camera.current_position =
-                Vec3::new(position[0], position[1], position[2]);
+            camera.current_position = Vec3::new(position[0], position[1], position[2]);
         }
     }
 
     fn set_camera_target(&mut self, target: [f32; 3]) {
         if let Some(ref mut camera) = self.gameplay_camera {
-            camera.current_target =
-                Vec3::new(target[0], target[1], target[2]);
+            camera.current_target = Vec3::new(target[0], target[1], target[2]);
         }
     }
 
@@ -1623,20 +1459,13 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         }
     }
 
-    fn resolve_camera_collision(
-        &self,
-        target: [f32; 3],
-        desired: [f32; 3],
-    ) -> [f32; 3] {
+    fn resolve_camera_collision(&self, target: [f32; 3], desired: [f32; 3]) -> [f32; 3] {
         if let Some(ref camera) = self.gameplay_camera {
-            let target =
-                Vec3::new(target[0], target[1], target[2]);
+            let target = Vec3::new(target[0], target[1], target[2]);
 
-            let desired =
-                Vec3::new(desired[0], desired[1], desired[2]);
+            let desired = Vec3::new(desired[0], desired[1], desired[2]);
 
-            let resolved =
-                camera.resolve_collision(target, desired, self.world);
+            let resolved = camera.resolve_collision(target, desired, self.world);
 
             [resolved.x, resolved.y, resolved.z]
         } else {
@@ -1653,11 +1482,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         Some([position.x, position.y, position.z])
     }
 
-    fn set_player_horizontal_velocity(
-        &mut self,
-        velocity_x: f32,
-        velocity_z: f32,
-    ) {
+    fn set_player_horizontal_velocity(&mut self, velocity_x: f32, velocity_z: f32) {
         if let Some(system) = self.character_system.as_deref_mut() {
             if let Some(player) = system.get_active_player_mut() {
                 player.movement.velocity.x = velocity_x;
@@ -1666,17 +1491,12 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         }
     }
 
-    fn set_player_facing_direction(
-        &mut self,
-        direction_x: f32,
-        direction_z: f32,
-    ) {
+    fn set_player_facing_direction(&mut self, direction_x: f32, direction_z: f32) {
         if let Some(system) = self.character_system.as_deref_mut() {
             if let Some(player) = system.get_active_player_mut() {
                 let angle = f32::atan2(direction_x, direction_z);
 
-                player.transform.rotation =
-                    glam::Quat::from_rotation_y(angle);
+                player.transform.rotation = glam::Quat::from_rotation_y(angle);
             }
         }
     }
@@ -1718,14 +1538,12 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
 
 impl<'a> ScriptHostBridge<'a> {
     fn entity_character_id(&self, entity_id: EntityId) -> Option<u64> {
-        self.character_system
-            .as_deref()
-            .and_then(|system| {
-                system
-                    .get_active_characters()
-                    .find(|character| character.id == entity_id.0)
-                    .map(|character| character.id)
-            })
+        self.character_system.as_deref().and_then(|system| {
+            system
+                .get_active_characters()
+                .find(|character| character.id == entity_id.0)
+                .map(|character| character.id)
+        })
     }
 }
 
@@ -1735,8 +1553,8 @@ mod tests {
     use crate::character::CharacterSystem;
     use crate::scripting::api::EngineHost;
     use crate::scripting::value::{HandleKind, Value};
-    use crate::world::cell::{AttributeValue, CellType};
     use crate::world::WorldCoord;
+    use crate::world::cell::{AttributeValue, CellType};
 
     fn make_bridge<'a>(
         entity_manager: &'a mut EntityManager,
@@ -1940,10 +1758,7 @@ mod tests {
         let mut entity_manager = EntityManager::new();
         let mut character_system = CharacterSystem::new();
 
-        world.set_cell(
-            WorldCoord::new(0, 0, 0),
-            CellType::SpawnPoint,
-        );
+        world.set_cell(WorldCoord::new(0, 0, 0), CellType::SpawnPoint);
 
         let player_char_id = character_system
             .spawn_player(&world, None)
@@ -1979,10 +1794,7 @@ mod tests {
 
         bridge.set_position(player_id.0, target);
 
-        assert_eq!(
-            bridge.entity_manager.get_position(player_id),
-            Some(target)
-        );
+        assert_eq!(bridge.entity_manager.get_position(player_id), Some(target));
 
         assert_eq!(
             bridge.character_system.as_deref().and_then(|system| {
@@ -2000,10 +1812,7 @@ mod tests {
         let mut entity_manager = EntityManager::new();
         let mut character_system = CharacterSystem::new();
 
-        world.set_cell(
-            WorldCoord::new(0, 0, 0),
-            CellType::SpawnPoint,
-        );
+        world.set_cell(WorldCoord::new(0, 0, 0), CellType::SpawnPoint);
 
         character_system
             .spawn_player(&world, None)
@@ -2040,10 +1849,7 @@ mod tests {
             Some(&mut character_system),
         );
 
-        bridge.set_position(
-            entity_id.0,
-            Vec3::new(100.0, 100.0, 100.0),
-        );
+        bridge.set_position(entity_id.0, Vec3::new(100.0, 100.0, 100.0));
 
         assert_eq!(
             bridge.character_system.as_deref().and_then(|system| {
@@ -2103,23 +1909,13 @@ mod tests {
 
         assert!(
             bridge
-                .set_property(
-                    HandleKind::Mouse,
-                    0,
-                    "setCursorVisible",
-                    Value::Bool(true),
-                )
+                .set_property(HandleKind::Mouse, 0, "setCursorVisible", Value::Bool(true),)
                 .unwrap()
         );
 
         assert!(
             bridge
-                .set_property(
-                    HandleKind::Mouse,
-                    0,
-                    "setScreenLocked",
-                    Value::Bool(false),
-                )
+                .set_property(HandleKind::Mouse, 0, "setScreenLocked", Value::Bool(false),)
                 .unwrap()
         );
 
@@ -2133,25 +1929,16 @@ mod tests {
         let mut entity_manager = EntityManager::new();
         let mut character_system = CharacterSystem::new();
 
-        world.set_cell(
-            WorldCoord::new(0, 0, 0),
-            CellType::SpawnPoint,
-        );
+        world.set_cell(WorldCoord::new(0, 0, 0), CellType::SpawnPoint);
 
         let character_id = character_system
             .spawn_player(&world, None)
             .expect("character should spawn");
 
         let entity_id = entity_manager.create_entity("Villager");
-        entity_manager.set_position(
-            entity_id,
-            Vec3::new(1.0, 2.0, 3.0),
-        );
+        entity_manager.set_position(entity_id, Vec3::new(1.0, 2.0, 3.0));
 
-        character_system.associate_entity(
-            entity_id,
-            character_id,
-        );
+        character_system.associate_entity(entity_id, character_id);
 
         let mut dynamic_properties = std::collections::HashMap::new();
         let mut pending_events = Vec::new();
@@ -2180,70 +1967,42 @@ mod tests {
             .get_property(HandleKind::Entity, entity_id.0, "id")
             .unwrap();
 
-        assert_eq!(
-            id,
-            Some(Value::Number(entity_id.0 as f64))
-        );
+        assert_eq!(id, Some(Value::Number(entity_id.0 as f64)));
 
         let name = bridge
             .get_property(HandleKind::Entity, entity_id.0, "name")
             .unwrap();
 
-        assert_eq!(
-            name,
-            Some(Value::String("Villager".to_string()))
-        );
+        assert_eq!(name, Some(Value::String("Villager".to_string())));
 
         let position = bridge
-            .get_property(
-                HandleKind::Entity,
-                entity_id.0,
-                "position",
-            )
+            .get_property(HandleKind::Entity, entity_id.0, "position")
             .unwrap()
             .unwrap();
 
         let position = position.as_basket().unwrap();
         let position = position.borrow();
 
-        assert_eq!(
-            position.elements.len(),
-            3
-        );
+        assert_eq!(position.elements.len(), 3);
 
         let velocity = bridge
-            .get_property(
-                HandleKind::Entity,
-                entity_id.0,
-                "velocity",
-            )
+            .get_property(HandleKind::Entity, entity_id.0, "velocity")
             .unwrap()
             .unwrap();
 
         let velocity = velocity.as_basket().unwrap();
         let velocity = velocity.borrow();
 
-        assert_eq!(
-            velocity.elements.len(),
-            3
-        );
+        assert_eq!(velocity.elements.len(), 3);
 
         let grounded = bridge
-            .get_property(
-                HandleKind::Entity,
-                entity_id.0,
-                "grounded",
-            )
+            .get_property(HandleKind::Entity, entity_id.0, "grounded")
             .unwrap();
 
         assert!(grounded.is_some());
 
         let animation = bridge
-            .get_property(
-                HandleKind::Entity,
-                entity_id.0,
-                "animation",
-            )
+            .get_property(HandleKind::Entity, entity_id.0, "animation")
             .unwrap();
 
         assert!(animation.is_some());
@@ -2255,10 +2014,7 @@ mod tests {
         let mut entity_manager = EntityManager::new();
         let mut character_system = CharacterSystem::new();
 
-        world.set_cell(
-            WorldCoord::new(0, 0, 0),
-            CellType::SpawnPoint,
-        );
+        world.set_cell(WorldCoord::new(0, 0, 0), CellType::SpawnPoint);
 
         let character_id = character_system
             .spawn_player(&world, None)
@@ -2266,10 +2022,7 @@ mod tests {
 
         let entity_id = entity_manager.create_entity("Villager");
 
-        character_system.associate_entity(
-            entity_id,
-            character_id,
-        );
+        character_system.associate_entity(entity_id, character_id);
 
         let mut dynamic_properties = std::collections::HashMap::new();
         let mut pending_events = Vec::new();
@@ -2315,10 +2068,7 @@ mod tests {
                     HandleKind::Entity,
                     entity_id.0,
                     "facing",
-                    Value::array(vec![
-                        Value::Number(1.0),
-                        Value::Number(0.0),
-                    ]),
+                    Value::array(vec![Value::Number(1.0), Value::Number(0.0),]),
                 )
                 .unwrap()
         );
@@ -2344,24 +2094,14 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(
-            damage,
-            Value::Number(65.0)
-        );
+        assert_eq!(damage, Value::Number(65.0));
 
         let health = bridge
-            .get_property(
-                HandleKind::Entity,
-                entity_id.0,
-                "health",
-            )
+            .get_property(HandleKind::Entity, entity_id.0, "health")
             .unwrap()
             .unwrap();
 
-        assert_eq!(
-            health,
-            Value::Number(65.0)
-        );
+        assert_eq!(health, Value::Number(65.0));
     }
 
     #[test]
@@ -2370,10 +2110,7 @@ mod tests {
         let mut entity_manager = EntityManager::new();
         let mut character_system = CharacterSystem::new();
 
-        world.set_cell(
-            WorldCoord::new(0, 0, 0),
-            CellType::SpawnPoint,
-        );
+        world.set_cell(WorldCoord::new(0, 0, 0), CellType::SpawnPoint);
 
         let character_id = character_system
             .spawn_player(&world, None)
@@ -2381,10 +2118,7 @@ mod tests {
 
         let entity_id = entity_manager.create_entity("Villager");
 
-        character_system.associate_entity(
-            entity_id,
-            character_id,
-        );
+        character_system.associate_entity(entity_id, character_id);
 
         if let Some(character) = character_system
             .get_active_characters_mut()
@@ -2428,39 +2162,22 @@ mod tests {
         assert_eq!(jump, Some(Value::Nil));
 
         let velocity = bridge
-            .get_property(
-                HandleKind::Entity,
-                entity_id.0,
-                "velocity",
-            )
+            .get_property(HandleKind::Entity, entity_id.0, "velocity")
             .unwrap()
             .unwrap();
 
         let velocity = velocity.as_basket().unwrap();
         let velocity = velocity.borrow();
 
-        assert_eq!(
-            velocity.elements[1],
-            Value::Number(8.0)
-        );
+        assert_eq!(velocity.elements[1], Value::Number(8.0));
 
         let destroyed = bridge
-            .call_method(
-                HandleKind::Entity,
-                entity_id.0,
-                "destroy",
-                &[],
-            )
+            .call_method(HandleKind::Entity, entity_id.0, "destroy", &[])
             .unwrap();
 
-        assert_eq!(
-            destroyed,
-            Some(Value::Bool(true))
-        );
+        assert_eq!(destroyed, Some(Value::Bool(true)));
 
-        assert!(
-            !bridge.entity_manager.validate_handle(entity_id.0)
-        );
+        assert!(!bridge.entity_manager.validate_handle(entity_id.0));
     }
 
     #[test]
@@ -2468,29 +2185,17 @@ mod tests {
         let mut world = World::new();
 
         for x in 0..4 {
-            world.set_cell(
-                WorldCoord::new(x, 0, 0),
-                CellType::Block,
-            );
+            world.set_cell(WorldCoord::new(x, 0, 0), CellType::Block);
         }
 
         let mut entity_manager = EntityManager::new();
         let mut character_system = CharacterSystem::new();
 
-        let character_id =
-            character_system
-                .spawn_character(
-                    Vec3::new(0.0, 1.0, 0.0),
-                    None,
-                );
+        let character_id = character_system.spawn_character(Vec3::new(0.0, 1.0, 0.0), None);
 
-        let entity_id =
-            entity_manager.create_entity("Villager");
+        let entity_id = entity_manager.create_entity("Villager");
 
-        character_system.associate_entity(
-            entity_id,
-            character_id,
-        );
+        character_system.associate_entity(entity_id, character_id);
 
         let mut dynamic_properties = std::collections::HashMap::new();
         let mut pending_events = Vec::new();

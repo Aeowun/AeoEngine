@@ -6,9 +6,9 @@ use glam::{Mat4, Vec3};
 use std::ffi::CString;
 
 pub struct SkyRenderer {
-    program: u32,
-    vao: u32,
-    vbo: u32,
+    pub(crate) program: u32,
+    pub(crate) vao: u32,
+    pub(crate) vbo: u32,
 }
 
 impl SkyRenderer {

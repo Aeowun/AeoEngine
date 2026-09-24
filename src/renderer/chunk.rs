@@ -70,6 +70,10 @@ pub struct ChunkMesh {
 
 impl ChunkMesh {
     pub fn free_gl_resources(&mut self) {
+        if self.main_vao == 0 && self.main_vbo == 0 && self.shadow_vao == 0 && self.shadow_vbo == 0
+        {
+            return;
+        }
         unsafe {
             if self.main_vao != 0 {
                 gl::DeleteVertexArrays(1, &self.main_vao);

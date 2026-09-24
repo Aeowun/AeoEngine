@@ -285,18 +285,37 @@ impl Renderer {
         self.block_mask_ranges[mask as usize]
     }
 
+    /// Clears and frees all GPU resources for cached voxel chunk meshes.
+    ///
+    /// Must be called when transitioning project boundaries or resetting the world
+    /// to ensure stale project render state does not survive.
+    pub fn clear_chunk_cache(&self) {
+        let mut cache = self.chunk_cache.borrow_mut();
+        for chunk_mesh in cache.values_mut() {
+            chunk_mesh.free_gl_resources();
+        }
+        cache.clear();
+        *self.last_render_mode.borrow_mut() = None;
+        *self.last_render_revision.borrow_mut() = 0;
+    }
+
     pub fn update_chunk_cache(&self, world: &World, mode: EditorMode) {
         let dirty_coords = world.drain_render_dirty_cells();
         let mode_changed = *self.last_render_mode.borrow() != Some(mode);
+        let revision_changed = *self.last_render_revision.borrow() != world.render_revision();
 
-        if dirty_coords.is_empty() && !mode_changed && !self.chunk_cache.borrow().is_empty() {
+        if dirty_coords.is_empty()
+            && !mode_changed
+            && !revision_changed
+            && !self.chunk_cache.borrow().is_empty()
+        {
             return;
         }
 
         let mut cache = self.chunk_cache.borrow_mut();
 
-        if mode_changed || cache.is_empty() {
-            // Mode transition (Editor <-> Play) or initial build: full rebuild of active chunks
+        if mode_changed || revision_changed || cache.is_empty() {
+            // Mode transition (Editor <-> Play), world/revision change, or initial build: full rebuild of active chunks
             for chunk_mesh in cache.values_mut() {
                 chunk_mesh.free_gl_resources();
             }
@@ -1382,50 +1401,240 @@ impl Renderer {
 
 impl Drop for Renderer {
     fn drop(&mut self) {
+        for chunk_mesh in self.chunk_cache.borrow_mut().values_mut() {
+            chunk_mesh.free_gl_resources();
+        }
+
         unsafe {
-            for chunk_mesh in self.chunk_cache.borrow_mut().values_mut() {
-                chunk_mesh.free_gl_resources();
+            if self.grid_program != 0 {
+                gl::DeleteProgram(self.grid_program);
+            }
+            if self.shadow_program != 0 {
+                gl::DeleteProgram(self.shadow_program);
             }
 
-            gl::DeleteProgram(self.grid_program);
-            gl::DeleteProgram(self.shadow_program);
+            if self.shadow_fbo != 0 {
+                gl::DeleteFramebuffers(1, &self.shadow_fbo);
+            }
+            if self.shadow_depth_tex != 0 {
+                gl::DeleteTextures(1, &self.shadow_depth_tex);
+            }
 
-            gl::DeleteFramebuffers(1, &self.shadow_fbo);
-            gl::DeleteTextures(1, &self.shadow_depth_tex);
-
-            // The fallback texture is also cached under "Block_tx". Do not
-            // delete that same GL texture twice.
             for &tex in self.textures.borrow().values() {
-                if tex != self.fallback_tex {
+                if tex != 0 && tex != self.fallback_tex {
                     gl::DeleteTextures(1, &tex);
                 }
             }
-            gl::DeleteTextures(1, &self.fallback_tex);
+            if self.fallback_tex != 0 {
+                gl::DeleteTextures(1, &self.fallback_tex);
+            }
 
-            gl::DeleteVertexArrays(1, &self.grid_vao_xz);
-            gl::DeleteBuffers(1, &self.grid_vbo_xz);
+            if self.grid_vao_xz != 0 {
+                gl::DeleteVertexArrays(1, &self.grid_vao_xz);
+            }
+            if self.grid_vbo_xz != 0 {
+                gl::DeleteBuffers(1, &self.grid_vbo_xz);
+            }
 
-            gl::DeleteVertexArrays(1, &self.grid_vao_yz);
-            gl::DeleteBuffers(1, &self.grid_vbo_yz);
+            if self.grid_vao_yz != 0 {
+                gl::DeleteVertexArrays(1, &self.grid_vao_yz);
+            }
+            if self.grid_vbo_yz != 0 {
+                gl::DeleteBuffers(1, &self.grid_vbo_yz);
+            }
 
-            gl::DeleteVertexArrays(1, &self.grid_vao_xy);
-            gl::DeleteBuffers(1, &self.grid_vbo_xy);
+            if self.grid_vao_xy != 0 {
+                gl::DeleteVertexArrays(1, &self.grid_vao_xy);
+            }
+            if self.grid_vbo_xy != 0 {
+                gl::DeleteBuffers(1, &self.grid_vbo_xy);
+            }
 
-            gl::DeleteVertexArrays(1, &self.axis_vao);
-            gl::DeleteBuffers(1, &self.axis_vbo);
+            if self.axis_vao != 0 {
+                gl::DeleteVertexArrays(1, &self.axis_vao);
+            }
+            if self.axis_vbo != 0 {
+                gl::DeleteBuffers(1, &self.axis_vbo);
+            }
 
-            gl::DeleteVertexArrays(1, &self.highlight_vao);
-            gl::DeleteBuffers(1, &self.highlight_vbo);
+            if self.highlight_vao != 0 {
+                gl::DeleteVertexArrays(1, &self.highlight_vao);
+            }
+            if self.highlight_vbo != 0 {
+                gl::DeleteBuffers(1, &self.highlight_vbo);
+            }
 
-            gl::DeleteVertexArrays(1, &self.anchor_vao);
-            gl::DeleteBuffers(1, &self.anchor_vbo);
+            if self.anchor_vao != 0 {
+                gl::DeleteVertexArrays(1, &self.anchor_vao);
+            }
+            if self.anchor_vbo != 0 {
+                gl::DeleteBuffers(1, &self.anchor_vbo);
+            }
 
-            gl::DeleteVertexArrays(1, &self.block_vao);
-            gl::DeleteBuffers(1, &self.block_vbo);
+            if self.block_vao != 0 {
+                gl::DeleteVertexArrays(1, &self.block_vao);
+            }
+            if self.block_vbo != 0 {
+                gl::DeleteBuffers(1, &self.block_vbo);
+            }
 
-            gl::DeleteVertexArrays(1, &self.billboard_vao);
-            gl::DeleteBuffers(1, &self.billboard_vbo);
+            if self.billboard_vao != 0 {
+                gl::DeleteVertexArrays(1, &self.billboard_vao);
+            }
+            if self.billboard_vbo != 0 {
+                gl::DeleteBuffers(1, &self.billboard_vbo);
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world::{World, WorldCoord};
+
+    #[test]
+    fn test_renderer_chunk_cache_cleared_on_project_reset() {
+        let renderer = Renderer {
+            chunk_cache: RefCell::new(HashMap::new()),
+            last_render_mode: RefCell::new(Some(EditorMode::Editor)),
+            last_render_revision: RefCell::new(10),
+            grid_program: 0,
+            grid_vao_xz: 0,
+            grid_vbo_xz: 0,
+            grid_count_xz: 0,
+            grid_vao_yz: 0,
+            grid_vbo_yz: 0,
+            grid_count_yz: 0,
+            grid_vao_xy: 0,
+            grid_vbo_xy: 0,
+            grid_count_xy: 0,
+            axis_vao: 0,
+            axis_vbo: 0,
+            axis_vertex_count: 0,
+            highlight_vao: 0,
+            highlight_vbo: 0,
+            highlight_vertex_count: 0,
+            anchor_vao: 0,
+            anchor_vbo: 0,
+            anchor_vertex_count: 0,
+            block_vao: 0,
+            block_vbo: 0,
+            block_mask_ranges: [(0, 0); 64],
+            billboard_vao: 0,
+            billboard_vbo: 0,
+            shadow_program: 0,
+            shadow_fbo: 0,
+            shadow_depth_tex: 0,
+            textures: RefCell::new(HashMap::new()),
+            cubemaps: RefCell::new(HashMap::new()),
+            fallback_tex: 0,
+            sky_renderer: sky::SkyRenderer {
+                program: 0,
+                vao: 0,
+                vbo: 0,
+            },
+            width: 800.0,
+            height: 600.0,
+        };
+
+        let mock_mesh = ChunkMesh {
+            chunk_coord: ChunkCoord::new(0, 0, 0),
+            main_vao: 0,
+            main_vbo: 0,
+            main_texture_batches: Vec::new(),
+            shadow_vao: 0,
+            shadow_vbo: 0,
+            shadow_vertex_count: 0,
+        };
+        renderer
+            .chunk_cache
+            .borrow_mut()
+            .insert(ChunkCoord::new(0, 0, 0), mock_mesh);
+
+        assert!(!renderer.chunk_cache.borrow().is_empty());
+
+        renderer.clear_chunk_cache();
+
+        assert!(
+            renderer.chunk_cache.borrow().is_empty(),
+            "Chunk cache must be completely empty after clear_chunk_cache()"
+        );
+        assert_eq!(*renderer.last_render_revision.borrow(), 0);
+        assert_eq!(*renderer.last_render_mode.borrow(), None);
+    }
+
+    #[test]
+    fn test_renderer_chunk_cache_invalidates_on_world_revision_change() {
+        let renderer = Renderer {
+            chunk_cache: RefCell::new(HashMap::new()),
+            last_render_mode: RefCell::new(Some(EditorMode::Editor)),
+            last_render_revision: RefCell::new(999),
+            grid_program: 0,
+            grid_vao_xz: 0,
+            grid_vbo_xz: 0,
+            grid_count_xz: 0,
+            grid_vao_yz: 0,
+            grid_vbo_yz: 0,
+            grid_count_yz: 0,
+            grid_vao_xy: 0,
+            grid_vbo_xy: 0,
+            grid_count_xy: 0,
+            axis_vao: 0,
+            axis_vbo: 0,
+            axis_vertex_count: 0,
+            highlight_vao: 0,
+            highlight_vbo: 0,
+            highlight_vertex_count: 0,
+            anchor_vao: 0,
+            anchor_vbo: 0,
+            anchor_vertex_count: 0,
+            block_vao: 0,
+            block_vbo: 0,
+            block_mask_ranges: [(0, 0); 64],
+            billboard_vao: 0,
+            billboard_vbo: 0,
+            shadow_program: 0,
+            shadow_fbo: 0,
+            shadow_depth_tex: 0,
+            textures: RefCell::new(HashMap::new()),
+            cubemaps: RefCell::new(HashMap::new()),
+            fallback_tex: 0,
+            sky_renderer: sky::SkyRenderer {
+                program: 0,
+                vao: 0,
+                vbo: 0,
+            },
+            width: 800.0,
+            height: 600.0,
+        };
+
+        let mock_mesh = ChunkMesh {
+            chunk_coord: ChunkCoord::new(0, 0, 0),
+            main_vao: 0,
+            main_vbo: 0,
+            main_texture_batches: Vec::new(),
+            shadow_vao: 0,
+            shadow_vbo: 0,
+            shadow_vertex_count: 0,
+        };
+        renderer
+            .chunk_cache
+            .borrow_mut()
+            .insert(ChunkCoord::new(0, 0, 0), mock_mesh);
+
+        let new_blank_world = World::new();
+
+        renderer.update_chunk_cache(&new_blank_world, EditorMode::Editor);
+
+        assert!(
+            renderer.chunk_cache.borrow().is_empty(),
+            "Chunk cache must be empty for blank world with 0 blocks"
+        );
+        assert_eq!(
+            *renderer.last_render_revision.borrow(),
+            new_blank_world.render_revision()
+        );
     }
 }
 

@@ -1761,6 +1761,8 @@ impl App {
             if self.editor.needs_clear_world {
                 self.push_undo_snapshot();
 
+                self.renderer.clear_chunk_cache();
+
                 self.world = World::new();
                 self.editor.clear_clipboard();
                 self.editor.needs_clear_world = false;
@@ -2015,6 +2017,8 @@ impl App {
         self.editor.mode = EditorMode::Editor;
 
         self.save_project();
+
+        self.renderer.clear_chunk_cache();
 
         self.world = World::new();
 
@@ -2448,9 +2452,19 @@ impl App {
         let left = ui.cursor().left();
         let right = ui.cursor().right();
 
+        // Main hairline
         ui.painter().line_segment(
             [egui::pos2(left, y), egui::pos2(right, y)],
-            egui::Stroke::new(1.0, COLOR_BORDER),
+            egui::Stroke::new(
+                1.0,
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 18),
+            ),
+        );
+
+        // Small AEOWUN accent marker
+        ui.painter().line_segment(
+            [egui::pos2(left, y), egui::pos2(left + 42.0, y)],
+            egui::Stroke::new(2.0, COLOR_ACCENT_ORANGE),
         );
 
         ui.add_space(1.0);
@@ -2460,21 +2474,54 @@ impl App {
         let rect = ui.max_rect();
         let painter = ui.painter();
 
-        let top_band =
-            egui::Rect::from_min_max(rect.left_top(), egui::pos2(rect.right(), rect.top() + 96.0));
+        // Very subtle elevated center field.
+        let center = egui::Rect::from_min_max(
+            egui::pos2(rect.left() + 18.0, rect.top()),
+            egui::pos2(rect.right() - 18.0, rect.bottom()),
+        );
+
+        painter.rect_filled(
+            center,
+            0.0,
+            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 2),
+        );
+
+        // Top atmospheric band.
+        let top_band = egui::Rect::from_min_max(
+            rect.left_top(),
+            egui::pos2(rect.right(), rect.top() + 140.0),
+        );
 
         painter.rect_filled(
             top_band,
             0.0,
-            egui::Color32::from_rgba_unmultiplied(158, 52, 29, 3),
+            egui::Color32::from_rgba_unmultiplied(158, 52, 29, 7),
         );
 
+        // Thin top edge.
         painter.line_segment(
             [
                 egui::pos2(rect.left(), rect.top()),
                 egui::pos2(rect.right(), rect.top()),
             ],
-            egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(228, 91, 36, 18)),
+            egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(228, 91, 36, 28)),
+        );
+
+        // Subtle vertical framing rails.
+        painter.line_segment(
+            [
+                egui::pos2(rect.left() + 18.0, rect.top()),
+                egui::pos2(rect.left() + 18.0, rect.bottom()),
+            ],
+            egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 7)),
+        );
+
+        painter.line_segment(
+            [
+                egui::pos2(rect.right() - 18.0, rect.top()),
+                egui::pos2(rect.right() - 18.0, rect.bottom()),
+            ],
+            egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 7)),
         );
     }
 
@@ -2561,6 +2608,27 @@ impl App {
 
     fn draw_home_hero(&mut self, ui: &mut egui::Ui) {
         ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+
+                let (rect, _) = ui.allocate_exact_size(
+                    egui::vec2(24.0, 2.0),
+                    egui::Sense::hover(),
+                );
+
+                ui.painter().rect_filled(
+                    rect,
+                    0.0,
+                    COLOR_ACCENT_ORANGE,
+                );
+
+                ui.label(
+                    RichText::new("AEOENGINE")
+                        .monospace()
+                        .color(COLOR_TEXT_DIM)
+                        .size(11.0),
+                );
+            });
             ui.label(
                 RichText::new("AEOENGINE")
                     .monospace()
@@ -2571,23 +2639,23 @@ impl App {
             ui.add_space(10.0);
 
             ui.label(
-                RichText::new("BUILD WORLDS.")
+                RichText::new("IMAGINE")
                     .strong()
                     .color(COLOR_TEXT_BRIGHT)
                     .size(40.0),
             );
 
             ui.label(
-                RichText::new("WRITE LOGIC.")
+                RichText::new("BUILD")
                     .strong()
-                    .color(COLOR_TEXT_BRIGHT)
+                    .color(COLOR_TEXT)
                     .size(40.0),
             );
 
             ui.label(
-                RichText::new("SHAPE GAMES.")
+                RichText::new("PLAY")
                     .strong()
-                    .color(COLOR_TEXT_BRIGHT)
+                    .color(COLOR_ACCENT_ORANGE)
                     .size(40.0),
             );
 
@@ -2633,7 +2701,7 @@ impl App {
 
     fn draw_home_templates(&mut self, ui: &mut egui::Ui) {
         ui.label(
-            RichText::new("START WITH A WORLD")
+            RichText::new("START FRESH")
                 .monospace()
                 .color(COLOR_TEXT_DIM)
                 .size(11.0),
@@ -2704,12 +2772,14 @@ impl App {
 
         let background = if hovered && !coming_soon {
             COLOR_VOID_ELEVATED
+        } else if coming_soon {
+            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 3)
         } else {
             COLOR_VOID_PANEL
         };
 
-        let border = if hovered {
-            COLOR_BORDER_BRIGHT
+        let border = if hovered && !coming_soon {
+            COLOR_ACCENT_ORANGE
         } else {
             COLOR_BORDER
         };
@@ -2725,7 +2795,20 @@ impl App {
                 egui::pos2(rect.left(), rect.top()),
                 egui::pos2(rect.right(), rect.top() + 2.0),
             );
+            let accent_rect = egui::Rect::from_min_max(
+                egui::pos2(rect.left(), rect.top()),
+                egui::pos2(rect.left() + 3.0, rect.bottom()),
+            );
 
+            ui.painter().rect_filled(
+                accent_rect,
+                0.0,
+                if coming_soon {
+                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 14)
+                } else {
+                    COLOR_ACCENT_ORANGE
+                },
+            );
             ui.painter()
                 .rect_filled(glow_rect, 0.0, COLOR_ACCENT_ORANGE);
         }
@@ -2952,11 +3035,6 @@ impl App {
                 "FIRST SCRIPT",
                 "Bind a script.",
                 "https://www.aeowun.com/docs/tutorials/first-script/",
-            ),
-            (
-                "FLASH BEHAVIOR",
-                "Make it behave.",
-                "https://www.aeowun.com/docs/tutorials/flash-behavior/",
             ),
         ];
 
@@ -3307,6 +3385,8 @@ impl App {
 
     pub fn load_project(&mut self) {
         if let Some(project_path) = &self.project_manager.current_project {
+            self.renderer.clear_chunk_cache();
+
             self.editor
                 .script_editor
                 .refresh_scripts(&Some(project_path.clone()));

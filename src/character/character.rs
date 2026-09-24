@@ -3,8 +3,7 @@ use super::collision::CharacterCollision;
 use super::movement::CharacterMovement;
 use super::transform::CharacterTransform;
 use crate::character_custom::{
-    AppearanceCustomization, CharacterAnimationController,
-    CharacterPackageConfig, TargetAnimation,
+    AppearanceCustomization, CharacterAnimationController, CharacterPackageConfig, TargetAnimation,
 };
 use glam::{Vec2, Vec3};
 use std::path::Path;
@@ -48,18 +47,10 @@ impl Character {
         Self::new_from_package(id, position, None)
     }
 
-    pub fn new_from_package(
-        id: u64,
-        position: Vec3,
-        package_dir: Option<&Path>,
-    ) -> Self {
+    pub fn new_from_package(id: u64, position: Vec3, package_dir: Option<&Path>) -> Self {
         let (config, controller) = if let Some(dir) = package_dir {
             let cfg = CharacterPackageConfig::load_from_dir(dir);
-            let ctrl =
-                CharacterAnimationController::new_for_character(
-                    Some(dir),
-                    &cfg.mesh_type,
-                );
+            let ctrl = CharacterAnimationController::new_for_character(Some(dir), &cfg.mesh_type);
 
             (cfg, ctrl)
         } else {

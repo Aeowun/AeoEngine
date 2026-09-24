@@ -5159,9 +5159,6 @@ entity Spawner {
 on on_villager_spawn(npc) {
     debug.log("NPC Event Received:", npc.name)
 }
-on on_villager_spawn(npc) {
-    debug.log("Villager spawned:", npc.id)
-}
 
 entity Spawner {
     fn on_spawn() {
