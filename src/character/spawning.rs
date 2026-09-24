@@ -41,7 +41,11 @@ pub fn spawn_at_random_point(
     let base_position = Vec3::new(coord.x as f32, spawn_y, coord.z as f32);
 
     if has_character_clearance(world, base_position, &collision) {
-        return Some(Character::new_from_package(next_id, base_position, package_dir));
+        return Some(Character::new_from_package(
+            next_id,
+            base_position,
+            package_dir,
+        ));
     }
 
     for radius in 1..=10 {

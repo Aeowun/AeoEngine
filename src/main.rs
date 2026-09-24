@@ -161,10 +161,7 @@ fn main() {
             Event::AboutToWait => {
                 app.update(egui_state.egui_ctx());
 
-                let current_mouse = (
-                    app.mouse.cursor_visible,
-                    app.mouse.screen_locked,
-                );
+                let current_mouse = (app.mouse.cursor_visible, app.mouse.screen_locked);
 
                 if last_applied_mouse != Some(current_mouse) {
                     let grab_mode = if app.mouse.screen_locked {

@@ -166,9 +166,21 @@ impl ScriptScene {
         let mut loaded_scripts: HashMap<String, Program> = HashMap::new();
 
         // Load all scripts from scripts, controllers, and cameras directories.
-        load_aeo_files_recursively(&project_path.join("scripts"), project_path, &mut loaded_scripts)?;
-        load_aeo_files_recursively(&project_path.join("controllers"), project_path, &mut loaded_scripts)?;
-        load_aeo_files_recursively(&project_path.join("cameras"), project_path, &mut loaded_scripts)?;
+        load_aeo_files_recursively(
+            &project_path.join("scripts"),
+            project_path,
+            &mut loaded_scripts,
+        )?;
+        load_aeo_files_recursively(
+            &project_path.join("controllers"),
+            project_path,
+            &mut loaded_scripts,
+        )?;
+        load_aeo_files_recursively(
+            &project_path.join("cameras"),
+            project_path,
+            &mut loaded_scripts,
+        )?;
 
         // 2. Validate explicit bindings.
         for binding in &valid_bindings {
@@ -403,7 +415,10 @@ impl ScriptScene {
 
     pub fn normalize_script_path(path: &str) -> String {
         let clean = path.replace("\\", "/");
-        if clean.starts_with("scripts/") || clean.starts_with("controllers/") || clean.starts_with("cameras/") {
+        if clean.starts_with("scripts/")
+            || clean.starts_with("controllers/")
+            || clean.starts_with("cameras/")
+        {
             clean
         } else {
             format!("scripts/{}", clean)
@@ -744,9 +759,7 @@ impl ScriptScene {
         arguments: Vec<Value>,
         host: &mut HostContext,
     ) -> Result<(), String> {
-        eprintln!(
-
-        );
+        eprintln!();
         self.runtime
             .dispatch_event(name, arguments, host, &self.disabled_scripts)
     }
@@ -1187,17 +1200,14 @@ pub(crate) mod tests {
                 HandleKind::Sound => match name {
                     "playing" => {
                         return Ok(Some(Value::Bool(
-                            self.world.is_audio_playing(id)
-                                && !self.world.is_audio_paused(id),
+                            self.world.is_audio_playing(id) && !self.world.is_audio_paused(id),
                         )));
                     }
                     "looped" => {
                         return Ok(Some(Value::Bool(self.world.is_audio_looped(id))));
                     }
                     "volume" => {
-                        return Ok(Some(Value::Number(
-                            self.world.get_audio_volume(id) as f64
-                        )));
+                        return Ok(Some(Value::Number(self.world.get_audio_volume(id) as f64)));
                     }
                     _ => {}
                 },
@@ -1502,7 +1512,8 @@ pub(crate) mod tests {
         TestHost {
             entity_manager: EntityManager::new(),
             world: World::new(),
-            dynamic_properties: HashMap::new(),        }
+            dynamic_properties: HashMap::new(),
+        }
     }
 
     pub(crate) fn create_scene(source: &str, host: &mut HostContext) -> ScriptScene {
@@ -4658,9 +4669,19 @@ entity Trigger {
 
         // --- SESSION 2 START (Verify clean start) ---
         assert!(test_results.is_empty(), "Test results should be cleared");
-        assert!(pending_events.is_empty(), "Pending events should be cleared");
-        assert_eq!(world.disabled_scripts, vec!["initial.aeo".to_string()], "World script state should be restored");
-        assert!(authored_disabled_scripts.is_empty(), "Snapshot should be consumed");
+        assert!(
+            pending_events.is_empty(),
+            "Pending events should be cleared"
+        );
+        assert_eq!(
+            world.disabled_scripts,
+            vec!["initial.aeo".to_string()],
+            "World script state should be restored"
+        );
+        assert!(
+            authored_disabled_scripts.is_empty(),
+            "Snapshot should be consumed"
+        );
     }
 
     #[test]
@@ -4679,9 +4700,9 @@ entity Trigger {
 
     #[test]
     fn test_audio_emitter_persistence_full() {
+        use crate::world::persistence::{load_world, save_world};
         use std::fs;
         use std::path::Path;
-        use crate::world::persistence::{load_world, save_world};
 
         let mut world = World::new();
         let coord = WorldCoord::new(1, 2, 3);
@@ -4713,9 +4734,9 @@ entity Trigger {
 
     #[test]
     fn test_audio_emitter_three_authored_configurations() {
+        use crate::world::persistence::{load_world, save_world};
         use std::fs;
         use std::path::Path;
-        use crate::world::persistence::{load_world, save_world};
 
         let mut world = World::new();
 

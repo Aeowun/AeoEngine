@@ -24,23 +24,11 @@ pub fn generate_grid_vertices(plane: GridPlane) -> Vec<f32> {
     let mut vertices = Vec::with_capacity(estimated_lines * 42);
 
     // Main editing plane.
-    add_grid_plane(
-        &mut vertices,
-        plane,
-        0.0,
-        radius,
-        false,
-    );
+    add_grid_plane(&mut vertices, plane, 0.0, radius, false);
 
     // Backing layer gives the editor a little depth when working between
     // adjacent voxel layers without overpowering the active grid.
-    add_grid_plane(
-        &mut vertices,
-        plane,
-        -1.0,
-        radius,
-        true,
-    );
+    add_grid_plane(&mut vertices, plane, -1.0, radius, true);
 
     // Strong world-axis guides on the active plane.
     add_axis_lines(&mut vertices, plane, radius);
@@ -68,14 +56,7 @@ fn add_grid_plane(
             GRID_PRIMARY_COLOR
         };
 
-        add_plane_lines(
-            vertices,
-            plane,
-            offset,
-            position,
-            color,
-            radius,
-        );
+        add_plane_lines(vertices, plane, offset, position, color, radius);
     }
 }
 

@@ -119,7 +119,8 @@ mod tests {
         // Place a solid block exactly where the character would spawn (0, 1, 0)
         world.set_cell(WorldCoord::new(0, 1, 0), CellType::Block);
 
-        let character = spawn_at_random_point(&world, 1, None).expect("Should find alternative spawn");
+        let character =
+            spawn_at_random_point(&world, 1, None).expect("Should find alternative spawn");
         // Should not be at (0, 1, 0)
         assert_ne!(character.transform.position, Vec3::new(0.0, 1.0, 0.0));
         // It should have found a valid spot within the search radius.

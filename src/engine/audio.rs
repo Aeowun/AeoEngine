@@ -1,8 +1,8 @@
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 
 use crate::world::{CellType, World};
 
@@ -177,10 +177,7 @@ impl AudioSystem {
     }
 }
 
-pub fn resolve_audio_file_path(
-    rel_path: &str,
-    project_path: &Option<PathBuf>,
-) -> Option<PathBuf> {
+pub fn resolve_audio_file_path(rel_path: &str, project_path: &Option<PathBuf>) -> Option<PathBuf> {
     if rel_path.trim().is_empty() {
         return None;
     }

@@ -556,16 +556,7 @@ pub fn generate_character_mesh(
         );
 
         // Rifle barrel
-        add_cylinder(
-            &mut vertices,
-            9,
-            0.025,
-            0.025,
-            0.35,
-            0.65,
-            8,
-            barrel_color,
-        );
+        add_cylinder(&mut vertices, 9, 0.025, 0.025, 0.35, 0.65, 8, barrel_color);
 
         // Magazine/grip
         add_cube(

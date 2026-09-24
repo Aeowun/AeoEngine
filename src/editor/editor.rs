@@ -1251,7 +1251,11 @@ impl Editor {
                         let mut visible_selected = world.cursor_visible;
                         let mut changed = false;
                         egui::ComboBox::from_id_salt("world_cursor_visible_combo")
-                            .selected_text(if visible_selected { "Visible" } else { "Hidden" })
+                            .selected_text(if visible_selected {
+                                "Visible"
+                            } else {
+                                "Hidden"
+                            })
                             .show_ui(ui, |ui| {
                                 if ui
                                     .selectable_value(&mut visible_selected, false, "Hidden")
@@ -1277,7 +1281,11 @@ impl Editor {
                         let mut locked_selected = world.screen_locked;
                         let mut changed = false;
                         egui::ComboBox::from_id_salt("world_screen_locked_combo")
-                            .selected_text(if locked_selected { "Locked" } else { "Unlocked" })
+                            .selected_text(if locked_selected {
+                                "Locked"
+                            } else {
+                                "Unlocked"
+                            })
                             .show_ui(ui, |ui| {
                                 if ui
                                     .selectable_value(&mut locked_selected, true, "Locked")
@@ -1417,11 +1425,7 @@ impl Editor {
                             .show_ui(ui, |ui| {
                                 for cam_name in available {
                                     if ui
-                                        .selectable_value(
-                                            &mut current,
-                                            cam_name.clone(),
-                                            &cam_name,
-                                        )
+                                        .selectable_value(&mut current, cam_name.clone(), &cam_name)
                                         .clicked()
                                     {
                                         changed = true;
@@ -1546,7 +1550,10 @@ impl Editor {
     }
 }
 
-fn copy_dir_all(src: impl AsRef<std::path::Path>, dst: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+fn copy_dir_all(
+    src: impl AsRef<std::path::Path>,
+    dst: impl AsRef<std::path::Path>,
+) -> std::io::Result<()> {
     std::fs::create_dir_all(&dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;

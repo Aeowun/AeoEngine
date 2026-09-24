@@ -113,16 +113,15 @@ These visuals are editor representations and are not authored World content by t
 
 ---
 
-# 9. Current Performance Boundary
+# 9. Performance & Geometry Optimization
 
-The current World representation is cell-oriented rather than fully chunk-meshed.
+Static voxel rendering calculates face exposure using effective World state and submits only exposed voxel faces (+Y, -Y, +Z, -Z, -X, +X) to the GPU. Occluded internal faces are culled before submission while preserving existing Cell, material, lighting, and shadow semantics.
 
 Potential future rendering optimizations include:
 
 * Spatial chunking.
 * Visible-chunk selection.
 * Per-chunk meshes.
-* Face culling.
 * Greedy meshing.
 * Render batching.
 * Persistent reusable mesh resources.

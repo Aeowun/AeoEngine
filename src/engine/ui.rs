@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::scripting::value::Value;
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiCommon {
@@ -227,7 +227,7 @@ impl RuntimeUi {
                             return Err(format!(
                                 "on_click expects a function or nil, got {}",
                                 other.type_name()
-                            ))
+                            ));
                         }
                     }
                     Ok(true)

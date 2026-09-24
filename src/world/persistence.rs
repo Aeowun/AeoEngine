@@ -177,7 +177,11 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
                         cell.playing,
                         cell.looped,
                         cell.volume,
-                        if cell.audio.is_empty() { "None" } else { &cell.audio }
+                        if cell.audio.is_empty() {
+                            "None"
+                        } else {
+                            &cell.audio
+                        }
                     )?;
                 }
 

@@ -49,10 +49,18 @@ pub trait EngineHost {
     fn set_script_property(&mut self, kind: HandleKind, id: u64, name: String, value: Value);
 
     // Audio support
-    fn is_audio_playing(&self, _id: u64) -> Option<bool> { None }
-    fn is_audio_paused(&self, _id: u64) -> Option<bool> { None }
-    fn is_audio_looped(&self, _id: u64) -> Option<bool> { None }
-    fn get_audio_volume(&self, _id: u64) -> Option<f32> { None }
+    fn is_audio_playing(&self, _id: u64) -> Option<bool> {
+        None
+    }
+    fn is_audio_paused(&self, _id: u64) -> Option<bool> {
+        None
+    }
+    fn is_audio_looped(&self, _id: u64) -> Option<bool> {
+        None
+    }
+    fn get_audio_volume(&self, _id: u64) -> Option<f32> {
+        None
+    }
     fn set_audio_playing(&mut self, _id: u64, _playing: bool) {}
     fn set_audio_looped(&mut self, _id: u64, _looped: bool) {}
     fn set_audio_volume(&mut self, _id: u64, _volume: f32) {}
@@ -84,9 +92,15 @@ pub trait EngineHost {
         [0.0, 0.0]
     }
     // Generic Gameplay, Input, Camera, Physics APIs
-    fn get_input_move_vector(&self) -> [f32; 2] { [0.0, 0.0] }
-    fn is_input_jump_pressed(&self) -> bool { false }
-    fn get_input_orbit_delta(&self) -> [f32; 2] { [0.0, 0.0] }
+    fn get_input_move_vector(&self) -> [f32; 2] {
+        [0.0, 0.0]
+    }
+    fn is_input_jump_pressed(&self) -> bool {
+        false
+    }
+    fn get_input_orbit_delta(&self) -> [f32; 2] {
+        [0.0, 0.0]
+    }
 
     fn get_camera_horizontal_basis(&self) -> ([f32; 3], [f32; 3]) {
         ([0.0, 0.0, -1.0], [1.0, 0.0, 0.0])
@@ -99,11 +113,15 @@ pub trait EngineHost {
         desired
     }
 
-    fn get_player_position(&self) -> Option<[f32; 3]> { None }
+    fn get_player_position(&self) -> Option<[f32; 3]> {
+        None
+    }
     fn set_player_horizontal_velocity(&mut self, _vx: f32, _vz: f32) {}
     fn set_player_facing_direction(&mut self, _dx: f32, _dz: f32) {}
     fn select_player_animation(&mut self, _anim: &str) {}
-    fn is_player_grounded(&self) -> bool { true }
+    fn is_player_grounded(&self) -> bool {
+        true
+    }
     fn apply_player_vertical_impulse(&mut self, _impulse: f32) {}
 
     // Runtime script management, event firing, and test orchestration
@@ -494,7 +512,10 @@ pub fn set_host_member_property(
     value: Value,
 ) -> Result<(), String> {
     if handle_kind == HandleKind::Ui {
-        if context.engine.set_ui_property(handle_id, property_name, value)? {
+        if context
+            .engine
+            .set_ui_property(handle_id, property_name, value)?
+        {
             return Ok(());
         } else {
             return Err(format!("failed to set UI property '{}'", property_name));

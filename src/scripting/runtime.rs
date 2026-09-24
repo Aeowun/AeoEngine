@@ -221,10 +221,7 @@ impl ScriptRuntime {
         // This does NOT copy the actual variable storage. Scope uses shared
         // Arc<RefCell<...>> backing, so the event handler and top-level script
         // share the same variables.
-        let captured_scopes: Vec<Scope> = captured_scope
-            .cloned()
-            .into_iter()
-            .collect();
+        let captured_scopes: Vec<Scope> = captured_scope.cloned().into_iter().collect();
 
         // -------------------------------------------------------------
         // STEP 2:
@@ -244,14 +241,12 @@ impl ScriptRuntime {
         // The captured_scopes argument is what allows the event handler to
         // resolve top-level variables such as `health`.
         // -------------------------------------------------------------
-        let fiber = self
-            .interpreter
-            .start_event_fiber(
-                instance,
-                handler.clone(),
-                arguments,
-                captured_scopes,
-            )?;
+        let fiber = self.interpreter.start_event_fiber(
+            instance,
+            handler.clone(),
+            arguments,
+            captured_scopes,
+        )?;
 
         // -------------------------------------------------------------
         // STEP 4:
@@ -270,10 +265,7 @@ impl ScriptRuntime {
     /// `spawn_top_level_custom()` is the binding-aware path used by the
     /// current ScriptScene loader. That path creates and stores the
     /// persistent top-level Scope needed by events.
-    pub fn spawn_top_level(
-        &mut self,
-        script_path: String,
-    ) -> Result<Option<ScriptTaskId>, String> {
+    pub fn spawn_top_level(&mut self, script_path: String) -> Result<Option<ScriptTaskId>, String> {
         let statements = self.interpreter.program().statements.clone();
 
         if statements.is_empty() {
@@ -327,13 +319,11 @@ impl ScriptRuntime {
         instance.script_path = Some(script_path.clone());
 
         // Start the top-level fiber using the persistent Scope.
-        let fiber = self
-            .interpreter
-            .start_top_level_fiber_with_scope(
-                instance,
-                statements,
-                top_level_scope,
-            )?;
+        let fiber = self.interpreter.start_top_level_fiber_with_scope(
+            instance,
+            statements,
+            top_level_scope,
+        )?;
 
         // Schedule the top-level fiber.
         let task_id = self.scheduler.spawn();
@@ -491,13 +481,9 @@ mod tests {
     use crate::scripting::value::{HandleKind, Value};
 
     fn runtime(source: &str) -> ScriptRuntime {
-        let tokens = Lexer::new(source)
-            .tokenize()
-            .expect("lexer should succeed");
+        let tokens = Lexer::new(source).tokenize().expect("lexer should succeed");
 
-        let program = Parser::new(tokens)
-            .parse()
-            .expect("parser should succeed");
+        let program = Parser::new(tokens).parse().expect("parser should succeed");
 
         ScriptRuntime::new(program)
     }
@@ -580,10 +566,7 @@ entity Test {
 
         assert_eq!(
             results,
-            vec![(
-                task_id,
-                FiberResult::Yield(YieldReason::WaitSeconds(1.0))
-            )]
+            vec![(task_id, FiberResult::Yield(YieldReason::WaitSeconds(1.0)))]
         );
 
         assert_eq!(
@@ -665,9 +648,7 @@ entity Test {
             .spawn(instance, "update", vec![Value::Number(1.0)])
             .expect("fiber should spawn");
 
-        let results = runtime
-            .tick(0.0, &mut host)
-            .expect("tick should succeed");
+        let results = runtime.tick(0.0, &mut host).expect("tick should succeed");
 
         assert_eq!(results, vec![(task_id, FiberResult::Complete)]);
     }
@@ -712,9 +693,7 @@ entity Test {
             .spawn(second_instance, "update", vec![Value::Number(1.0)])
             .expect("second fiber should spawn");
 
-        let results = runtime
-            .tick(0.0, &mut host)
-            .expect("tick should succeed");
+        let results = runtime.tick(0.0, &mut host).expect("tick should succeed");
 
         assert_eq!(results.len(), 2);
 
@@ -878,13 +857,9 @@ entity Test {
             .instantiate_entity("Test", 1, &mut host)
             .unwrap();
 
-        let task_id = runtime
-            .spawn(instance, "main", vec![])
-            .unwrap();
+        let task_id = runtime.spawn(instance, "main", vec![]).unwrap();
 
-        let results = runtime
-            .tick(0.0, &mut host)
-            .unwrap();
+        let results = runtime.tick(0.0, &mut host).unwrap();
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, task_id);
@@ -923,13 +898,9 @@ entity Test {
             .instantiate_entity("Test", 1, &mut host)
             .unwrap();
 
-        let task_id = runtime
-            .spawn(instance, "fail", vec![])
-            .unwrap();
+        let task_id = runtime.spawn(instance, "fail", vec![]).unwrap();
 
-        let results = runtime
-            .tick(0.0, &mut host)
-            .unwrap();
+        let results = runtime.tick(0.0, &mut host).unwrap();
 
         assert_eq!(results.len(), 1);
 
@@ -975,9 +946,7 @@ on PlayerSpawned(player) {
 
         assert_eq!(runtime.task_count(), 1);
 
-        runtime
-            .tick(0.0, &mut host)
-            .unwrap();
+        runtime.tick(0.0, &mut host).unwrap();
 
         assert!(
             runtime

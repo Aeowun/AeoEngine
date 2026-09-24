@@ -2,10 +2,8 @@ use std::ffi::CString;
 use std::ptr;
 
 pub fn create_program(vertex_source: &str, fragment_source: &str) -> u32 {
-    let vertex_shader =
-        compile_shader(gl::VERTEX_SHADER, vertex_source, "vertex");
-    let fragment_shader =
-        compile_shader(gl::FRAGMENT_SHADER, fragment_source, "fragment");
+    let vertex_shader = compile_shader(gl::VERTEX_SHADER, vertex_source, "vertex");
+    let fragment_shader = compile_shader(gl::FRAGMENT_SHADER, fragment_source, "fragment");
 
     unsafe {
         let program = gl::CreateProgram();
@@ -41,12 +39,7 @@ fn compile_shader(kind: u32, source: &str, name: &str) -> u32 {
     unsafe {
         let shader = gl::CreateShader(kind);
 
-        gl::ShaderSource(
-            shader,
-            1,
-            &source.as_ptr(),
-            ptr::null(),
-        );
+        gl::ShaderSource(shader, 1, &source.as_ptr(), ptr::null());
 
         gl::CompileShader(shader);
 
@@ -58,11 +51,7 @@ fn compile_shader(kind: u32, source: &str, name: &str) -> u32 {
 
             gl::DeleteShader(shader);
 
-            panic!(
-                "OpenGL {} shader compilation failed:\n{}",
-                name,
-                log
-            );
+            panic!("OpenGL {} shader compilation failed:\n{}", name, log);
         }
 
         shader

@@ -88,10 +88,7 @@ impl CameraController {
     pub fn translate_free(&mut self, movement: Vec3) {
         let (right, up, forward) = self.get_basis();
 
-        self.target +=
-            right * movement.x +
-            up * movement.y +
-            forward * movement.z;
+        self.target += right * movement.x + up * movement.y + forward * movement.z;
     }
 }
 
@@ -162,49 +159,33 @@ impl GameplayCamera {
     }
 
     /// Updates the camera to follow the active character.
-    pub fn update(
-        &mut self,
-        character: &crate::character::Character,
-        world: &World,
-    ) {
+    pub fn update(&mut self, character: &crate::character::Character, world: &World) {
         let character_position = character.transform.position;
 
         match self.mode {
             CameraMode::ThirdPerson => {
-                self.current_target =
-                    character_position + Vec3::Y * self.look_height;
+                self.current_target = character_position + Vec3::Y * self.look_height;
 
-                let desired_position =
-                    self.current_target +
-                    orbit_offset(self.distance, self.yaw, self.pitch) +
-                    Vec3::Y * (self.height - self.look_height);
+                let desired_position = self.current_target
+                    + orbit_offset(self.distance, self.yaw, self.pitch)
+                    + Vec3::Y * (self.height - self.look_height);
 
-                self.current_position = self.resolve_collision(
-                    self.current_target,
-                    desired_position,
-                    world,
-                );
+                self.current_position =
+                    self.resolve_collision(self.current_target, desired_position, world);
             }
 
             CameraMode::FirstPerson => {
-                self.current_position =
-                    character_position + Vec3::Y * FIRST_PERSON_HEIGHT;
+                self.current_position = character_position + Vec3::Y * FIRST_PERSON_HEIGHT;
 
                 let forward = first_person_forward(self.yaw, self.pitch);
-                self.current_target =
-                    self.current_position + forward;
+                self.current_target = self.current_position + forward;
             }
         }
     }
 
     /// Moves the third-person camera toward the target when a solid cell
     /// obstructs the camera's desired position.
-    pub fn resolve_collision(
-        &self,
-        target: Vec3,
-        desired: Vec3,
-        world: &World,
-    ) -> Vec3 {
+    pub fn resolve_collision(&self, target: Vec3, desired: Vec3, world: &World) -> Vec3 {
         let offset = desired - target;
         let distance = offset.length();
 
@@ -225,10 +206,7 @@ impl GameplayCamera {
             );
 
             if world.get(coord).is_some() && world.is_cell_solid(coord) {
-                return target
-                    + direction
-                        * (current_distance - CAMERA_COLLISION_MARGIN)
-                            .max(0.0);
+                return target + direction * (current_distance - CAMERA_COLLISION_MARGIN).max(0.0);
             }
 
             current_distance += CAMERA_COLLISION_STEP;
@@ -238,11 +216,7 @@ impl GameplayCamera {
     }
 
     pub fn get_view_matrix(&self) -> Mat4 {
-        Mat4::look_at_rh(
-            self.current_position,
-            self.current_target,
-            Vec3::Y,
-        )
+        Mat4::look_at_rh(self.current_position, self.current_target, Vec3::Y)
     }
 
     /// Returns camera-relative right, up, and forward vectors.
@@ -267,12 +241,7 @@ fn camera_basis(yaw: f32, pitch: f32) -> (Vec3, Vec3, Vec3) {
     let sin_pitch = pitch.sin();
     let cos_pitch = pitch.cos();
 
-    let forward = Vec3::new(
-        -cos_pitch * sin_yaw,
-        -sin_pitch,
-        -cos_pitch * cos_yaw,
-    )
-    .normalize();
+    let forward = Vec3::new(-cos_pitch * sin_yaw, -sin_pitch, -cos_pitch * cos_yaw).normalize();
 
     let right = Vec3::new(cos_yaw, 0.0, -sin_yaw).normalize();
     let up = right.cross(forward).normalize();
@@ -284,10 +253,5 @@ fn first_person_forward(yaw: f32, pitch: f32) -> Vec3 {
     let cos_pitch = pitch.cos();
     let sin_pitch = pitch.sin();
 
-    Vec3::new(
-        -cos_pitch * yaw.sin(),
-        sin_pitch,
-        -cos_pitch * yaw.cos(),
-    )
-    .normalize()
+    Vec3::new(-cos_pitch * yaw.sin(), sin_pitch, -cos_pitch * yaw.cos()).normalize()
 }
