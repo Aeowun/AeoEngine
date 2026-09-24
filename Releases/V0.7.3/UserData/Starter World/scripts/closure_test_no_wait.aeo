@@ -1,9 +1,0 @@
-value = 10
-
-const f = fn() {
-    value = value + 5
-}
-
-f()
-
-result = value

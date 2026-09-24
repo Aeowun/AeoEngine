@@ -1,14 +1,22 @@
-/target
-/shelf/
-/workspace.xml
+# Rust build output
+/target/
 
-# Generated / local assets
-.assets
+# JetBrains / IDE files
+/.idea/
+shelf/
+*.iml
 
-# Release builds
-Releases
+# Release packages
+/Releases/
 
-# Development starter world
-Dev/
-# Local user data
-UserData/
+# Local development projects / assets
+/Dev/
+/UserData/
+.assets/
+
+# Internal audit / temporary documentation
+/documentationUpdation.md
+
+# OS junk
+.DS_Store
+Thumbs.db

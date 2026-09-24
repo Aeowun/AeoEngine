@@ -651,239 +651,104 @@
 
 ---
 
-## 0.7.3 — Unreleased
+## 0.7.3 — Released
 
-### AeoScript
-
-#### Added
+### Added
 
 * Script-defined entity objects with persistent fields, constructors, methods, and independent object instances
 * Lexical closures with captured script scopes retained by function values
-* Direct AeoScript access to Play-mode input:
-
-  * movement
-  * jump
-  * mouse orbit
+* Direct AeoScript access to Play-mode input for movement, jump, and mouse orbit
 * Generic player movement and camera control APIs
-* Runtime Script Control for enabling and disabling scripts while the game is running
-* `on_touch(cell)` event for player contact with scripted Cells
-* `on_overlap(overlapping, cell)` event for character entering/leaving Cell volume
-* Persistent `collision_events_enabled` Cell property for controlling contact event dispatch
-* Script enable/disable state persistence
-* Continued lexer and parser work with corresponding regression coverage
-
-#### Changed
-
-* `ScriptScene` now loads `.aeo` files from:
-
-  * `scripts/`
-  * `controllers/`
-  * `cameras/`
-* Script-defined controller and camera objects retain state between runtime updates
-* Repeated controller and camera calls use direct runtime method dispatch rather than constructing temporary call expressions
-* Controller scripts now provide movement decisions while AeoEngine continues to own:
-
-  * gravity
-  * physics
-  * collision
-  * grounded resolution
-  * movement integration
-* Camera scripts now provide camera behavior while AeoEngine continues to own the underlying camera and rendering systems
-
-#### Fixed
-
-* Removed redundant script-side gravity handling from controller scripts
-* Reduced repeated controller and camera dispatch overhead
-* Removed temporary controller diagnostic logging after controller execution and input access were verified
-
----
-
-### Runtime UI
-
-#### Added
-
-* Runtime UI system with:
-
-  * `Panel`
-  * `Text`
-  * `Button`
-* Runtime UI properties for:
-
-  * position
-  * size
-  * visibility
-  * enabled state
-  * color
+* Runtime script enable/disable control
+* `on_touch(cell)` and `on_overlap(overlapping, cell)` collision events
+* Persistent `collision_events_enabled` Cell property for controlling collision event dispatch
+* Script-defined controller and camera profiles
+* Runtime UI with `Panel`, `Text`, and `Button` elements
+* Runtime UI properties for position, size, visibility, enabled state, color, and text
 * `UiHandle` runtime values
-* `ui.new()` for runtime UI creation
-* `ui.delete()` for runtime UI removal
+* `ui.new()` and `ui.delete()` for runtime UI creation and removal
 * Runtime UI button callbacks using AeoScript closures
 * Runtime UI click scheduling through the script runtime
-* Integration coverage for:
+* World-authored mouse settings: `cursor_visible` and `screen_locked`
+* Runtime AeoScript mouse control through `get.mouse()`, `mouse.setCursorVisible`, and `mouse.setScreenLocked`
+* Authored `AudioEmitter` Cells with persistent audio, playback, looping, and volume properties
+* WAV audio asset support under `.assets/audio/`
+* Audio asset browsing, importing, searching, and inline path suggestions
+* 3D Audio Emitter editor markers and World Inspector controls
+* AeoScript `sound` objects on Cell handles with `.play()`, `.stop()`, `.pause()`, `.playing`, `.looped`, and `.volume`
+* Runtime audio playback through the engine `AudioSystem`
+* Runtime Cell creation, deletion, movement, and property mutation
+* Integration coverage for scripting, runtime UI, audio, controllers, cameras, input, callbacks, and runtime state
+* Syntax Highlighting: Improve AeoScript syntax highlighting using the existing lexer and language grammar
 
-  * creation
-  * property access
-  * callbacks
-  * deletion
-  * handle validation
+### Changed
 
-#### Changed
-
-* Runtime UI is reset with Play mode lifecycle state
-* Runtime UI is rendered as a foreground gameplay overlay inside the central 3D viewport
+* `ScriptScene` now loads `.aeo` files from `scripts/`, `controllers/`, and `cameras/`
+* Script-defined controllers and cameras retain their runtime state between updates
+* Controller scripts now provide movement decisions while AeoEngine retains ownership of gravity, physics, collision, grounded resolution, and movement integration
+* Camera scripts now provide camera behavior while AeoEngine retains ownership of the underlying camera and rendering systems
+* Repeated controller and camera calls now use direct runtime method dispatch
+* Runtime UI is rendered as a foreground gameplay overlay clipped to the central 3D viewport
 * Runtime UI coordinates are relative to the central 3D viewport
-* Runtime UI rendering is clipped to the central 3D viewport
+* Editor 3D rendering, OpenGL clearing, and hover raycasting now use the exact central viewport bounds
+* Editor workspace now maintains the intended `[P | V | P]` layout
+* Controller and camera selection is now project-configurable through controller and camera profiles
+* Runtime mouse state is initialized from World defaults when Play starts and restored when Play exits
+* Runtime UI and runtime audio state are reset with the Play-mode lifecycle
+* Runtime audio state is maintained separately from authored World audio state
+* Website and documentation materials were updated to reflect the current AeoEngine and AeoScript implementation
 
-#### Fixed
+### Fixed
 
+* Redundant script-side gravity handling in controller scripts
+* Repeated controller and camera dispatch overhead
+* Temporary controller diagnostic logging after controller and input behavior were verified
+* Incorrect editor projection caused by using the full application window aspect ratio
+* Hover picking offsets caused by editor side-panel dimensions
 * Runtime UI coordinates being interpreted relative to the full application window
 * Runtime UI rendering over editor side panels
-* Default runtime Panel styling making white text unreadable
-
----
-
-### Editor and Viewport
-
-#### Changed
-
-* Editor 3D rendering now uses the exact central viewport bounds and aspect ratio
-* Editor OpenGL rendering and clearing are clipped to the central viewport
-* Editor hover raycasting now accounts for central viewport bounds
-* Editor workspace now maintains the intended `[P | V | P]` layout
-
-#### Fixed
-
-* Incorrect editor projection caused by using the full application window aspect ratio
-* Hover picking offsets caused by side-panel dimensions
-
----
-
-### Gameplay Controllers and Cameras
-
-#### Added
-
-* Project controller profiles for selecting script-defined controller implementations
-* Project camera profiles for selecting script-defined camera implementations
-* Generic APIs for scripted player movement and facing
-* Generic APIs for scripted camera behavior
-* Script-driven third-person controller implementation
-* Script-driven gameplay camera implementation
-
-#### Changed
-
-* Controller logic is now delegated to AeoScript while runtime physics remains engine-owned
-* Camera logic is now delegated to AeoScript while rendering remains engine-owned
-
----
-
-### World, Mouse, & Documentation Subsystems
-
-#### Added
-
-* World-authored mouse settings (`cursor_visible`, `screen_locked`) persisted under `MOUSE` header line in world serialization format
-* World Inspector editor controls for configuring initial Play-mode mouse cursor visibility and screen locking
-* Runtime `MouseController` state management on `App` initialized from World defaults when Play mode starts and restored to editor defaults on Play exit
-* AeoScript Mouse API (`get.mouse()`, `mouse.setCursorVisible`, `mouse.setScreenLocked`, `HandleKind::Mouse`)
-* Source-driven website documentation rewrite (`C:\Dev\GitHub\My Portfolio`) featuring beginner-first game maker learning paths using canonical `UserData/Starter World/scripts/` examples
-* Authoritative source-to-documentation verification report (`documentationUpdation.md`) mapping every engine feature and AeoScript API to source implementation files, page URLs, and inbound link counts
-
----
-
-### Runtime Stability
-
-#### Fixed
-
-* Script runtime control now supports enabling and disabling scripts without restarting Play mode
-* Runtime script state is correctly reset with Play mode lifecycle state
-* Runtime UI state is discarded when Play mode stops
-* Controller and camera runtime state persists correctly between updates
-
----
-
-### Audio Assets & Audio Emitter Runtime System
-
-#### Added
-
-* Built-in WAV audio asset library stored under `.assets/audio/` (`battle/`, `interface/`, `inventory/`, `misc/`, `NPC/...`, `world/`)
-* Project-owned WAV audio assets stored under `UserData/<Project>/.assets/audio/`
-* WAV audio asset browser (`draw_audio_edit` / `draw_audio_browser`) featuring:
-  * WAV file filtering
-  * Audio finder window (`Browse...`) with search/filtering across nested subdirectories
-  * Audio file importer (`Import...`) copying selected `.wav` files into `.assets/audio/`
-  * Inline suggestion matching for typed audio asset paths
-* Authored `CellType::AudioEmitter` with persistent properties:
-  * `audio` (relative WAV asset path)
-  * `playing` (initial playback state)
-  * `looped` (looping configuration)
-  * `volume` (playback volume)
-* Audio Emitter 3D viewport billboard marker rendering in editor mode using `.assets/textures/speaker.png`
-* Audio Emitter properties panel in World Inspector with `Sound`, `Playing`, `Looped`, and `Volume` controls
-* AeoScript `sound` object on Cell handles (`speaker.sound`) with:
-  * `.play()`
-  * `.stop()`
-  * `.pause()`
-  * `.playing`
-  * `.looped`
-  * `.volume`
-* Engine-side `AudioSystem` runtime playback layer:
-  * Supports multiple simultaneous audio emitters
-  * Automatically starts playback on Play entry for emitters authored with `playing = true`
-  * Tracks runtime audio overrides (`audio_playing`, `audio_paused`, `audio_looped`, `audio_volume`) separately from authored World cells
-  * Discards runtime audio state and stops all audio sinks when Play mode exits
-* Comprehensive automated integration test suite covering creation, persistence, AeoScript `sound` object API calls, `find("Speakers")`, multi-emitter playback, and Play/Stop session state isolation
-
----
+* Default runtime Panel styling that made white text unreadable
+* Runtime script state not being reset correctly when Play mode stops
+* Runtime UI state persisting beyond the Play session
+* Controller and camera runtime state not persisting correctly between updates
 
 ### Notes
 
-> Version 0.7.3 expands AeoScript beyond scene and object scripting into script-defined gameplay controllers, cameras, input handling, runtime UI, closures, runtime script control, and spatial audio emitters while keeping AeoEngine responsible for physics, gravity, collision, rendering, audio playback, and simulation.
+> Version 0.7.3 expands AeoScript beyond scene and object scripting into script-defined gameplay controllers, cameras, input handling, runtime UI, closures, runtime script control, collision events, mouse control, and spatial audio while keeping AeoEngine responsible for physics, gravity, collision, rendering, audio playback, and simulation.
 
-> Runtime UI and runtime audio state are session-only and are discarded when Play mode stops.
+> Runtime UI, runtime audio state, runtime-created Cells, and other temporary Play-mode state are discarded when Play mode stops. Authored World data remains the source of truth for persistent project content.
 
-| Verification              |                          Result |
-| ------------------------- | ------------------------------: |
-| Rust tests                |                  **419 passed** |
-| Rust test failures        |                           **0** |
-| In-game master test suite | Runtime UI integration coverage |
+---
+## 0.7.4 — Current Unreleased
+
+### Added
+*
+
+### Changed
+*
+
+### Fixed
+*
+
+### Notes
+>
+
+
+---
+
+| Verification                |                                                       Result |
+| --------------------------- | -----------------------------------------------------------: |
+| Rust tests                  |                                               **419 passed** |
+| Rust test failures          |                                                        **0** |
+| In-game integration testing | Runtime UI, scripting, gameplay, and runtime-system coverage |
 
 ### Planned
 
-<details>
-<summary><strong>Character System</strong></summary>
-
-Characters will become project-owned data rather than being directly tied to the current `src/character_custom` implementation.
-
-The first implementation will prove a concrete project-owned character workflow before expanding the system further.
-
-</details>
-
-<details>
-<summary><strong>Syntax Highlighting</strong></summary>
-
-The Script Editor will gain proper AeoScript syntax highlighting based on the engine's existing lexer.
-
-This will make keywords, strings, numbers, functions, comments, and other language elements visually distinct while keeping the editor aligned with the actual language grammar.
-
-</details>
-
-<details>
-<summary><strong>Voxel Rendering</strong></summary>
-
-The voxel renderer will avoid generating faces that are completely hidden by neighboring blocks.
-
-This will significantly reduce unnecessary geometry while continuing to use GPU back-face culling for the faces that remain.
-
-</details>
+* Character System: continue moving character-specific behavior toward the project-owned, script-defined model used by controllers and cameras
+* Voxel Rendering: reduce unnecessary voxel geometry by avoiding faces that are completely hidden by neighboring blocks
 
 ---
 
-# TODO
+> **Current release:** `0.7.3`
+> **Development cycle:** `0.7.x`
 
-* [x] Perform a full sweep of AeoEngine documentation
-* [ ] Perform a full sweep of the AEOWUN website
-* [x] Bring documentation and website terminology into alignment with the current AeoEngine and AeoScript implementation
-
----
-
-> **Current release:** `0.7.2`
-> **Development branch:** `0.7.3 — Unreleased`
