@@ -2,6 +2,7 @@ use super::navigation::NavigationWindow;
 use super::tools;
 use crate::engine::EditorMode;
 use crate::renderer::camera::CameraController;
+use crate::scripting::binding::ScriptBinding;
 use crate::world::{AttributeValue, Cell, WorldCoord};
 use egui::RichText;
 use std::collections::HashMap;
@@ -28,9 +29,31 @@ pub enum ColorTarget {
     PropertyLight(WorldCoord),
 }
 
+#[derive(Clone, Debug)]
+pub struct ClipboardCell {
+    pub offset: WorldCoord,
+    pub cell: Cell,
+    pub script_binding: Option<ScriptBinding>,
+}
+
+#[derive(Clone, Debug)]
+pub struct EditorClipboard {
+    pub pivot_coord: WorldCoord,
+    pub cells: Vec<ClipboardCell>,
+}
+
+#[derive(Clone, Debug)]
+pub struct GrabState {
+    pub source_coords: Vec<WorldCoord>,
+    pub anchor_coord: WorldCoord,
+    pub current_target: WorldCoord,
+    pub delta: WorldCoord,
+    pub valid: bool,
+}
+
 pub struct History {
-    pub undo_stack: Vec<HashMap<WorldCoord, Cell>>,
-    pub redo_stack: Vec<HashMap<WorldCoord, Cell>>,
+    pub undo_stack: Vec<(HashMap<WorldCoord, Cell>, Vec<ScriptBinding>)>,
+    pub redo_stack: Vec<(HashMap<WorldCoord, Cell>, Vec<ScriptBinding>)>,
 }
 
 impl History {
@@ -41,8 +64,8 @@ impl History {
         }
     }
 
-    pub fn push(&mut self, cells: HashMap<WorldCoord, Cell>) {
-        self.undo_stack.push(cells);
+    pub fn push(&mut self, cells: HashMap<WorldCoord, Cell>, bindings: Vec<ScriptBinding>) {
+        self.undo_stack.push((cells, bindings));
         self.redo_stack.clear();
     }
 }
@@ -86,6 +109,9 @@ pub struct Editor {
     pub viewport_ppp: f32,
 
     pub history: History,
+
+    pub clipboard: Option<EditorClipboard>,
+    pub grab_state: Option<GrabState>,
 
     pub terminal_output: String,
     pub terminal_auto_scroll: bool,
@@ -138,6 +164,9 @@ impl Editor {
             viewport_ppp: 1.0,
             history: History::new(),
 
+            clipboard: None,
+            grab_state: None,
+
             terminal_output: String::new(),
             terminal_auto_scroll: true,
 
@@ -147,6 +176,10 @@ impl Editor {
             attribute_add_error: None,
             last_selected_coord: None,
         }
+    }
+
+    pub fn clear_clipboard(&mut self) {
+        self.clipboard = None;
     }
 
     pub fn set_anchor(&mut self, coord: WorldCoord) {
@@ -1800,5 +1833,39 @@ mod tests {
         assert_eq!(world.get(coord_b).unwrap().texture, "target_tex"); // remains target_tex
         assert_eq!(world.get(coord_c).unwrap().texture, "target_tex");
         assert_eq!(world.get(coord_d).unwrap().texture, "target_tex");
+    }
+
+    #[test]
+    fn test_additive_multi_select() {
+        let mut world = World::new();
+        let c1 = WorldCoord::new(1, 0, 0);
+        let c2 = WorldCoord::new(2, 0, 0);
+        let c3 = WorldCoord::new(3, 0, 0);
+
+        world.set_cell(c1, CellType::Block);
+        world.set_cell(c2, CellType::Block);
+        world.set_cell(c3, CellType::Block);
+
+        let mut editor = Editor::new();
+        editor.selected_coords = vec![c1];
+        editor.selected_coord = Some(c1);
+
+        // Simulate additive selection (Ctrl + click c2)
+        if !editor.selected_coords.contains(&c2) {
+            editor.selected_coords.push(c2);
+            editor.selected_coord = Some(c2);
+        }
+        assert_eq!(editor.selected_coords, vec![c1, c2]);
+
+        // Simulate additive selection (Ctrl + click c3)
+        if !editor.selected_coords.contains(&c3) {
+            editor.selected_coords.push(c3);
+            editor.selected_coord = Some(c3);
+        }
+        assert_eq!(editor.selected_coords, vec![c1, c2, c3]);
+
+        // Simulate toggle deselect (Ctrl + click c2)
+        editor.selected_coords.retain(|c| *c != c2);
+        assert_eq!(editor.selected_coords, vec![c1, c3]);
     }
 }

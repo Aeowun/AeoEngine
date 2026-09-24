@@ -285,7 +285,8 @@ mod tests {
 
     #[test]
     fn test_create_project_creates_scripts_dir() {
-        let test_dir = PathBuf::from("TestUserData_Create");
+        let test_dir =
+            std::env::temp_dir().join(format!("TestUserData_Create_{}", std::process::id()));
         if test_dir.exists() {
             fs::remove_dir_all(&test_dir).ok();
         }
@@ -315,7 +316,8 @@ mod tests {
 
     #[test]
     fn test_open_project_ensures_scripts_dir() {
-        let test_dir = PathBuf::from("TestUserData_Open");
+        let test_dir =
+            std::env::temp_dir().join(format!("TestUserData_Open_{}", std::process::id()));
         if test_dir.exists() {
             fs::remove_dir_all(&test_dir).ok();
         }
@@ -346,7 +348,8 @@ mod tests {
 
     #[test]
     fn test_metadata_persistence_intact() {
-        let test_dir = PathBuf::from("TestUserData_Metadata");
+        let test_dir =
+            std::env::temp_dir().join(format!("TestUserData_Metadata_{}", std::process::id()));
         if test_dir.exists() {
             fs::remove_dir_all(&test_dir).ok();
         }

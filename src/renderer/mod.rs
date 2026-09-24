@@ -1058,23 +1058,50 @@ impl Renderer {
                 }
 
                 gl::BindVertexArray(self.highlight_vao);
-                gl::Uniform3f(base_color_location, 0.2, 0.6, 1.0);
 
-                for coord in &editor.selected_coords {
-                    let model = Mat4::from_translation(Vec3::new(
-                        coord.x as f32,
-                        coord.y as f32,
-                        coord.z as f32,
-                    ));
+                if let Some(ref grab) = editor.grab_state {
+                    let color = if grab.valid {
+                        (0.2, 0.6, 1.0)
+                    } else {
+                        (1.0, 0.2, 0.2)
+                    };
+                    gl::Uniform3f(base_color_location, color.0, color.1, color.2);
 
-                    gl::UniformMatrix4fv(
-                        model_location,
-                        1,
-                        gl::FALSE,
-                        model.to_cols_array().as_ptr(),
-                    );
+                    for coord in &grab.source_coords {
+                        let model = Mat4::from_translation(Vec3::new(
+                            (coord.x + grab.delta.x) as f32,
+                            (coord.y + grab.delta.y) as f32,
+                            (coord.z + grab.delta.z) as f32,
+                        ));
 
-                    gl::DrawArrays(gl::LINES, 0, self.highlight_vertex_count);
+                        gl::UniformMatrix4fv(
+                            model_location,
+                            1,
+                            gl::FALSE,
+                            model.to_cols_array().as_ptr(),
+                        );
+
+                        gl::DrawArrays(gl::LINES, 0, self.highlight_vertex_count);
+                    }
+                } else {
+                    gl::Uniform3f(base_color_location, 0.2, 0.6, 1.0);
+
+                    for coord in &editor.selected_coords {
+                        let model = Mat4::from_translation(Vec3::new(
+                            coord.x as f32,
+                            coord.y as f32,
+                            coord.z as f32,
+                        ));
+
+                        gl::UniformMatrix4fv(
+                            model_location,
+                            1,
+                            gl::FALSE,
+                            model.to_cols_array().as_ptr(),
+                        );
+
+                        gl::DrawArrays(gl::LINES, 0, self.highlight_vertex_count);
+                    }
                 }
 
                 let model = Mat4::from_translation(anchor_pos);
@@ -1086,6 +1113,77 @@ impl Renderer {
 
             // Ghost rendering.
             if editor.mode == EditorMode::Editor {
+                if let Some(ref grab) = editor.grab_state {
+                    gl::Enable(gl::BLEND);
+                    gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                    gl::DepthMask(gl::FALSE);
+                    gl::Uniform1f(alpha_location, 0.5);
+
+                    for coord in &grab.source_coords {
+                        let Some(cell) = world.get(*coord) else {
+                            continue;
+                        };
+                        let preview_coord = WorldCoord::new(
+                            coord.x + grab.delta.x,
+                            coord.y + grab.delta.y,
+                            coord.z + grab.delta.z,
+                        );
+
+                        let is_marker =
+                            matches!(cell.cell_type, CellType::Light | CellType::AudioEmitter);
+                        if is_marker {
+                            gl::BindVertexArray(self.highlight_vao);
+                            let (r, g, b) = if !grab.valid {
+                                (1.0, 0.2, 0.2)
+                            } else if cell.cell_type == CellType::AudioEmitter {
+                                (0.2, 0.8, 1.0)
+                            } else {
+                                (1.0, 1.0, 0.2)
+                            };
+                            gl::Uniform3f(base_color_location, r, g, b);
+
+                            let model = Mat4::from_translation(Vec3::new(
+                                preview_coord.x as f32,
+                                preview_coord.y as f32,
+                                preview_coord.z as f32,
+                            ));
+                            gl::UniformMatrix4fv(
+                                model_location,
+                                1,
+                                gl::FALSE,
+                                model.to_cols_array().as_ptr(),
+                            );
+                            gl::DrawArrays(gl::LINES, 0, self.highlight_vertex_count);
+                        } else {
+                            gl::BindVertexArray(self.block_vao);
+                            let (first_vertex, count) = self.get_block_mask_range(63);
+                            let color = if grab.valid {
+                                cell.color_rgb
+                            } else {
+                                Vec3::new(1.0, 0.2, 0.2)
+                            };
+                            gl::Uniform3f(base_color_location, color.x, color.y, color.z);
+                            gl::Uniform1i(use_tex_location, 0);
+
+                            let model = Mat4::from_translation(Vec3::new(
+                                preview_coord.x as f32,
+                                preview_coord.y as f32,
+                                preview_coord.z as f32,
+                            ));
+                            gl::UniformMatrix4fv(
+                                model_location,
+                                1,
+                                gl::FALSE,
+                                model.to_cols_array().as_ptr(),
+                            );
+                            gl::DrawArrays(gl::TRIANGLES, first_vertex, count);
+                        }
+                    }
+
+                    gl::DepthMask(gl::TRUE);
+                    gl::Uniform1f(alpha_location, 1.0);
+                }
+
                 gl::Enable(gl::BLEND);
                 gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
                 gl::DepthMask(gl::FALSE);

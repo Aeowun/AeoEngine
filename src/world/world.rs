@@ -755,4 +755,348 @@ impl World {
     pub fn active_blocks(&self) -> Vec<WorldCoord> {
         self.cells.keys().cloned().collect()
     }
+
+    /// Moves a collection of authored cells by a given delta offset, preserving their cell IDs.
+    /// Returns Err if the movement destination collides with unrelated cells in the world.
+    pub fn move_cells(
+        &mut self,
+        source_coords: &[WorldCoord],
+        delta: WorldCoord,
+    ) -> Result<(), String> {
+        if delta == WorldCoord::new(0, 0, 0) || source_coords.is_empty() {
+            return Ok(());
+        }
+
+        let source_set: std::collections::HashSet<WorldCoord> =
+            source_coords.iter().cloned().collect();
+
+        // Validate that no destination coordinate collides with an unrelated cell.
+        for &src in source_coords {
+            let dest = WorldCoord::new(src.x + delta.x, src.y + delta.y, src.z + delta.z);
+            if self.cells.contains_key(&dest) && !source_set.contains(&dest) {
+                return Err("Destination is occupied by an unrelated cell".to_string());
+            }
+        }
+
+        self.bump_render_revision();
+
+        // 1. Remove all source cells first to avoid self-overwrite when moving onto own positions.
+        let mut moved = Vec::new();
+        for &src in source_coords {
+            if let Some(cell) = self.cells.remove(&src) {
+                self.id_to_coord.remove(&cell.id);
+                self.mark_physics_dirty(cell.id);
+                self.mark_render_dirty(src, DirtyReason::Geometry);
+                moved.push((src, cell));
+            }
+        }
+
+        // 2. Re-insert cells at destination coordinates.
+        for (old_coord, cell) in moved {
+            let dest = WorldCoord::new(
+                old_coord.x + delta.x,
+                old_coord.y + delta.y,
+                old_coord.z + delta.z,
+            );
+            let id = cell.id;
+            self.cells.insert(dest, cell);
+            self.id_to_coord.insert(id, dest);
+            self.mark_physics_dirty(id);
+            self.mark_render_dirty(dest, DirtyReason::Geometry);
+        }
+
+        Ok(())
+    }
+
+    /// Pastes a group of copied cells from clipboard at the given target pivot coordinate.
+    /// Generates new unique IDs for every pasted cell and remaps script bindings.
+    /// Returns Err if any destination coordinate is occupied by an existing cell.
+    pub fn paste_cells(
+        &mut self,
+        clipboard_cells: &[crate::editor::ClipboardCell],
+        target_pivot: WorldCoord,
+    ) -> Result<Vec<WorldCoord>, String> {
+        if clipboard_cells.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Validate that no destination coordinate is occupied.
+        for item in clipboard_cells {
+            let dest = WorldCoord::new(
+                target_pivot.x + item.offset.x,
+                target_pivot.y + item.offset.y,
+                target_pivot.z + item.offset.z,
+            );
+            if self.cells.contains_key(&dest) {
+                return Err("Destination is occupied".to_string());
+            }
+        }
+
+        self.bump_render_revision();
+        let mut pasted_coords = Vec::new();
+
+        for item in clipboard_cells {
+            let dest = WorldCoord::new(
+                target_pivot.x + item.offset.x,
+                target_pivot.y + item.offset.y,
+                target_pivot.z + item.offset.z,
+            );
+
+            let mut cell = item.cell.clone();
+            let new_id = self.generate_unique_id(dest, cell.cell_type);
+            cell.id = new_id;
+
+            self.cells.insert(dest, cell);
+            self.id_to_coord.insert(new_id, dest);
+            self.mark_physics_dirty(new_id);
+            self.mark_render_dirty(dest, DirtyReason::Geometry);
+
+            if let Some(ref binding) = item.script_binding {
+                let mut new_binding = binding.clone();
+                new_binding.target_identity = new_id;
+                self.script_bindings.push(new_binding);
+            }
+
+            pasted_coords.push(dest);
+        }
+
+        Ok(pasted_coords)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::editor::ClipboardCell;
+    use crate::editor::editor::History;
+    use crate::scripting::binding::ScriptBinding;
+    use glam::Vec3;
+
+    #[test]
+    fn test_copy_preserves_full_cell_data_and_relative_offsets() {
+        let mut world = World::new();
+        let c1 = WorldCoord::new(10, 2, 10);
+        let c2 = WorldCoord::new(11, 2, 10);
+
+        let id1 = world.set_cell(c1, CellType::Block);
+        if let Some(cell) = world.get_mut(c1) {
+            cell.color_rgb = Vec3::new(1.0, 0.0, 0.0);
+            cell.texture = "CustomTexture".to_string();
+            cell.entity_identity = Some("MyEntity".to_string());
+            cell.attributes.insert(
+                "hp".to_string(),
+                super::super::cell::AttributeValue::Number(100.0),
+            );
+        }
+
+        let id2 = world.set_cell(c2, CellType::Light);
+        world
+            .script_bindings
+            .push(ScriptBinding::new(id1, "scripts/player.aeo"));
+
+        let pivot = c1;
+        let cell1 = world.get(c1).unwrap().clone();
+        let cell2 = world.get(c2).unwrap().clone();
+
+        let clip_cell1 = ClipboardCell {
+            offset: WorldCoord::new(c1.x - pivot.x, c1.y - pivot.y, c1.z - pivot.z),
+            cell: cell1,
+            script_binding: world
+                .script_bindings
+                .iter()
+                .find(|b| b.target_identity == id1)
+                .cloned(),
+        };
+
+        let clip_cell2 = ClipboardCell {
+            offset: WorldCoord::new(c2.x - pivot.x, c2.y - pivot.y, c2.z - pivot.z),
+            cell: cell2,
+            script_binding: world
+                .script_bindings
+                .iter()
+                .find(|b| b.target_identity == id2)
+                .cloned(),
+        };
+
+        // 1. Copy preserves full cell data
+        assert_eq!(clip_cell1.cell.color_rgb, Vec3::new(1.0, 0.0, 0.0));
+        assert_eq!(clip_cell1.cell.texture, "CustomTexture");
+        assert_eq!(
+            clip_cell1.cell.entity_identity,
+            Some("MyEntity".to_string())
+        );
+        assert_eq!(
+            clip_cell1.script_binding.unwrap().script_path,
+            "scripts/player.aeo"
+        );
+
+        // 2. Relative coordinates stored correctly
+        assert_eq!(clip_cell1.offset, WorldCoord::new(0, 0, 0));
+        assert_eq!(clip_cell2.offset, WorldCoord::new(1, 0, 0));
+    }
+
+    #[test]
+    fn test_paste_creates_new_ids_and_preserves_properties_bindings_and_layout() {
+        let mut world = World::new();
+        let c1 = WorldCoord::new(10, 2, 10);
+        let c2 = WorldCoord::new(11, 2, 10);
+
+        let id1 = world.set_cell(c1, CellType::Block);
+        if let Some(cell) = world.get_mut(c1) {
+            cell.color_rgb = Vec3::new(0.8, 0.1, 0.2);
+            cell.entity_identity = Some("Hero".to_string());
+        }
+
+        let id2 = world.set_cell(c2, CellType::Block);
+        world
+            .script_bindings
+            .push(ScriptBinding::new(id1, "scripts/hero.aeo"));
+
+        let clipboard = vec![
+            ClipboardCell {
+                offset: WorldCoord::new(0, 0, 0),
+                cell: world.get(c1).unwrap().clone(),
+                script_binding: world
+                    .script_bindings
+                    .iter()
+                    .find(|b| b.target_identity == id1)
+                    .cloned(),
+            },
+            ClipboardCell {
+                offset: WorldCoord::new(1, 0, 0),
+                cell: world.get(c2).unwrap().clone(),
+                script_binding: None,
+            },
+        ];
+
+        let target_pivot = WorldCoord::new(20, 5, 20);
+        let pasted_coords = world
+            .paste_cells(&clipboard, target_pivot)
+            .expect("Paste should succeed");
+
+        // 3. New IDs
+        let pasted_cell1 = world.get(WorldCoord::new(20, 5, 20)).unwrap();
+        let pasted_cell2 = world.get(WorldCoord::new(21, 5, 20)).unwrap();
+        assert_ne!(pasted_cell1.id, id1);
+        assert_ne!(pasted_cell2.id, id2);
+
+        // 4. Pasted properties preserved
+        assert_eq!(pasted_cell1.color_rgb, Vec3::new(0.8, 0.1, 0.2));
+        assert_eq!(pasted_cell1.entity_identity, Some("Hero".to_string()));
+
+        // 5. Pasted script binding remapped
+        let new_binding = world
+            .script_bindings
+            .iter()
+            .find(|b| b.target_identity == pasted_cell1.id);
+        assert!(new_binding.is_some());
+        assert_eq!(new_binding.unwrap().script_path, "scripts/hero.aeo");
+
+        // 6. Multi-cell paste relative layout preserved
+        assert_eq!(
+            pasted_coords,
+            vec![WorldCoord::new(20, 5, 20), WorldCoord::new(21, 5, 20)]
+        );
+    }
+
+    #[test]
+    fn test_move_preserves_ids_bindings_layout_and_allows_self_overlap() {
+        let mut world = World::new();
+        let c1 = WorldCoord::new(10, 2, 10);
+        let c2 = WorldCoord::new(11, 2, 10);
+
+        let id1 = world.set_cell(c1, CellType::Block);
+        let id2 = world.set_cell(c2, CellType::Block);
+        world
+            .script_bindings
+            .push(ScriptBinding::new(id1, "scripts/block1.aeo"));
+
+        let source_coords = vec![c1, c2];
+        let delta = WorldCoord::new(1, 0, 0);
+
+        // 11. Moving onto own positions allowed!
+        world
+            .move_cells(&source_coords, delta)
+            .expect("Move onto own positions should succeed");
+
+        // 7. Multi-cell move preserves IDs
+        let moved1 = world.get(WorldCoord::new(11, 2, 10)).unwrap();
+        let moved2 = world.get(WorldCoord::new(12, 2, 10)).unwrap();
+        assert_eq!(moved1.id, id1);
+        assert_eq!(moved2.id, id2);
+
+        // 8. Script bindings preserved
+        assert_eq!(world.resolve_cell_id(id1), Some(WorldCoord::new(11, 2, 10)));
+
+        // 9. Relative layout preserved
+        assert!(world.get(c1).is_none());
+    }
+
+    #[test]
+    fn test_destination_collision_rejects_atomically() {
+        let mut world = World::new();
+        let c1 = WorldCoord::new(10, 2, 10);
+        let c_obstacle = WorldCoord::new(15, 2, 10);
+
+        let id1 = world.set_cell(c1, CellType::Block);
+        let _id_obs = world.set_cell(c_obstacle, CellType::Block);
+
+        // Try moving c1 to c_obstacle
+        let res = world.move_cells(&[c1], WorldCoord::new(5, 0, 0));
+
+        // 10. Destination collision rejects operation atomically
+        assert!(res.is_err());
+        assert_eq!(world.get(c1).unwrap().id, id1);
+    }
+
+    #[test]
+    fn test_noop_move_does_nothing() {
+        let mut world = World::new();
+        let c1 = WorldCoord::new(10, 2, 10);
+        let id1 = world.set_cell(c1, CellType::Block);
+
+        // 12. No-op move does nothing
+        assert!(world.move_cells(&[c1], WorldCoord::new(0, 0, 0)).is_ok());
+        assert_eq!(world.get(c1).unwrap().id, id1);
+    }
+
+    #[test]
+    fn test_undo_and_redo_restore_exact_previous_world() {
+        let mut world = World::new();
+        let c1 = WorldCoord::new(10, 2, 10);
+        let id1 = world.set_cell(c1, CellType::Block);
+        world
+            .script_bindings
+            .push(ScriptBinding::new(id1, "scripts/test.aeo"));
+
+        let mut history = History::new();
+        history.push(world.cells.clone(), world.script_bindings.clone());
+
+        // Perform move
+        world.move_cells(&[c1], WorldCoord::new(5, 5, 5)).unwrap();
+        assert!(world.get(c1).is_none());
+        assert!(world.get(WorldCoord::new(15, 7, 15)).is_some());
+
+        // 13. Undo restores exact previous world
+        let (prev_cells, prev_bindings) = history.undo_stack.pop().unwrap();
+        history
+            .redo_stack
+            .push((world.cells.clone(), world.script_bindings.clone()));
+        world.cells = prev_cells;
+        world.script_bindings = prev_bindings;
+        world.rebuild_id_mapping();
+
+        assert_eq!(world.get(c1).unwrap().id, id1);
+        assert!(world.get(WorldCoord::new(15, 7, 15)).is_none());
+        assert_eq!(world.script_bindings.len(), 1);
+
+        // 14. Redo reapplies move
+        let (next_cells, next_bindings) = history.redo_stack.pop().unwrap();
+        world.cells = next_cells;
+        world.script_bindings = next_bindings;
+        world.rebuild_id_mapping();
+
+        assert!(world.get(c1).is_none());
+        assert_eq!(world.get(WorldCoord::new(15, 7, 15)).unwrap().id, id1);
+    }
 }

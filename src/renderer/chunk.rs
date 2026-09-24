@@ -351,15 +351,7 @@ fn emit_merged_main_quad(
     let color_arr = [color.x, color.y, color.z, 1.0];
 
     crate::renderer::mesh::add_merged_block_quad(
-        vertices,
-        o1,
-        o2,
-        o3,
-        o4,
-        color_arr,
-        normal,
-        width,
-        height,
+        vertices, o1, o2, o3, o4, color_arr, normal, width, height,
     );
 }
 

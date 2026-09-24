@@ -41,7 +41,8 @@
     * [0.7.0](#070)
     * [0.7.1](#071)
     * [0.7.2](#072)
-    * [0.7.3 — Unreleased](#073--unreleased)
+    * [0.7.3](#073)
+    * [0.7.4](#074)
 * [TODO](#todo)
 
 ---
@@ -719,20 +720,40 @@
 > Runtime UI, runtime audio state, runtime-created Cells, and other temporary Play-mode state are discarded when Play mode stops. Authored World data remains the source of truth for persistent project content.
 
 ---
+
+
 ## 0.7.4 — Current Unreleased
 
 ### Added
-* Exposed-Face Meshing. Static voxel geometry submission now culls occluded internal faces on GPU submission.
-* Spatial Chunking & Batched Static Voxel Meshes 
+
+* Exposed-Face Meshing. Static voxel geometry submission now culls occluded internal faces.
+* Spatial Chunking & Batched Static Voxel Meshes.
+* Dirty Chunk / Dirty-Region Rebuilding.
+* Greedy Meshing for static voxel geometry.
+* Editor Copy & Paste (`Ctrl+C` / `Ctrl+V`). Copies selected authored cells, relative offsets, cell data, and script bindings into an in-memory clipboard. Pasting assigns new persistent unique IDs and duplicates script bindings to the new IDs.
+* Transactional Grab / Drag in Select Mode. Click and hold an already-selected cell to drag the entire multi-selection as a group. Uses a 5-pixel drag threshold to distinguish clicks from moves.
+* Additive Multi-Selection (`Ctrl + Click` / `Ctrl + Drag`). Holding `Ctrl` while clicking adds/toggles individual blocks. Holding `Ctrl` while dragging out a selection box adds all blocks in the range to the active selection group without clearing existing selections.
+* Translucent Grab Ghost Preview. Renders translucent preview blocks and outlines at target positions during Grab mode, displaying red highlight indicators if destination coordinates collide with unrelated cells.
+
 ### Changed
-*
+
+* Static voxel rendering now uses persistent spatially chunked meshes with texture batching and selective chunk rebuilding.
+* Multi-Cell Copy Pivot Alignment. Copying a multi-selection defaults to the bottom-most cell ($\min(Y)$, $\min(X)$, $\min(Z)$) as the pivot, ensuring pasted structures sit cleanly on top of target surfaces without floor collisions.
+* History & Undo/Redo. History now snapshots both `world.cells` and `world.script_bindings` together, keeping script binding associations synchronized on undo/redo.
 
 ### Fixed
-*
+
+* Fixed a long-standing issue where block shadows could become detached from their source blocks as the camera moved.
 
 ### Notes
->
 
+> Renderer optimization work is now using a four-phase static voxel pipeline: exposed-face meshing, spatial chunking, selective dirty-chunk rebuilding, and greedy meshing.
+>
+> Editor Grab / Drag operates transactionally (`GrabState`). World cells and cell IDs are not mutated during mouse movement, avoiding undo stack churn and ID regeneration until the move is committed on mouse release.
+>
+> The editor clipboard is strictly session-based and is automatically invalidated when clearing or switching projects to prevent cross-project state leakage.
+>
+> A known rendering issue affecting vertical voxel faces is still under investigation.
 
 ---
 

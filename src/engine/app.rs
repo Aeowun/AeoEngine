@@ -128,6 +128,15 @@ pub struct App {
 
     /// Engine audio system.
     pub audio_system: crate::engine::audio::AudioSystem,
+
+    pub pending_grab: Option<PendingGrab>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PendingGrab {
+    pub start_mouse: (f64, f64),
+    pub anchor_coord: crate::world::WorldCoord,
+    pub source_coords: Vec<crate::world::WorldCoord>,
 }
 
 impl App {
@@ -193,6 +202,7 @@ impl App {
 
             orbit_delta: [0.0, 0.0],
             audio_system: crate::engine::audio::AudioSystem::new(),
+            pending_grab: None,
         }
     }
 
@@ -322,29 +332,59 @@ impl App {
                                 }
                             }
 
-                            KeyCode::KeyZ => {
-                                if ctrl && self.view == View::Editor {
-                                    if let Some(prev) = self.editor.history.undo_stack.pop() {
-                                        self.editor
-                                            .history
-                                            .redo_stack
-                                            .push(self.world.cells.clone());
+                            KeyCode::KeyC => {
+                                if ctrl
+                                    && self.view == View::Editor
+                                    && self.editor.mode == EditorMode::Editor
+                                {
+                                    self.copy_selection();
+                                }
+                            }
 
-                                        self.world.cells = prev;
+                            KeyCode::KeyV => {
+                                if ctrl
+                                    && self.view == View::Editor
+                                    && self.editor.mode == EditorMode::Editor
+                                {
+                                    self.paste_clipboard();
+                                }
+                            }
+
+                            KeyCode::KeyZ => {
+                                if ctrl
+                                    && self.view == View::Editor
+                                    && self.editor.mode == EditorMode::Editor
+                                {
+                                    if let Some((prev_cells, prev_bindings)) =
+                                        self.editor.history.undo_stack.pop()
+                                    {
+                                        self.editor.history.redo_stack.push((
+                                            self.world.cells.clone(),
+                                            self.world.script_bindings.clone(),
+                                        ));
+
+                                        self.world.cells = prev_cells;
+                                        self.world.script_bindings = prev_bindings;
                                         self.world.rebuild_id_mapping();
                                     }
                                 }
                             }
 
                             KeyCode::KeyY => {
-                                if ctrl && self.view == View::Editor {
-                                    if let Some(next) = self.editor.history.redo_stack.pop() {
-                                        self.editor
-                                            .history
-                                            .undo_stack
-                                            .push(self.world.cells.clone());
+                                if ctrl
+                                    && self.view == View::Editor
+                                    && self.editor.mode == EditorMode::Editor
+                                {
+                                    if let Some((next_cells, next_bindings)) =
+                                        self.editor.history.redo_stack.pop()
+                                    {
+                                        self.editor.history.undo_stack.push((
+                                            self.world.cells.clone(),
+                                            self.world.script_bindings.clone(),
+                                        ));
 
-                                        self.world.cells = next;
+                                        self.world.cells = next_cells;
+                                        self.world.script_bindings = next_bindings;
                                         self.world.rebuild_id_mapping();
                                     }
                                 }
@@ -352,9 +392,10 @@ impl App {
 
                             KeyCode::Delete => {
                                 if self.view == View::Editor
+                                    && self.editor.mode == EditorMode::Editor
                                     && !self.editor.selected_coords.is_empty()
                                 {
-                                    self.editor.history.push(self.world.cells.clone());
+                                    self.push_undo_snapshot();
 
                                     for coord in &self.editor.selected_coords {
                                         self.world.set_cell(*coord, CellType::Empty);
@@ -363,6 +404,7 @@ impl App {
                                     self.editor.selected_coords.clear();
 
                                     self.editor.selected_coord = None;
+                                    self.editor.needs_save = true;
                                 }
                             }
 
@@ -422,7 +464,10 @@ impl App {
                             }
 
                             KeyCode::Escape => {
-                                if self.view == View::Splash {
+                                if self.editor.grab_state.is_some() || self.pending_grab.is_some() {
+                                    self.editor.grab_state = None;
+                                    self.pending_grab = None;
+                                } else if self.view == View::Splash {
                                     self.view = View::Home;
                                 } else if self.view == View::Home {
                                     self.show_exit_confirmation_dialog = true;
@@ -512,6 +557,28 @@ impl App {
                         }
 
                         self.is_left_mouse_down = true;
+
+                        let ctrl = self.keys_down.contains(&KeyCode::ControlLeft)
+                            || self.keys_down.contains(&KeyCode::ControlRight);
+
+                        if self.view == View::Editor
+                            && self.editor.mode == EditorMode::Editor
+                            && self.editor.current_tool == EditorTool::Select
+                            && !ctrl
+                        {
+                            if let Some(hovered) = self.editor.hovered_cell {
+                                if self.editor.selected_coords.contains(&hovered) {
+                                    self.pending_grab = Some(PendingGrab {
+                                        start_mouse: self.mouse_pos,
+                                        anchor_coord: hovered,
+                                        source_coords: self.editor.selected_coords.clone(),
+                                    });
+                                    self.drag_start_coord = None;
+                                    return;
+                                }
+                            }
+                        }
+
                         self.drag_start_coord = self.editor.hovered_cell;
 
                         if self.editor.current_tool == EditorTool::Navigate
@@ -520,7 +587,40 @@ impl App {
                             self.on_click();
                         }
                     } else {
-                        if self.is_left_mouse_down {
+                        if let Some(grab) = self.editor.grab_state.take() {
+                            if grab.valid && grab.delta != crate::world::WorldCoord::new(0, 0, 0) {
+                                self.push_undo_snapshot();
+                                if let Ok(()) =
+                                    self.world.move_cells(&grab.source_coords, grab.delta)
+                                {
+                                    self.editor.selected_coords = grab
+                                        .source_coords
+                                        .iter()
+                                        .map(|c| {
+                                            crate::world::WorldCoord::new(
+                                                c.x + grab.delta.x,
+                                                c.y + grab.delta.y,
+                                                c.z + grab.delta.z,
+                                            )
+                                        })
+                                        .collect();
+
+                                    if let Some(sel) = self.editor.selected_coord {
+                                        self.editor.selected_coord =
+                                            Some(crate::world::WorldCoord::new(
+                                                sel.x + grab.delta.x,
+                                                sel.y + grab.delta.y,
+                                                sel.z + grab.delta.z,
+                                            ));
+                                    }
+
+                                    self.editor.needs_save = true;
+                                }
+                            }
+                            self.pending_grab = None;
+                        } else if let Some(_pending) = self.pending_grab.take() {
+                            // Releasing after clicking an already-selected cell without dragging.
+                        } else if self.is_left_mouse_down {
                             if self.editor.current_tool == EditorTool::Build
                                 || self.editor.current_tool == EditorTool::Erase
                                 || self.editor.current_tool == EditorTool::Select
@@ -558,6 +658,54 @@ impl App {
 
                 if in_viewport && self.editor.mode == EditorMode::Editor {
                     self.update_hover();
+
+                    if let Some(ref pending) = self.pending_grab.clone() {
+                        let pdx = position.x - pending.start_mouse.0;
+                        let pdy = position.y - pending.start_mouse.1;
+                        if pdx * pdx + pdy * pdy >= 25.0 {
+                            let target = self
+                                .calculate_placement_target()
+                                .unwrap_or(pending.anchor_coord);
+                            let delta = crate::world::WorldCoord::new(
+                                target.x - pending.anchor_coord.x,
+                                target.y - pending.anchor_coord.y,
+                                target.z - pending.anchor_coord.z,
+                            );
+                            let valid =
+                                self.validate_grab_destination(&pending.source_coords, delta);
+
+                            self.editor.grab_state = Some(crate::editor::GrabState {
+                                source_coords: pending.source_coords.clone(),
+                                anchor_coord: pending.anchor_coord,
+                                current_target: target,
+                                delta,
+                                valid,
+                            });
+                            self.pending_grab = None;
+                        }
+                    } else if self.editor.grab_state.is_some() {
+                        let target = self.calculate_placement_target().unwrap_or_else(|| {
+                            self.editor.grab_state.as_ref().unwrap().anchor_coord
+                        });
+
+                        let (delta, source_coords) = {
+                            let grab = self.editor.grab_state.as_ref().unwrap();
+                            let delta = crate::world::WorldCoord::new(
+                                target.x - grab.anchor_coord.x,
+                                target.y - grab.anchor_coord.y,
+                                target.z - grab.anchor_coord.z,
+                            );
+                            (delta, grab.source_coords.clone())
+                        };
+
+                        let valid = self.validate_grab_destination(&source_coords, delta);
+
+                        if let Some(ref mut grab) = self.editor.grab_state {
+                            grab.current_target = target;
+                            grab.delta = delta;
+                            grab.valid = valid;
+                        }
+                    }
                 } else {
                     self.editor.hovered_cell = None;
                 }
@@ -682,7 +830,202 @@ impl App {
         }
     }
 
+    fn push_undo_snapshot(&mut self) {
+        self.editor
+            .history
+            .push(self.world.cells.clone(), self.world.script_bindings.clone());
+    }
+
+    fn calculate_placement_target(&self) -> Option<crate::world::WorldCoord> {
+        let pixels_per_point = self.editor.viewport_ppp.max(1.0);
+        let rect = self.editor.viewport_rect;
+
+        let (mouse_x, mouse_y, viewport_width, viewport_height) =
+            if rect.width() > 1.0 && rect.height() > 1.0 {
+                let viewport_x = rect.min.x * pixels_per_point;
+                let viewport_y = rect.min.y * pixels_per_point;
+                let viewport_width = rect.width() * pixels_per_point;
+                let viewport_height = rect.height() * pixels_per_point;
+                let mouse_x = self.mouse_pos.0 as f32 - viewport_x;
+                let mouse_y = self.mouse_pos.1 as f32 - viewport_y;
+                (mouse_x, mouse_y, viewport_width, viewport_height)
+            } else {
+                (
+                    self.mouse_pos.0 as f32,
+                    self.mouse_pos.1 as f32,
+                    self.renderer.width(),
+                    self.renderer.height(),
+                )
+            };
+
+        if !self.editor.plane_picking {
+            let hit = crate::editor::grid::picking::raycast_world(
+                mouse_x,
+                mouse_y,
+                viewport_width,
+                viewport_height,
+                &self.editor.camera,
+                &self.world,
+                self.editor.mode == crate::engine::EditorMode::Editor,
+            );
+
+            if let Some((coord, normal)) = hit {
+                let shift_down = self.keys_down.contains(&KeyCode::ShiftLeft)
+                    || self.keys_down.contains(&KeyCode::ShiftRight);
+
+                if !shift_down {
+                    return Some(crate::world::WorldCoord::new(
+                        coord.x + normal.x as i32,
+                        coord.y + normal.y as i32,
+                        coord.z + normal.z as i32,
+                    ));
+                } else {
+                    return Some(coord);
+                }
+            }
+        }
+
+        crate::editor::grid::picking::update_hover(
+            mouse_x,
+            mouse_y,
+            viewport_width,
+            viewport_height,
+            &self.editor.camera,
+            self.editor.anchor,
+        )
+    }
+
+    fn validate_grab_destination(
+        &self,
+        source_coords: &[crate::world::WorldCoord],
+        delta: crate::world::WorldCoord,
+    ) -> bool {
+        let source_set: HashSet<_> = source_coords.iter().cloned().collect();
+        for &src in source_coords {
+            let dest =
+                crate::world::WorldCoord::new(src.x + delta.x, src.y + delta.y, src.z + delta.z);
+            if self.world.get(dest).is_some() && !source_set.contains(&dest) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn find_copy_pivot(&self, coords: &[crate::world::WorldCoord]) -> crate::world::WorldCoord {
+        if let Some(hovered) = self.editor.hovered_cell {
+            if coords.contains(&hovered) {
+                return hovered;
+            }
+        }
+
+        // Default to bottom-most cell (min Y, then min X, min Z) so offsets extend upward
+        let mut best = coords[0];
+        for &c in &coords[1..] {
+            if c.y < best.y
+                || (c.y == best.y && c.x < best.x)
+                || (c.y == best.y && c.x == best.x && c.z < best.z)
+            {
+                best = c;
+            }
+        }
+        best
+    }
+
+    fn copy_selection(&mut self) {
+        if self.editor.selected_coords.is_empty() && self.editor.selected_coord.is_none() {
+            return;
+        }
+
+        let mut coords = Vec::new();
+        for &c in &self.editor.selected_coords {
+            if !coords.contains(&c) && self.world.get(c).is_some() {
+                coords.push(c);
+            }
+        }
+
+        if coords.is_empty() {
+            if let Some(c) = self.editor.selected_coord {
+                if self.world.get(c).is_some() {
+                    coords.push(c);
+                }
+            }
+        }
+
+        if coords.is_empty() {
+            return;
+        }
+
+        let pivot = self.find_copy_pivot(&coords);
+
+        let mut clipboard_cells = Vec::new();
+
+        for coord in &coords {
+            if let Some(cell) = self.world.get(*coord) {
+                let offset = crate::world::WorldCoord::new(
+                    coord.x - pivot.x,
+                    coord.y - pivot.y,
+                    coord.z - pivot.z,
+                );
+                let script_binding = self
+                    .world
+                    .script_bindings
+                    .iter()
+                    .find(|b| b.target_identity == cell.id)
+                    .cloned();
+
+                clipboard_cells.push(crate::editor::ClipboardCell {
+                    offset,
+                    cell: cell.clone(),
+                    script_binding,
+                });
+            }
+        }
+
+        if !clipboard_cells.is_empty() {
+            self.editor.clipboard = Some(crate::editor::EditorClipboard {
+                pivot_coord: pivot,
+                cells: clipboard_cells,
+            });
+        }
+    }
+
+    fn paste_clipboard(&mut self) {
+        let Some(clipboard) = self.editor.clipboard.clone() else {
+            return;
+        };
+
+        if clipboard.cells.is_empty() {
+            return;
+        }
+
+        let Some(target_pivot) = self
+            .calculate_placement_target()
+            .or(self.editor.hovered_cell)
+        else {
+            return;
+        };
+
+        self.push_undo_snapshot();
+
+        match self.world.paste_cells(&clipboard.cells, target_pivot) {
+            Ok(pasted_coords) => {
+                self.editor.selected_coords = pasted_coords;
+                self.editor.selected_coord = Some(target_pivot);
+                self.editor.show_properties_window = true;
+                self.editor.needs_save = true;
+            }
+            Err(_err) => {
+                self.editor.history.undo_stack.pop();
+            }
+        }
+    }
+
     fn update_hover(&mut self) {
+        if self.editor.grab_state.is_some() || self.editor.current_tool == EditorTool::Build {
+            self.editor.hovered_cell = self.calculate_placement_target();
+            return;
+        }
+
         let pixels_per_point = self.editor.viewport_ppp.max(1.0);
 
         let rect = self.editor.viewport_rect;
@@ -722,24 +1065,8 @@ impl App {
                 self.editor.mode == crate::engine::EditorMode::Editor,
             );
 
-            if let Some((coord, normal)) = hit {
-                if self.editor.current_tool == EditorTool::Build {
-                    let shift_down = self.keys_down.contains(&KeyCode::ShiftLeft)
-                        || self.keys_down.contains(&KeyCode::ShiftRight);
-
-                    if !shift_down {
-                        self.editor.hovered_cell = Some(crate::world::WorldCoord::new(
-                            coord.x + normal.x as i32,
-                            coord.y + normal.y as i32,
-                            coord.z + normal.z as i32,
-                        ));
-                    } else {
-                        self.editor.hovered_cell = Some(coord);
-                    }
-                } else {
-                    self.editor.hovered_cell = Some(coord);
-                }
-
+            if let Some((coord, _normal)) = hit {
+                self.editor.hovered_cell = Some(coord);
                 return;
             }
 
@@ -770,9 +1097,29 @@ impl App {
                     }
 
                     EditorTool::Select => {
-                        self.editor.selected_coord = Some(hovered);
+                        let ctrl = self.keys_down.contains(&KeyCode::ControlLeft)
+                            || self.keys_down.contains(&KeyCode::ControlRight);
 
-                        self.editor.selected_coords = vec![hovered];
+                        if ctrl {
+                            if self.editor.selected_coords.contains(&hovered) {
+                                self.editor.selected_coords.retain(|c| *c != hovered);
+                                if self.editor.selected_coord == Some(hovered) {
+                                    self.editor.selected_coord =
+                                        self.editor.selected_coords.last().cloned();
+                                }
+                            } else if self.world.get(hovered).is_some() {
+                                self.editor.selected_coords.push(hovered);
+                                self.editor.selected_coord = Some(hovered);
+                            }
+                        } else {
+                            if self.world.get(hovered).is_some() {
+                                self.editor.selected_coord = Some(hovered);
+                                self.editor.selected_coords = vec![hovered];
+                            } else {
+                                self.editor.selected_coord = None;
+                                self.editor.selected_coords.clear();
+                            }
+                        }
 
                         self.editor.show_properties_window = true;
                     }
@@ -792,11 +1139,16 @@ impl App {
             return;
         }
 
+        let ctrl = self.keys_down.contains(&KeyCode::ControlLeft)
+            || self.keys_down.contains(&KeyCode::ControlRight);
+
         if self.editor.current_tool == EditorTool::Select {
-            self.editor.selected_coords.clear();
-            self.editor.selected_coord = None;
+            if !ctrl {
+                self.editor.selected_coords.clear();
+                self.editor.selected_coord = None;
+            }
         } else {
-            self.editor.history.push(self.world.cells.clone());
+            self.push_undo_snapshot();
         }
 
         let x_min = start.x.min(end.x);
@@ -831,7 +1183,9 @@ impl App {
 
                         EditorTool::Select => {
                             if self.world.get(coord).is_some() {
-                                self.editor.selected_coords.push(coord);
+                                if !self.editor.selected_coords.contains(&coord) {
+                                    self.editor.selected_coords.push(coord);
+                                }
 
                                 self.editor.selected_coord = Some(coord);
                             }
@@ -1391,9 +1745,10 @@ impl App {
             }
 
             if self.editor.needs_clear_world {
-                self.editor.history.push(self.world.cells.clone());
+                self.push_undo_snapshot();
 
                 self.world = World::new();
+                self.editor.clear_clipboard();
                 self.editor.needs_clear_world = false;
             }
 
@@ -1641,6 +1996,7 @@ impl App {
 
         self.editor.history.undo_stack.clear();
         self.editor.history.redo_stack.clear();
+        self.editor.clear_clipboard();
 
         self.view = View::Home;
     }
