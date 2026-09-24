@@ -135,11 +135,13 @@ Stopping Play discards runtime state and leaves the authored World unchanged.
 | Characters        | Character spawning, movement, collision, gravity, jumping, animation                          |
 | Camera            | Third-person gameplay camera, orbit, follow behavior, pitch limits, camera collision          |
 | Lighting          | Directional and point lighting, authored Light Cells                                          |
+| Audio             | Authored Audio Emitter Cells, WAV audio asset browser, runtime `AudioSystem` playback          |
 | Scripting         | AeoScript gameplay scripting, top-level execution, lifecycle events, persistent script state  |
 | Script Runtime    | Cooperative fibers, `wait()`, nested function calls, closures, runtime diagnostics            |
 | Script Objects    | Cell and Entity handles, persistent Cell IDs, object discovery                                |
 | Runtime World     | Authored Cell attributes, runtime property overrides, runtime Cell creation and deletion      |
 | Runtime Input     | Movement input, jump input, mouse orbit input                                                 |
+| Mouse Control     | World-authored mouse settings (`cursor_visible`, `screen_locked`), runtime mouse cursor API  |
 | Scripted Gameplay | Script-defined controllers, script-defined cameras, generic player and camera APIs            |
 | Events            | `on_touch(cell)`, per-Cell collision event control                                            |
 | Script Control    | Runtime script enable/disable                                                                 |
@@ -794,9 +796,10 @@ AeoScript currently supports:
 | Runtime State    | Runtime attribute overrides and authored/runtime state separation                      |
 | Input            | Movement, jump, and mouse-orbit access                                                 |
 | Gameplay         | Script-defined controllers and cameras                                                 |
-| Collision Events | `on_touch(cell)` and per-Cell collision event control                                  |
+| Collision Events | `on_touch(cell)`, `on_overlap(overlapping, cell)`, and per-Cell collision event control |
 | Script Control   | Script enable/disable                                                                  |
 | Runtime UI       | Panels, text, buttons, properties, handles, and callbacks                              |
+| Audio Emitters   | `speaker.sound.play()`, `stop()`, `pause()`, `.playing`, `.looped`, `.volume` access    |
 | Diagnostics      | Structured runtime diagnostics and terminal output                                     |
 | Editor           | Script Editor integration                                                              |
 

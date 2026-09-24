@@ -667,6 +667,7 @@
 * Generic player movement and camera control APIs
 * Runtime Script Control for enabling and disabling scripts while the game is running
 * `on_touch(cell)` event for player contact with scripted Cells
+* `on_overlap(overlapping, cell)` event for character entering/leaving Cell volume
 * Persistent `collision_events_enabled` Cell property for controlling contact event dispatch
 * Script enable/disable state persistence
 * Continued lexer and parser work with corresponding regression coverage
@@ -775,6 +776,19 @@
 
 ---
 
+### World, Mouse, & Documentation Subsystems
+
+#### Added
+
+* World-authored mouse settings (`cursor_visible`, `screen_locked`) persisted under `MOUSE` header line in world serialization format
+* World Inspector editor controls for configuring initial Play-mode mouse cursor visibility and screen locking
+* Runtime `MouseController` state management on `App` initialized from World defaults when Play mode starts and restored to editor defaults on Play exit
+* AeoScript Mouse API (`get.mouse()`, `mouse.setCursorVisible`, `mouse.setScreenLocked`, `HandleKind::Mouse`)
+* Source-driven website documentation rewrite (`C:\Dev\GitHub\My Portfolio`) featuring beginner-first game maker learning paths using canonical `UserData/Starter World/scripts/` examples
+* Authoritative source-to-documentation verification report (`documentationUpdation.md`) mapping every engine feature and AeoScript API to source implementation files, page URLs, and inbound link counts
+
+---
+
 ### Runtime Stability
 
 #### Fixed
@@ -786,15 +800,49 @@
 
 ---
 
+### Audio Assets & Audio Emitter Runtime System
+
+#### Added
+
+* Built-in WAV audio asset library stored under `.assets/audio/` (`battle/`, `interface/`, `inventory/`, `misc/`, `NPC/...`, `world/`)
+* Project-owned WAV audio assets stored under `UserData/<Project>/.assets/audio/`
+* WAV audio asset browser (`draw_audio_edit` / `draw_audio_browser`) featuring:
+  * WAV file filtering
+  * Audio finder window (`Browse...`) with search/filtering across nested subdirectories
+  * Audio file importer (`Import...`) copying selected `.wav` files into `.assets/audio/`
+  * Inline suggestion matching for typed audio asset paths
+* Authored `CellType::AudioEmitter` with persistent properties:
+  * `audio` (relative WAV asset path)
+  * `playing` (initial playback state)
+  * `looped` (looping configuration)
+  * `volume` (playback volume)
+* Audio Emitter 3D viewport billboard marker rendering in editor mode using `.assets/textures/speaker.png`
+* Audio Emitter properties panel in World Inspector with `Sound`, `Playing`, `Looped`, and `Volume` controls
+* AeoScript `sound` object on Cell handles (`speaker.sound`) with:
+  * `.play()`
+  * `.stop()`
+  * `.pause()`
+  * `.playing`
+  * `.looped`
+  * `.volume`
+* Engine-side `AudioSystem` runtime playback layer:
+  * Supports multiple simultaneous audio emitters
+  * Automatically starts playback on Play entry for emitters authored with `playing = true`
+  * Tracks runtime audio overrides (`audio_playing`, `audio_paused`, `audio_looped`, `audio_volume`) separately from authored World cells
+  * Discards runtime audio state and stops all audio sinks when Play mode exits
+* Comprehensive automated integration test suite covering creation, persistence, AeoScript `sound` object API calls, `find("Speakers")`, multi-emitter playback, and Play/Stop session state isolation
+
+---
+
 ### Notes
 
-> Version 0.7.3 expands AeoScript beyond scene and object scripting into script-defined gameplay controllers, cameras, input handling, runtime UI, closures, and runtime script control while keeping AeoEngine responsible for physics, gravity, collision, rendering, and simulation.
+> Version 0.7.3 expands AeoScript beyond scene and object scripting into script-defined gameplay controllers, cameras, input handling, runtime UI, closures, runtime script control, and spatial audio emitters while keeping AeoEngine responsible for physics, gravity, collision, rendering, audio playback, and simulation.
 
-> Runtime UI is session-only and is discarded when Play mode stops.
+> Runtime UI and runtime audio state are session-only and are discarded when Play mode stops.
 
 | Verification              |                          Result |
 | ------------------------- | ------------------------------: |
-| Rust tests                |                  **402 passed** |
+| Rust tests                |                  **419 passed** |
 | Rust test failures        |                           **0** |
 | In-game master test suite | Runtime UI integration coverage |
 
@@ -831,9 +879,9 @@ This will significantly reduce unnecessary geometry while continuing to use GPU 
 
 # TODO
 
-* [ ] Perform a full sweep of AeoEngine documentation
+* [x] Perform a full sweep of AeoEngine documentation
 * [ ] Perform a full sweep of the AEOWUN website
-* [ ] Bring documentation and website terminology into alignment with the current AeoEngine and AeoScript implementation
+* [x] Bring documentation and website terminology into alignment with the current AeoEngine and AeoScript implementation
 
 ---
 
