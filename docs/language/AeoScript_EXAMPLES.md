@@ -429,3 +429,72 @@ const onTouchDoor = fn(c) {
 if door1 { door1.on_touch = onTouchDoor }
 if door2 { door2.on_touch = onTouchDoor }
 ~~~
+
+---
+
+# 24. Runtime UI HUD and Closure Callbacks
+
+~~~aeoscript
+const panel = ui.new("Panel")
+panel.size = [200, 60]
+
+const health_text = ui.new("Text")
+health_text.text = "HEALTH: 100"
+
+const btn = ui.new("Button")
+btn.text = "Heal"
+btn.on_click = fn() {
+    event.fire("on_heal", 25)
+}
+~~~
+
+---
+
+# 25. Input-Driven Locomotion and Animation
+
+~~~aeoscript
+const move = input.get_move_vector()
+const basis = camera.get_horizontal_basis()
+
+const forward = basis[0]
+const right = basis[1]
+
+const move_x = forward[0] * move[1] + right[0] * move[0]
+const move_z = forward[2] * move[1] + right[2] * move[0]
+
+if math.sqrt(move_x * move_x + move_z * move_z) > 0.001 {
+    player.set_horizontal_velocity(move_x * 5.0, move_z * 5.0)
+    player.select_animation("Walk")
+} else {
+    player.set_horizontal_velocity(0.0, 0.0)
+    player.select_animation("Idle")
+}
+~~~
+
+---
+
+# 26. Audio Emitter Control
+
+~~~aeoscript
+const sound = find("DoorSound")[0]
+
+on door_open() {
+    sound.sound.play()
+    wait(1.0)
+    sound.sound.stop()
+}
+~~~
+
+---
+
+# 27. Overlap Events and Test Completion
+
+~~~aeoscript
+on_overlap = fn(overlapping, cell) {
+    if overlapping {
+        debug.log("Character entered region!")
+        test.complete("region_entry_test", true)
+    }
+}
+~~~
+

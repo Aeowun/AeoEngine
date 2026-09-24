@@ -300,7 +300,125 @@ Execution state belongs to the Fiber.
 
 ---
 
-# 15. Recommended Workflow
+# 15. Controller & Camera Script Profiles
+
+In AeoEngine 0.7.3, player movement and camera control can be delegated to script-defined controller and camera profiles.
+
+### Controller Scripts (`controllers/`)
+
+Controller scripts live in `controllers/` (e.g., `controllers/thirdPerson_Controller/thirdPersonController.aeo`).
+
+```aeoscript
+entity ThirdPersonController {
+    player = nil
+    camera = nil
+    speed = 5.0
+    jump_impulse = 6.5
+
+    fn constructor(player_object, camera_object, input_system) {
+        player = player_object
+        camera = camera_object
+    }
+
+    fn update(dt) {
+        if player == nil { return }
+
+        const move = input.get_move_vector()
+        const basis = camera.get_horizontal_basis()
+
+        const forward = basis[0]
+        const right = basis[1]
+
+        const move_x = forward[0] * move[1] + right[0] * move[0]
+        const move_z = forward[2] * move[1] + right[2] * move[0]
+
+        player.set_horizontal_velocity(move_x * speed, move_z * speed)
+
+        if input.is_jump_pressed() && player.is_grounded() {
+            player.apply_vertical_impulse(jump_impulse)
+        }
+    }
+}
+```
+
+The controller provides movement decisions while AeoEngine handles physics, gravity, and collision resolution.
+
+### Camera Scripts (`cameras/`)
+
+Camera scripts live in `cameras/` (e.g., `cameras/thirdPerson/thirdPersonCamera.aeo`).
+
+```aeoscript
+entity ThirdPersonCamera {
+    player = nil
+    distance = 6.0
+    yaw = 0.785
+    pitch = 0.35
+
+    fn constructor(player_object) {
+        player = player_object
+    }
+
+    fn update(dt) {
+        if player == nil { return }
+
+        const orbit_delta = input.get_orbit_delta()
+        yaw = yaw - orbit_delta[0] * 0.015
+        pitch = math.clamp(pitch + orbit_delta[1] * 0.015, -0.2, 1.2)
+
+        const char_pos = player.position
+        const target = [char_pos[0], char_pos[1] + 1.0, char_pos[2]]
+
+        const desired_pos = [
+            char_pos[0] + distance * math.cos(pitch) * math.sin(yaw),
+            char_pos[1] + distance * math.sin(pitch) + 1.5,
+            char_pos[2] + distance * math.cos(pitch) * math.cos(yaw)
+        ]
+
+        const actual_pos = physics.resolve_camera_collision(target, desired_pos)
+
+        camera.set_position(actual_pos[0], actual_pos[1], actual_pos[2])
+        camera.set_target(target[0], target[1], target[2])
+        camera.set_orientation(yaw, pitch)
+    }
+}
+```
+
+---
+
+# 16. Audio Emitter & UI Workflows
+
+### Audio Emitter Workflow
+
+Find an `AudioEmitter` cell by name and access its `.sound` handle:
+
+```aeoscript
+const sound_emitter = find("DoorSound")[0]
+sound_emitter.sound.play()
+wait(1.0)
+sound_emitter.sound.stop()
+```
+
+### Runtime UI Workflow
+
+Create HUD overlays dynamically at runtime:
+
+```aeoscript
+const panel = ui.new("Panel")
+panel.size = [200, 80]
+
+const text = ui.new("Text")
+text.text = "HEALTH: 100"
+
+const btn = ui.new("Button")
+btn.text = "Click Me"
+btn.on_click = fn() {
+    debug.log("Button clicked!")
+}
+```
+
+---
+
+# 17. Recommended Workflow
 
 Use this development loop:
 
@@ -323,3 +441,4 @@ Repeat
 ~~~
 
 Build the smallest working behavior first, then add complexity.
+

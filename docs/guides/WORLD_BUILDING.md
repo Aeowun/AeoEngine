@@ -18,27 +18,28 @@ Empty locations do not require stored Cells.
 
 ---
 
-# 2. Blocks
+# 2. Cell Types
 
-Blocks are the primary voxel building Cell.
+AeoEngine supports the following authored Cell types:
 
-Block authoring can include:
-
-* Color.
-* Solidity.
-* Anchored state.
-* Texture where supported.
-* Identity/name.
+* **Block**: Standard voxel geometry with color, texture, solidity, and anchoring
+* **FxBlock**: Voxel block with visual effects
+* **Player**: Authored player spawn anchor
+* **NPC**: Authored non-player character anchor
+* **Light**: Point light source with color, intensity, range, and shadow controls
+* **SpawnPoint**: Validated character spawn location
+* **AudioEmitter**: 3D spatial audio source with audio file asset path, volume, looping, and playing controls
 
 ---
 
-# 3. Lighting
+# 3. Lighting & Sky Environment
 
 Light Cells can be authored directly in the World.
 
 World lighting also contains global lighting configuration and Sky Environment settings.
 
-Use authored Lights for local scene lighting. Use the World panel in the editor to configure global illumination and environment presets such as `Temperate`, `Tropical`, or `Snowy`.
+Use authored Lights for local scene lighting. Use the World panel in the editor to configure global illumination and environment presets such as `Temperate`, `Tropical`, `Desert`, `Snowy`, or `Mars`.
+
 
 ---
 

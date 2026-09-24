@@ -128,9 +128,19 @@ Test:
 
 # 11. Character and Scripts
 
-AeoScript can interact with engine objects through the supported runtime API.
+AeoEngine 0.7.3 delegates character movement decisions and camera control to script-defined controller and camera profiles (`controllers/` and `cameras/`), while maintaining a strict responsibility boundary:
 
-As the scripting API expands, character gameplay logic can be layered over the CharacterSystem rather than duplicating movement and collision logic inside scripts.
+### Engine Responsibilities
+* Physics simulation and 60Hz fixed timestep
+* Gravity application and grounded detection
+* AABB character voxel collision against floors, walls, and ceilings
+* Rendering and mesh generation
 
-The CharacterSystem remains responsible for core character simulation.
+### Script Responsibilities
+* Input processing (`input.get_move_vector()`, `input.is_jump_pressed()`, `input.get_orbit_delta()`)
+* Movement decisions (`player.set_horizontal_velocity(vx, vz)`, `player.apply_vertical_impulse(jump)`)
+* Facing direction (`player.set_facing_direction(dx, dz)`)
+* Animation selection (`player.select_animation("Walk")` / `"Idle"`)
+* Camera orientation (`camera.set_position(...)`, `camera.set_target(...)`, `camera.set_orientation(...)`, `physics.resolve_camera_collision(...)`)
+
 

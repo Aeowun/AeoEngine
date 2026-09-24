@@ -8,6 +8,17 @@ The current standard library contains:
 math
 basket
 string
+get
+input
+camera
+physics
+player
+ui
+cell
+entity
+script
+event
+test
 ~~~
 
 These functions execute inside the normal AeoScript runtime.
@@ -205,19 +216,33 @@ The object is supplied to the underlying native namespace operation as the appro
 
 ---
 
-# 5. Standard Library Design
+# 5. Engine-Integrated Namespaces
 
-The current library intentionally focuses on broadly useful gameplay operations.
+AeoScript 0.7.3 expands the standard library with engine-integrated namespaces:
 
-Not currently part of this first standard-library pass:
+* `get`: `get.mouse()`
+* `input`: `get_move_vector()`, `is_jump_pressed()`, `get_orbit_delta()`
+* `camera`: `get_horizontal_basis()`, `set_position(...)`, `set_target(...)`, `set_orientation(...)`
+* `physics`: `resolve_camera_collision(...)`
+* `player`: `set_horizontal_velocity(...)`, `set_facing_direction(...)`, `select_animation(...)`, `is_grounded()`, `apply_vertical_impulse(...)`, `position`
+* `ui`: `new(...)`, `delete(...)`, `get_viewport_size()`
+* `cell`: `new(...)`, `delete(...)`, `get(...)`, `exists(...)`
+* `entity`: `get(...)`, `exists(...)`
+* `script`: `enable(...)`, `disable(...)`, `is_enabled(...)`
+* `event`: `fire(...)`
+* `test`: `complete(...)`, `is_completed(...)`, `passed(...)`, `summary()`
 
-* Random number generation with defined runtime seed ownership.
-* Comparator functions for basket sorting.
-* Advanced pattern-based string operations.
-* Audio APIs.
-* Animation-control APIs.
-* General runtime object spawning/destruction APIs.
-* Expanded physics-query APIs.
+---
 
-Those can be added as their semantics become sufficiently defined and tested.
+# 6. Standard Library Design
+
+The library focuses on deterministic, engine-owned gameplay interactions.
+
+Features planned for future passes include:
+
+* Custom comparator functions for basket sorting.
+* Advanced pattern-based string matching and regex.
+* Arbitrary runtime mesh instantiation beyond currently supported `cell.new()` and `ui.new()` elements.
+* Expanded spatial query APIs beyond `physics.resolve_camera_collision()`.
+
 

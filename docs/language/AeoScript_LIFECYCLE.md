@@ -48,6 +48,7 @@ on_spawn
 on_ready
 update(dt)
 on_touch(cell)
+on_overlap(overlapping, cell)
 on_destroy
 ~~~
 
@@ -55,7 +56,9 @@ Not every script must implement every lifecycle function.
 
 ---
 
-# 4. `on_ready`
+# 4. `on_spawn` and `on_ready`
+
+`on_spawn()` runs when the scripted object instance is created in the runtime.
 
 `on_ready()` runs during initial script setup when the scripted object is ready for runtime logic.
 
@@ -75,11 +78,9 @@ Later `update()` execution observes the persistent field value.
 
 ---
 
-# 5. `on_touch(cell)`
+# 5. `on_touch(cell)` and `on_overlap(overlapping, cell)`
 
-`on_touch(cell)` runs when a character (the player) contacts the scripted object.
-
-The `cell` argument is a handle to the contacted Cell.
+`on_touch(cell)` runs when a character contacts the scripted object. The `cell` argument is a handle to the contacted Cell.
 
 ~~~aeoscript
 entity Trap {
@@ -90,7 +91,9 @@ entity Trap {
 }
 ~~~
 
-This event only dispatches if `collision_events_enabled` is true for that Cell (default: true).
+`on_overlap(overlapping, cell)` runs when a character enters or leaves the cell's volume (`overlapping` is `bool`).
+
+Both events require `collision_events_enabled` to be `true` on the Cell (default: `true`).
 
 Global event handlers can also react to any contact:
 

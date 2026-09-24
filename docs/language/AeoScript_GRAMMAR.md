@@ -324,7 +324,12 @@ primary:
     | identifier
     | basket_literal
     | map_literal
+    | anonymous_function
     | "(" expression ")"
+
+anonymous_function:
+    "fn" "(" parameter_list? ")" return_type? block
+```
 ```
 
 ### Basket Literals

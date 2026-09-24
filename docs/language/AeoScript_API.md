@@ -778,15 +778,198 @@ Errors are reported through the AeoEngine script diagnostics/output system.
 
 The API is intentionally growing with the engine.
 
-The current standard library does not yet provide every utility that may eventually be useful for gameplay scripting.
-
 Examples of functionality that remain future API work include:
 
 * Custom comparator functions for basket sorting
 * Advanced string pattern operations
-* Runtime object spawning and destruction APIs beyond currently supported engine objects
-* Audio APIs
-* Animation control APIs
-* Expanded physics query APIs
+* Arbitrary entity/mesh instantiation at runtime beyond currently supported `cell.new()` types and `ui.new()` elements
+* Expanded physics spatial query APIs beyond `physics.resolve_camera_collision()`
 
-New APIs should preserve AeoScript's existing type system, reference semantics, runtime-state model, and engine-owned object model.
+New APIs preserve AeoScript's type system, reference semantics, runtime-state model, and engine-owned object model.
+
+---
+
+# 16. Input & Mouse APIs
+
+### `get.mouse()`
+
+Returns a handle (`HandleKind::Mouse`) to the global mouse hardware input interface.
+
+### `mouse.setCursorVisible`
+
+Property (`bool`) controlling OS cursor visibility during Play mode.
+
+```aeoscript
+const m = get.mouse()
+m.setCursorVisible = false
+```
+
+### `mouse.setScreenLocked`
+
+Property (`bool`) locking or unlocking the cursor to the screen center for camera look.
+
+```aeoscript
+const m = get.mouse()
+m.setScreenLocked = true
+```
+
+### `input.get_move_vector()`
+
+Returns normalized 2D movement vector `[x, z]` from player WASD or stick input.
+
+```aeoscript
+const move = input.get_move_vector()
+```
+
+### `input.is_jump_pressed()`
+
+Returns `bool` indicating whether the jump action key/button is currently pressed.
+
+### `input.get_orbit_delta()`
+
+Returns 2D camera mouse look / orbit delta `[dx, dy]`.
+
+---
+
+# 17. Camera & Physics Query APIs
+
+### `camera.get_horizontal_basis()`
+
+Returns 3D basis vectors `[forward, right]` aligned to the horizontal plane.
+
+```aeoscript
+const basis = camera.get_horizontal_basis()
+const forward = basis[0]
+const right = basis[1]
+```
+
+### `camera.set_position(x, y, z)`
+
+Sets 3D world position of the active gameplay camera. Accepts 3 numbers or a 3-element basket.
+
+### `camera.set_target(x, y, z)`
+
+Sets 3D look-at target position of the active gameplay camera. Accepts 3 numbers or a 3-element basket.
+
+### `camera.set_orientation(yaw, pitch)`
+
+Sets camera yaw and pitch rotation angles in radians.
+
+### `physics.resolve_camera_collision(target, desired)`
+
+Ray-casts collision check from `target` to `desired` position to prevent camera wall clipping. Returns resolved 3D position array `[x, y, z]`.
+
+```aeoscript
+const actual_pos = physics.resolve_camera_collision(target, desired_pos)
+```
+
+---
+
+# 18. Player Character Locomotion APIs
+
+### `player.set_horizontal_velocity(vx, vz)`
+
+Sets player character horizontal velocity vector on the X/Z plane.
+
+```aeoscript
+player.set_horizontal_velocity(dir_x * speed, dir_z * speed)
+```
+
+### `player.set_facing_direction(dx, dz)`
+
+Sets player character facing direction vector on the X/Z plane.
+
+### `player.select_animation(name)`
+
+Triggers animation clip on player character (e.g., `"Walk"`, `"Idle"`).
+
+### `player.is_grounded()`
+
+Returns `bool` indicating whether player character is resting on solid ground.
+
+### `player.apply_vertical_impulse(impulse)`
+
+Applies vertical jump force impulse to player character.
+
+### `player.position`
+
+Property returning active player character's 3D position `[x, y, z]`.
+
+---
+
+# 19. Runtime UI APIs
+
+### `ui.new(element_type)`
+
+Spawns a runtime UI element of type `"Panel"`, `"Text"`, or `"Button"`. Returns a `Ui` handle.
+
+```aeoscript
+const panel = ui.new("Panel")
+const text = ui.new("Text")
+const btn = ui.new("Button")
+```
+
+### `ui.delete(handle)`
+
+Removes runtime UI element by handle.
+
+### `ui.get_viewport_size()`
+
+Returns current viewport dimensions array `[width, height]`.
+
+### UI Element Properties
+
+* `position`: `[x, y]` array in viewport pixels
+* `size`: `[width, height]` array in viewport pixels
+* `visible`: `bool`
+* `enabled`: `bool`
+* `color`: `[r, g, b, a]` color array
+* `text`: `string` (valid on `Text` and `Button`)
+* `on_click`: assignable callback closure on `Button` handles (`btn.on_click = fn() { ... }`)
+
+---
+
+# 20. Audio Emitter APIs
+
+### `cell.sound`
+
+Returns the `Sound` handle bound to an Audio Emitter cell.
+
+```aeoscript
+const emitter = find("DoorSound")[0]
+emitter.sound.play()
+```
+
+### Sound Properties & Methods
+
+* `sound.playing`: `bool` (read/write)
+* `sound.looped`: `bool` (read/write)
+* `sound.volume`: `number` (read/write)
+* `sound.play()`: Method to start audio playback
+* `sound.stop()`: Method to stop audio playback
+* `sound.pause()`: Method to pause audio playback
+
+---
+
+# 21. Script Control & Automated Test APIs
+
+### `script.enable(path)` / `script.disable(path)` / `script.is_enabled(path)`
+
+Enables, disables, or queries active status of a script by file path.
+
+```aeoscript
+script.disable("scripts/traps.aeo")
+```
+
+### `test.complete(name, passed)` / `test.is_completed(name)` / `test.passed(name)` / `test.summary()`
+
+In-game automated unit testing framework. `test.summary()` returns `[passed_count, failed_count, total_count]`.
+
+---
+
+# 22. Hierarchy & Navigation API Stubs
+
+* `object:get_children()`: Currently returns `[]` (empty basket placeholder).
+* `object:get_parent()`: Currently returns `nil` (placeholder).
+* `cell:getObject()`: Looks up bound runtime Entity or Audio handle associated with an authored Cell ID. Returns `Entity` handle or `nil`.
+

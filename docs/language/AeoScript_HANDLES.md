@@ -154,11 +154,42 @@ An `Entity` handle refers to a live runtime Entity such as a Player or NPC.
 
 Entity handles represent runtime objects rather than authored World Cells.
 
-Supported Entity access is intentionally limited to the engine API exposed to AeoScript.
+Supported properties include `.name` and `.position`. Supported methods include `is_valid()`, `name()`, `set_position(x, y, z)`, and `translate(dx, dy, dz)`.
 
 ---
 
-# 8. Handle Lifetime
+# 8. Sound Handles
+
+A `Sound` handle refers to an audio channel bound to an `AudioEmitter` cell or runtime sound object (`cell.sound`).
+
+Supported properties and methods:
+
+* `sound.playing`: `bool` (read/write)
+* `sound.looped`: `bool` (read/write)
+* `sound.volume`: `number` (read/write)
+* `sound.play()`: method
+* `sound.stop()`: method
+* `sound.pause()`: method
+
+---
+
+# 9. UI Handles
+
+A `Ui` handle refers to a runtime UI element created with `ui.new("Panel" | "Text" | "Button")`.
+
+Supported properties:
+
+* `position`: `[x, y]` pixel position
+* `size`: `[width, height]` pixel dimensions
+* `visible`: `bool`
+* `enabled`: `bool`
+* `color`: `[r, g, b, a]` color vector
+* `text`: `string` (Text and Button)
+* `on_click`: callback function assigned to Button handles (`btn.on_click = fn() { ... }`)
+
+---
+
+# 10. Handle Lifetime
 
 A handle can outlive the engine object it originally referenced.
 
@@ -168,7 +199,7 @@ Operations against invalid or stale handles produce runtime errors rather than s
 
 ---
 
-# 9. Handles and Runtime State
+# 11. Handles and Runtime State
 
 Handles provide access to runtime state.
 
@@ -186,7 +217,7 @@ The engine remains responsible for the object's lifetime.
 
 ---
 
-# 10. Handles and Script Bindings
+# 12. Handles and Script Bindings
 
 A handle's Cell ID and a script binding's target ID describe the same authored instance identity.
 
@@ -202,4 +233,5 @@ Script Binding
 ~~~
 
 The name can change without changing which Cell the binding targets.
+
 
