@@ -113,20 +113,35 @@ These visuals are editor representations and are not authored World content by t
 
 ---
 
-# 9. Performance & Geometry Optimization
+# 9. Performance & Spatial Chunking Architecture
 
-Static voxel rendering calculates face exposure using effective World state and submits only exposed voxel faces (+Y, -Y, +Z, -Z, -X, +X) to the GPU. Occluded internal faces are culled before submission while preserving existing Cell, material, lighting, and shadow semantics.
+Static voxel geometry is rendered using persistent spatial chunks (`CHUNK_SIZE = 16`).
+
+The pipeline flow is:
+
+~~~text
+World (effective state & render revision)
+        ↓
+Spatial Chunking (ChunkCoord = WorldCoord / 16)
+        ↓
+Persistent GPU Chunk Meshes & Texture Batching
+        ↓
+Camera Frustum Chunk Culling
+        ↓
+GPU Draw Submission
+~~~
+
+### Key Architectural Boundaries:
+* **Ownership**: `World` owns authored and runtime cell data. `Renderer` owns derived GPU chunk meshes (`ChunkMesh`). `PhysicsWorld` owns collision geometry independently.
+* **Exposed-Face Meshing**: Each cell in a chunk is evaluated against Phase 1 exposed-face culling (`compute_exposed_faces_main` and `compute_exposed_faces_shadow`) across chunk boundaries without generating internal faces at chunk boundaries.
+* **Texture Batching**: Voxel geometry within each chunk is grouped contiguous-by-texture-identifier, submitting a single draw call per texture batch per chunk.
+* **Shadow Meshing**: Separate position-only shadow geometry is generated and persistently uploaded per chunk using shadow eligibility rules (`Block` and `SpawnPoint` with `solid == true`).
+* **Coarse Invalidation Strategy**: When `world.render_revision()` changes, the renderer invalidates and rebuilds its GPU chunk cache. Unchanged frames issue zero CPU world scans or GPU buffer re-allocations.
 
 Potential future rendering optimizations include:
 
-* Spatial chunking.
-* Visible-chunk selection.
-* Per-chunk meshes.
-* Greedy meshing.
-* Render batching.
-* Persistent reusable mesh resources.
-
-These changes should be driven by profiling rather than introduced solely for theoretical scalability.
+* Selective dirty-chunk rebuilding (Phase 3).
+* Greedy meshing (Phase 4).
 
 ---
 

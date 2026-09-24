@@ -1,4 +1,5 @@
 pub mod camera;
+pub mod chunk;
 pub mod mesh;
 pub mod shader;
 pub mod sky;
@@ -15,6 +16,7 @@ use crate::engine::EditorMode;
 use crate::engine::physics::PhysicsWorld;
 use crate::world::{CellType, World, WorldCoord};
 
+use self::chunk::{CameraFrustum, ChunkCoord, ChunkMesh, TextureBatchRange, build_cpu_chunk_data};
 use self::mesh::{add_block_quad, add_line, upload_vertices_3d};
 use self::shader::create_program;
 
@@ -52,6 +54,10 @@ pub struct Renderer {
     block_vao: u32,
     block_vbo: u32,
     block_mask_ranges: [(i32, i32); 64],
+
+    chunk_cache: RefCell<HashMap<ChunkCoord, ChunkMesh>>,
+    last_render_revision: RefCell<u64>,
+    last_render_mode: RefCell<Option<EditorMode>>,
 
     billboard_vao: u32,
     billboard_vbo: u32,
@@ -94,12 +100,9 @@ impl Renderer {
 
         let grid_program = create_program(GRID_VERTEX_SHADER, GRID_FRAGMENT_SHADER);
 
-        let (grid_vao_xz, grid_vbo_xz, grid_count_xz) =
-            create_grid_plane_vao(GridPlane::Xz);
-        let (grid_vao_yz, grid_vbo_yz, grid_count_yz) =
-            create_grid_plane_vao(GridPlane::Yz);
-        let (grid_vao_xy, grid_vbo_xy, grid_count_xy) =
-            create_grid_plane_vao(GridPlane::Xy);
+        let (grid_vao_xz, grid_vbo_xz, grid_count_xz) = create_grid_plane_vao(GridPlane::Xz);
+        let (grid_vao_yz, grid_vbo_yz, grid_count_yz) = create_grid_plane_vao(GridPlane::Yz);
+        let (grid_vao_xy, grid_vbo_xy, grid_count_xy) = create_grid_plane_vao(GridPlane::Xy);
 
         let (axis_vao, axis_vbo, axis_vertex_count) = create_axes();
         let (highlight_vao, highlight_vbo, highlight_vertex_count) = create_highlight_box();
@@ -241,6 +244,10 @@ impl Renderer {
             block_vbo,
             block_mask_ranges,
 
+            chunk_cache: RefCell::new(HashMap::new()),
+            last_render_revision: RefCell::new(0),
+            last_render_mode: RefCell::new(None),
+
             billboard_vao,
             billboard_vbo,
 
@@ -276,6 +283,92 @@ impl Renderer {
 
     pub fn get_block_mask_range(&self, mask: u8) -> (i32, i32) {
         self.block_mask_ranges[mask as usize]
+    }
+
+    pub fn update_chunk_cache(&self, world: &World, mode: EditorMode) {
+        let current_rev = world.render_revision();
+        if *self.last_render_revision.borrow() == current_rev
+            && *self.last_render_mode.borrow() == Some(mode)
+        {
+            return;
+        }
+
+        let mut cache = self.chunk_cache.borrow_mut();
+
+        for chunk_mesh in cache.values_mut() {
+            chunk_mesh.free_gl_resources();
+        }
+        cache.clear();
+
+        let mut chunk_coords_map: HashMap<ChunkCoord, Vec<WorldCoord>> = HashMap::new();
+        for coord in world.active_effective_blocks() {
+            let chunk_coord = ChunkCoord::from_world_coord(coord);
+            chunk_coords_map.entry(chunk_coord).or_default().push(coord);
+        }
+
+        for (chunk_coord, coords) in chunk_coords_map {
+            let cpu_data = build_cpu_chunk_data(world, chunk_coord, &coords, mode);
+
+            let mut main_vao = 0;
+            let mut main_vbo = 0;
+            let mut main_texture_batches = Vec::new();
+
+            let mut combined_main_vertices = Vec::new();
+            let mut current_vertex_offset = 0i32;
+
+            let mut texture_ids: Vec<_> = cpu_data.main_texture_vertices.keys().cloned().collect();
+            texture_ids.sort();
+
+            for tex_id in texture_ids {
+                if let Some(verts) = cpu_data.main_texture_vertices.get(&tex_id) {
+                    if verts.is_empty() {
+                        continue;
+                    }
+                    let count = (verts.len() / self::mesh::BLOCK_VERTEX_FLOATS) as i32;
+                    main_texture_batches.push(TextureBatchRange {
+                        texture_id: tex_id,
+                        start_vertex: current_vertex_offset,
+                        vertex_count: count,
+                    });
+                    combined_main_vertices.extend_from_slice(verts);
+                    current_vertex_offset += count;
+                }
+            }
+
+            if !combined_main_vertices.is_empty() {
+                let (vao, vbo, _) = self::mesh::upload_block_vertices_3d(&combined_main_vertices);
+                main_vao = vao;
+                main_vbo = vbo;
+            }
+
+            let mut shadow_vao = 0;
+            let mut shadow_vbo = 0;
+            let mut shadow_vertex_count = 0;
+
+            if !cpu_data.shadow_positions.is_empty() {
+                let (s_vao, s_vbo, count) =
+                    chunk::upload_position_only_vertices(&cpu_data.shadow_positions);
+                shadow_vao = s_vao;
+                shadow_vbo = s_vbo;
+                shadow_vertex_count = count;
+            }
+
+            if main_vao != 0 || shadow_vao != 0 {
+                let chunk_mesh = ChunkMesh {
+                    chunk_coord,
+                    main_vao,
+                    main_vbo,
+                    main_texture_batches,
+                    shadow_vao,
+                    shadow_vbo,
+                    shadow_vertex_count,
+                };
+                cache.insert(chunk_coord, chunk_mesh);
+            }
+        }
+
+        *self.last_render_revision.borrow_mut() = current_rev;
+        *self.last_render_mode.borrow_mut() = Some(mode);
     }
 
     pub fn resize(&mut self, width: f32, height: f32) {
@@ -390,8 +483,7 @@ impl Renderer {
         let ppp = editor.viewport_ppp.max(1.0);
         let rect = editor.viewport_rect;
 
-        let (vp_x, vp_y, vp_w, vp_h, aspect_ratio) = if rect.width() > 1.0 && rect.height() > 1.0
-        {
+        let (vp_x, vp_y, vp_w, vp_h, aspect_ratio) = if rect.width() > 1.0 && rect.height() > 1.0 {
             let x = (rect.min.x * ppp) as i32;
             let w = (rect.width() * ppp) as i32;
             let h = (rect.height() * ppp) as i32;
@@ -462,6 +554,8 @@ impl Renderer {
             gl::Disable(gl::BLEND);
 
             // Shadow pass.
+            self.update_chunk_cache(world, editor.mode);
+
             gl::BindFramebuffer(gl::FRAMEBUFFER, self.shadow_fbo);
             gl::Viewport(0, 0, SHADOW_RES, SHADOW_RES);
             gl::Clear(gl::DEPTH_BUFFER_BIT);
@@ -479,55 +573,31 @@ impl Renderer {
             );
 
             let s_model_name = CString::new("u_model").unwrap();
-            let s_model_location = gl::GetUniformLocation(self.shadow_program, s_model_name.as_ptr());
+            let s_model_location =
+                gl::GetUniformLocation(self.shadow_program, s_model_name.as_ptr());
 
-            gl::BindVertexArray(self.block_vao);
+            let cache = self.chunk_cache.borrow();
 
-            for coord in &active_blocks {
-                let Some(cell) = world.get_effective_cell(*coord) else {
-                    continue;
-                };
+            for chunk_mesh in cache.values() {
+                if chunk_mesh.shadow_vao != 0 && chunk_mesh.shadow_vertex_count > 0 {
+                    let origin = chunk_mesh.chunk_coord.world_origin();
+                    let model = Mat4::from_translation(origin);
 
-                if !matches!(cell.cell_type, CellType::Block | CellType::SpawnPoint)
-                    || !world.is_cell_visible(*coord)
-                    || !world.is_cell_solid(*coord)
-                {
-                    continue;
+                    gl::UniformMatrix4fv(
+                        s_model_location,
+                        1,
+                        gl::FALSE,
+                        model.to_cols_array().as_ptr(),
+                    );
+
+                    gl::BindVertexArray(chunk_mesh.shadow_vao);
+                    gl::DrawArrays(gl::TRIANGLES, 0, chunk_mesh.shadow_vertex_count);
                 }
-
-                let should_draw = match editor.mode {
-                    EditorMode::Editor => true,
-                    EditorMode::Play => world.is_cell_anchored(*coord),
-                };
-
-                if !should_draw {
-                    continue;
-                }
-
-                let mask = self::mesh::compute_exposed_faces_shadow(world, *coord, editor.mode);
-                if mask == 0 {
-                    continue;
-                }
-
-                let (first_vertex, count) = self.get_block_mask_range(mask);
-
-                let model = Mat4::from_translation(
-                    Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32)
-                        + world.get_visual_offset(*coord),
-                );
-
-                gl::UniformMatrix4fv(
-                    s_model_location,
-                    1,
-                    gl::FALSE,
-                    model.to_cols_array().as_ptr(),
-                );
-
-                gl::DrawArrays(gl::TRIANGLES, first_vertex, count);
             }
 
             if editor.mode == EditorMode::Play {
                 let (first_vertex, count) = self.get_block_mask_range(63);
+                gl::BindVertexArray(self.block_vao);
 
                 for body in &physics.bodies {
                     if !body.solid {
@@ -589,8 +659,7 @@ impl Renderer {
 
             // Global lighting.
             let ambient_name = CString::new("u_ambient_intensity").unwrap();
-            let ambient_location =
-                gl::GetUniformLocation(self.grid_program, ambient_name.as_ptr());
+            let ambient_location = gl::GetUniformLocation(self.grid_program, ambient_name.as_ptr());
             gl::Uniform1f(ambient_location, world.lighting.ambient_intensity);
 
             let global_enabled_name = CString::new("u_global_light_enabled").unwrap();
@@ -598,7 +667,11 @@ impl Renderer {
                 gl::GetUniformLocation(self.grid_program, global_enabled_name.as_ptr());
             gl::Uniform1i(
                 global_enabled_location,
-                if world.lighting.global_light_enabled { 1 } else { 0 },
+                if world.lighting.global_light_enabled {
+                    1
+                } else {
+                    0
+                },
             );
 
             let global_dir_name = CString::new("u_global_light_direction").unwrap();
@@ -695,8 +768,7 @@ impl Renderer {
                 );
 
                 let color_name = CString::new(format!("{base}.color")).unwrap();
-                let color_location =
-                    gl::GetUniformLocation(self.grid_program, color_name.as_ptr());
+                let color_location = gl::GetUniformLocation(self.grid_program, color_name.as_ptr());
                 gl::Uniform3f(
                     color_location,
                     cell.light_color.x,
@@ -710,8 +782,7 @@ impl Renderer {
                 gl::Uniform1f(intensity_location, cell.light_intensity);
 
                 let range_name = CString::new(format!("{base}.range")).unwrap();
-                let range_location =
-                    gl::GetUniformLocation(self.grid_program, range_name.as_ptr());
+                let range_location = gl::GetUniformLocation(self.grid_program, range_name.as_ptr());
                 gl::Uniform1f(range_location, cell.light_range);
             }
 
@@ -766,56 +837,41 @@ impl Renderer {
                     gl::Uniform3f(base_color_location, 1.0, 1.0, 1.0);
                     gl::DrawArrays(gl::TRIANGLES, 0, 6);
                 }
+            }
 
-                let renderable = matches!(
-                    cell.cell_type,
-                    CellType::Block | CellType::SpawnPoint | CellType::Light
-                );
+            // Static Voxel Chunk rendering
+            let camera_frustum = CameraFrustum::from_view_projection(view_projection);
 
-                if !renderable || !world.is_cell_visible(*coord) {
+            gl::Uniform1i(use_tex_location, 1);
+
+            for chunk_mesh in cache.values() {
+                if chunk_mesh.main_vao == 0 || chunk_mesh.main_texture_batches.is_empty() {
                     continue;
                 }
 
-                let should_draw = match editor.mode {
-                    EditorMode::Editor => true,
-                    EditorMode::Play => world.is_cell_anchored(*coord),
-                };
-
-                if !should_draw {
+                let (aabb_min, aabb_max) = chunk_mesh.chunk_coord.aabb_min_max();
+                if !camera_frustum.intersects_aabb(aabb_min, aabb_max) {
                     continue;
                 }
 
-                let mask = self::mesh::compute_exposed_faces_main(world, *coord, editor.mode);
-                if mask == 0 {
-                    continue;
+                let origin = chunk_mesh.chunk_coord.world_origin();
+                let model = Mat4::from_translation(origin);
+
+                gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
+
+                gl::BindVertexArray(chunk_mesh.main_vao);
+
+                for batch in &chunk_mesh.main_texture_batches {
+                    let tex = self.get_texture(&batch.texture_id);
+
+                    gl::ActiveTexture(gl::TEXTURE1);
+                    gl::BindTexture(gl::TEXTURE_2D, tex);
+
+                    gl::Uniform3f(base_color_location, 1.0, 1.0, 1.0);
+                    gl::Uniform1f(alpha_location, 1.0);
+
+                    gl::DrawArrays(gl::TRIANGLES, batch.start_vertex, batch.vertex_count);
                 }
-
-                let (first_vertex, count) = self.get_block_mask_range(mask);
-
-                gl::BindVertexArray(self.block_vao);
-                gl::Uniform1i(use_tex_location, 1);
-
-                let tex = self.get_texture(&cell.texture);
-                gl::ActiveTexture(gl::TEXTURE1);
-                gl::BindTexture(gl::TEXTURE_2D, tex);
-
-                let color = world.get_effective_color(*coord);
-                gl::Uniform3f(base_color_location, color.x, color.y, color.z);
-                gl::Uniform1f(alpha_location, 1.0);
-
-                let model = Mat4::from_translation(
-                    Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32)
-                        + world.get_visual_offset(*coord),
-                );
-
-                gl::UniformMatrix4fv(
-                    model_location,
-                    1,
-                    gl::FALSE,
-                    model.to_cols_array().as_ptr(),
-                );
-
-                gl::DrawArrays(gl::TRIANGLES, first_vertex, count);
             }
 
             gl::Uniform1i(use_tex_location, 0);
@@ -904,12 +960,7 @@ impl Renderer {
                 };
 
                 let model = Mat4::from_translation(center);
-                gl::UniformMatrix4fv(
-                    model_location,
-                    1,
-                    gl::FALSE,
-                    model.to_cols_array().as_ptr(),
-                );
+                gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
 
                 self.bind_grid_vao(plane);
                 gl::DrawArrays(gl::LINES, 0, self.get_grid_count(plane));
@@ -923,12 +974,7 @@ impl Renderer {
                 );
 
                 let model = Mat4::from_translation(anchor_pos);
-                gl::UniformMatrix4fv(
-                    model_location,
-                    1,
-                    gl::FALSE,
-                    model.to_cols_array().as_ptr(),
-                );
+                gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
 
                 gl::BindVertexArray(self.anchor_vao);
                 gl::DrawArrays(gl::LINES, 0, self.anchor_vertex_count);
@@ -972,12 +1018,7 @@ impl Renderer {
                 }
 
                 let model = Mat4::from_translation(anchor_pos);
-                gl::UniformMatrix4fv(
-                    model_location,
-                    1,
-                    gl::FALSE,
-                    model.to_cols_array().as_ptr(),
-                );
+                gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
 
                 gl::BindVertexArray(self.axis_vao);
                 gl::DrawArrays(gl::LINES, 0, self.axis_vertex_count);
@@ -1073,9 +1114,7 @@ impl Renderer {
                                     for y in y_min..=y_max {
                                         for z in z_min..=z_max {
                                             let model = Mat4::from_translation(Vec3::new(
-                                                x as f32,
-                                                y as f32,
-                                                z as f32,
+                                                x as f32, y as f32, z as f32,
                                             ));
 
                                             gl::UniformMatrix4fv(
@@ -1106,9 +1145,7 @@ impl Renderer {
                                     for y in y_min..=y_max {
                                         for z in z_min..=z_max {
                                             let model = Mat4::from_translation(Vec3::new(
-                                                x as f32,
-                                                y as f32,
-                                                z as f32,
+                                                x as f32, y as f32, z as f32,
                                             ));
 
                                             gl::UniformMatrix4fv(
@@ -1118,11 +1155,7 @@ impl Renderer {
                                                 model.to_cols_array().as_ptr(),
                                             );
 
-                                            gl::DrawArrays(
-                                                gl::TRIANGLES,
-                                                first_vertex,
-                                                count,
-                                            );
+                                            gl::DrawArrays(gl::TRIANGLES, first_vertex, count);
                                         }
                                     }
                                 }
@@ -1137,9 +1170,7 @@ impl Renderer {
                                 for y in y_min..=y_max {
                                     for z in z_min..=z_max {
                                         let model = Mat4::from_translation(Vec3::new(
-                                            x as f32,
-                                            y as f32,
-                                            z as f32,
+                                            x as f32, y as f32, z as f32,
                                         ));
 
                                         gl::UniformMatrix4fv(
@@ -1149,11 +1180,7 @@ impl Renderer {
                                             model.to_cols_array().as_ptr(),
                                         );
 
-                                        gl::DrawArrays(
-                                            gl::LINES,
-                                            0,
-                                            self.highlight_vertex_count,
-                                        );
+                                        gl::DrawArrays(gl::LINES, 0, self.highlight_vertex_count);
                                     }
                                 }
                             }
@@ -1198,6 +1225,10 @@ impl Renderer {
 impl Drop for Renderer {
     fn drop(&mut self) {
         unsafe {
+            for chunk_mesh in self.chunk_cache.borrow_mut().values_mut() {
+                chunk_mesh.free_gl_resources();
+            }
+
             gl::DeleteProgram(self.grid_program);
             gl::DeleteProgram(self.shadow_program);
 

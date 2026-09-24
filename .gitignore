@@ -14,9 +14,6 @@ shelf/
 /UserData/
 .assets/
 
-# Internal audit / temporary documentation
-/documentationUpdation.md
-
 # OS junk
 .DS_Store
 Thumbs.db

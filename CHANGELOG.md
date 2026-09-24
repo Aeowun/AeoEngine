@@ -722,8 +722,8 @@
 ## 0.7.4 — Current Unreleased
 
 ### Added
-*
-
+* Exposed-Face Meshing. Static voxel geometry submission now culls occluded internal faces on GPU submission.
+* Spatial Chunking & Batched Static Voxel Meshes 
 ### Changed
 *
 

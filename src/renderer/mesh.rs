@@ -1,8 +1,8 @@
 use std::mem;
 use std::ptr;
 
-const VERTEX_3D_FLOATS: usize = 10;
-const BLOCK_VERTEX_FLOATS: usize = 12;
+pub const VERTEX_3D_FLOATS: usize = 10;
+pub const BLOCK_VERTEX_FLOATS: usize = 12;
 
 pub fn upload_vertices_2d(vertices: &[f32]) -> (u32, u32) {
     let mut vao = 0;

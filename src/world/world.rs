@@ -61,6 +61,16 @@ impl SkySettings {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DirtyReason {
+    /// Geometry, occupancy, visibility, solidity, anchored, or cell_type changed.
+    /// Invalidation neighborhood: own chunk + 6 neighboring chunks.
+    Geometry,
+    /// Color, texture, or visual offset changed.
+    /// Invalidation neighborhood: own chunk only.
+    MaterialOrOffset,
+}
+
 #[derive(Clone)]
 pub struct World {
     // Authored grid data. We use a HashMap because the world is unbounded
@@ -112,6 +122,12 @@ pub struct World {
 
     /// Default Play-mode mouse screen/cursor locking setting.
     pub screen_locked: bool,
+
+    /// Incremented whenever World geometry or render-relevant properties change.
+    pub(crate) render_revision: u64,
+
+    /// Lightweight runtime-only record of coordinates that need render invalidation.
+    pub(crate) render_dirty_cells: HashMap<WorldCoord, DirtyReason>,
 }
 
 impl World {
@@ -135,7 +151,32 @@ impl World {
             selected_camera: "thirdPerson".to_string(),
             cursor_visible: false,
             screen_locked: true,
+            render_revision: 1,
+            render_dirty_cells: HashMap::new(),
         }
+    }
+
+    pub fn render_revision(&self) -> u64 {
+        self.render_revision
+    }
+
+    pub(crate) fn bump_render_revision(&mut self) {
+        self.render_revision = self.render_revision.wrapping_add(1);
+    }
+
+    pub fn mark_render_dirty(&mut self, coord: WorldCoord, reason: DirtyReason) {
+        match self.render_dirty_cells.get(&coord) {
+            Some(&DirtyReason::Geometry) => {
+                // Geometry is already the broader invalidation
+            }
+            _ => {
+                self.render_dirty_cells.insert(coord, reason);
+            }
+        }
+    }
+
+    pub fn drain_render_dirty_cells(&mut self) -> HashMap<WorldCoord, DirtyReason> {
+        std::mem::take(&mut self.render_dirty_cells)
     }
 
     pub fn get(&self, coord: WorldCoord) -> Option<&Cell> {
@@ -143,6 +184,8 @@ impl World {
     }
 
     pub fn get_mut(&mut self, coord: WorldCoord) -> Option<&mut Cell> {
+        self.bump_render_revision();
+        self.mark_render_dirty(coord, DirtyReason::Geometry);
         self.cells.get_mut(&coord)
     }
 
@@ -182,6 +225,7 @@ impl World {
     /// Sets a runtime-only override for light_enabled.
     /// This does not modify the authored Cell data.
     pub fn set_light_enabled_runtime(&mut self, coord: WorldCoord, enabled: bool) {
+        self.bump_render_revision();
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
             self.runtime_state.entry(id).or_default().light_enabled = Some(enabled);
@@ -205,6 +249,7 @@ impl World {
     /// Sets a runtime-only override for cell visibility.
     /// This does not modify the authored Cell data.
     pub fn set_cell_visible_runtime(&mut self, coord: WorldCoord, visible: bool) {
+        self.bump_render_revision();
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
             self.runtime_state.entry(id).or_default().visible = Some(visible);
@@ -337,6 +382,7 @@ impl World {
 
     /// Sets a runtime-only override for cell color.
     pub fn set_cell_color_runtime(&mut self, coord: WorldCoord, color: Vec3) {
+        self.bump_render_revision();
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
             self.runtime_state.entry(id).or_default().color_rgb = Some(color);
@@ -358,6 +404,7 @@ impl World {
 
     /// Sets a runtime-only override for cell solidity.
     pub fn set_cell_solid_runtime(&mut self, coord: WorldCoord, solid: bool) {
+        self.bump_render_revision();
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
             self.runtime_state.entry(id).or_default().solid = Some(solid);
@@ -380,6 +427,7 @@ impl World {
 
     /// Sets a runtime-only override for cell anchored state.
     pub fn set_cell_anchored_runtime(&mut self, coord: WorldCoord, anchored: bool) {
+        self.bump_render_revision();
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
             self.runtime_state.entry(id).or_default().anchored = Some(anchored);
@@ -401,6 +449,7 @@ impl World {
 
     /// Sets a runtime-only visual offset for a cell.
     pub fn set_visual_offset_runtime(&mut self, coord: WorldCoord, offset: Vec3) {
+        self.bump_render_revision();
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
             self.runtime_state.entry(id).or_default().visual_offset = Some(offset);
@@ -483,6 +532,7 @@ impl World {
     }
 
     pub fn create_runtime_cell(&mut self, cell_type: CellType) -> u64 {
+        self.bump_render_revision();
         let mut cell = match cell_type {
             CellType::Block => Cell::new_block(),
             CellType::Light => Cell::new_light(),
@@ -504,6 +554,7 @@ impl World {
     }
 
     pub fn move_runtime_cell(&mut self, id: u64, new_coord: WorldCoord) -> Result<(), String> {
+        self.bump_render_revision();
         if !self.runtime_cells.contains_key(&id) {
             return Err("Not a runtime cell".to_string());
         }
@@ -521,6 +572,7 @@ impl World {
     }
 
     pub fn delete_cell_runtime(&mut self, id: u64) {
+        self.bump_render_revision();
         if self.runtime_cells.contains_key(&id) {
             if let Some(coord) = self.runtime_id_to_coord.remove(&id) {
                 self.coord_to_runtime_id.remove(&coord);
@@ -590,6 +642,7 @@ impl World {
 
     /// Discards all runtime state modifications.
     pub fn clear_runtime_state(&mut self) {
+        self.bump_render_revision();
         for id in self.runtime_state.keys() {
             self.physics_dirty_cells.insert(*id);
         }
@@ -603,6 +656,7 @@ impl World {
     }
 
     pub fn set_cell(&mut self, coord: WorldCoord, cell_type: CellType) -> u64 {
+        self.bump_render_revision();
         if cell_type == CellType::Empty {
             if let Some(cell) = self.cells.remove(&coord) {
                 self.id_to_coord.remove(&cell.id);
@@ -642,6 +696,7 @@ impl World {
 
     /// Rebuilds the ID to coordinate index. Call this if the cells map is replaced (e.g. undo/redo).
     pub fn rebuild_id_mapping(&mut self) {
+        self.bump_render_revision();
         self.id_to_coord.clear();
         for (coord, cell) in &self.cells {
             self.id_to_coord.insert(cell.id, *coord);
