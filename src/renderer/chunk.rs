@@ -3,52 +3,7 @@ use std::collections::HashMap;
 
 use crate::engine::EditorMode;
 use crate::renderer::mesh::{BLOCK_VERTEX_FLOATS, CubeFace, add_block_quad};
-use crate::world::{CellType, DirtyReason, World, WorldCoord};
-
-pub const CHUNK_SIZE: i32 = 16;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ChunkCoord {
-    pub x: i32,
-    pub y: i32,
-    pub z: i32,
-}
-
-impl ChunkCoord {
-    pub fn new(x: i32, y: i32, z: i32) -> Self {
-        Self { x, y, z }
-    }
-
-    pub fn from_world_coord(coord: WorldCoord) -> Self {
-        Self {
-            x: coord.x.div_euclid(CHUNK_SIZE),
-            y: coord.y.div_euclid(CHUNK_SIZE),
-            z: coord.z.div_euclid(CHUNK_SIZE),
-        }
-    }
-
-    pub fn local_offset(coord: WorldCoord) -> (i32, i32, i32) {
-        (
-            coord.x.rem_euclid(CHUNK_SIZE),
-            coord.y.rem_euclid(CHUNK_SIZE),
-            coord.z.rem_euclid(CHUNK_SIZE),
-        )
-    }
-
-    pub fn world_origin(&self) -> Vec3 {
-        Vec3::new(
-            (self.x * CHUNK_SIZE) as f32,
-            (self.y * CHUNK_SIZE) as f32,
-            (self.z * CHUNK_SIZE) as f32,
-        )
-    }
-
-    pub fn aabb_min_max(&self) -> (Vec3, Vec3) {
-        let min = self.world_origin();
-        let max = min + Vec3::splat(CHUNK_SIZE as f32);
-        (min, max)
-    }
-}
+use crate::world::{CHUNK_SIZE, CellType, ChunkCoord, DirtyReason, World, WorldCoord};
 
 #[derive(Clone, Debug)]
 pub struct TextureBatchRange {
@@ -172,7 +127,8 @@ pub fn build_cpu_chunk_data(
         }
 
         // --- Shadow Pass Static Geometry ---
-        let shadow_renderable = matches!(cell.cell_type, CellType::Block | CellType::SpawnPoint);
+        let shadow_renderable = world.lighting.shadows_enabled
+            && matches!(cell.cell_type, CellType::Block | CellType::SpawnPoint);
 
         if shadow_renderable && world.is_cell_visible(coord) && world.is_cell_solid(coord) {
             let mask = crate::renderer::mesh::compute_exposed_faces_shadow(world, coord, mode);

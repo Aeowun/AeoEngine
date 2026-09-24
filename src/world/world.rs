@@ -1,8 +1,8 @@
-use super::cell::{Cell, CellType, RuntimeCellState};
+use super::cell::{Cell, CellType, ChunkCoord, RuntimeCellState};
 use super::coordinate::WorldCoord;
 use crate::scripting::binding::ScriptBinding;
 use glam::Vec3;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone)]
 pub struct LightingSettings {
@@ -128,6 +128,45 @@ pub struct World {
 
     /// Lightweight runtime-only record of coordinates that need render invalidation.
     pub(crate) render_dirty_cells: std::cell::RefCell<HashMap<WorldCoord, DirtyReason>>,
+
+    /// Persistent spatial index partitioning cells into 16x16x16 chunks.
+    pub spatial_index: WorldSpatialIndex,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ChunkCellIndex {
+    pub active_coords: HashSet<WorldCoord>,
+    pub solid_coords: HashSet<WorldCoord>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct WorldSpatialIndex {
+    pub chunks: HashMap<ChunkCoord, ChunkCellIndex>,
+}
+
+impl WorldSpatialIndex {
+    pub fn clear(&mut self) {
+        self.chunks.clear();
+    }
+
+    pub fn update_cell(&mut self, coord: WorldCoord, active: bool, solid: bool) {
+        let chunk_coord = ChunkCoord::from_world_coord(coord);
+        if active {
+            let chunk = self.chunks.entry(chunk_coord).or_default();
+            chunk.active_coords.insert(coord);
+            if solid {
+                chunk.solid_coords.insert(coord);
+            } else {
+                chunk.solid_coords.remove(&coord);
+            }
+        } else if let Some(chunk) = self.chunks.get_mut(&chunk_coord) {
+            chunk.active_coords.remove(&coord);
+            chunk.solid_coords.remove(&coord);
+            if chunk.active_coords.is_empty() {
+                self.chunks.remove(&chunk_coord);
+            }
+        }
+    }
 }
 
 impl World {
@@ -140,7 +179,6 @@ impl World {
             runtime_cells: HashMap::new(),
             runtime_id_to_coord: HashMap::new(),
             coord_to_runtime_id: HashMap::new(),
-            // We default to Earth standard gravity.
             gravity: Vec3::new(0.0, -9.81, 0.0),
             lighting: LightingSettings::default(),
             sky: SkySettings::default(),
@@ -153,6 +191,7 @@ impl World {
             screen_locked: true,
             render_revision: 1,
             render_dirty_cells: std::cell::RefCell::new(HashMap::new()),
+            spatial_index: WorldSpatialIndex::default(),
         }
     }
 
@@ -178,6 +217,96 @@ impl World {
 
     pub fn drain_render_dirty_cells(&self) -> HashMap<WorldCoord, DirtyReason> {
         std::mem::take(&mut *self.render_dirty_cells.borrow_mut())
+    }
+
+    pub fn update_spatial_index_at(&mut self, coord: WorldCoord) {
+        if let Some(cell) = self.get_effective_cell(coord) {
+            let active = cell.visible && cell.cell_type != CellType::Empty;
+            let solid = active && self.is_cell_solid(coord);
+            self.spatial_index.update_cell(coord, active, solid);
+        } else {
+            self.spatial_index.update_cell(coord, false, false);
+        }
+    }
+
+    pub fn rebuild_spatial_index(&mut self) {
+        self.spatial_index.clear();
+
+        let coords: Vec<WorldCoord> = self.cells.keys().copied().collect();
+        for coord in coords {
+            self.update_spatial_index_at(coord);
+        }
+
+        let runtime_coords: Vec<WorldCoord> = self.runtime_id_to_coord.values().copied().collect();
+        for coord in runtime_coords {
+            self.update_spatial_index_at(coord);
+        }
+    }
+
+    pub fn iter_active_chunks(&self) -> impl Iterator<Item = ChunkCoord> + '_ {
+        self.spatial_index.chunks.keys().copied()
+    }
+
+    pub fn get_active_coords_in_chunk(
+        &self,
+        chunk_coord: ChunkCoord,
+    ) -> Option<&HashSet<WorldCoord>> {
+        self.spatial_index
+            .chunks
+            .get(&chunk_coord)
+            .map(|c| &c.active_coords)
+    }
+
+    pub fn get_solid_coords_in_chunk(
+        &self,
+        chunk_coord: ChunkCoord,
+    ) -> Option<&HashSet<WorldCoord>> {
+        self.spatial_index
+            .chunks
+            .get(&chunk_coord)
+            .map(|c| &c.solid_coords)
+    }
+
+    pub fn query_solid_coords_in_aabb(
+        &self,
+        min_coord: WorldCoord,
+        max_coord: WorldCoord,
+    ) -> Vec<(WorldCoord, Vec3)> {
+        let min_chunk = ChunkCoord::from_world_coord(min_coord);
+        let max_chunk = ChunkCoord::from_world_coord(max_coord);
+
+        let mut results = Vec::new();
+
+        for cx in min_chunk.x..=max_chunk.x {
+            for cy in min_chunk.y..=max_chunk.y {
+                for cz in min_chunk.z..=max_chunk.z {
+                    let chunk_coord = ChunkCoord::new(cx, cy, cz);
+                    if let Some(solid_coords) = self
+                        .spatial_index
+                        .chunks
+                        .get(&chunk_coord)
+                        .map(|c| &c.solid_coords)
+                    {
+                        for &coord in solid_coords {
+                            if coord.x >= min_coord.x
+                                && coord.x <= max_coord.x
+                                && coord.y >= min_coord.y
+                                && coord.y <= max_coord.y
+                                && coord.z >= min_coord.z
+                                && coord.z <= max_coord.z
+                            {
+                                let offset = self.get_visual_offset(coord);
+                                let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32)
+                                    + offset;
+                                results.push((coord, pos));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        results
     }
 
     pub fn get(&self, coord: WorldCoord) -> Option<&Cell> {
@@ -256,6 +385,7 @@ impl World {
         if let Some(id) = id {
             self.runtime_state.entry(id).or_default().visible = Some(visible);
         }
+        self.update_spatial_index_at(coord);
     }
 
     // --- Audio Runtime Queries & Overrides ---
@@ -414,6 +544,7 @@ impl World {
             self.runtime_state.entry(id).or_default().solid = Some(solid);
             self.mark_physics_dirty(id);
         }
+        self.update_spatial_index_at(coord);
     }
 
     /// Returns whether a cell is effectively anchored.
@@ -565,23 +696,27 @@ impl World {
             return Err("Not a runtime cell".to_string());
         }
 
-        if let Some(old_coord) = self.runtime_id_to_coord.remove(&id) {
+        let old_coord_opt = self.runtime_id_to_coord.remove(&id);
+        if let Some(old_coord) = old_coord_opt {
             self.coord_to_runtime_id.remove(&old_coord);
             self.mark_physics_dirty(id); // Dirty old position
             self.mark_render_dirty(old_coord, DirtyReason::Geometry);
+            self.update_spatial_index_at(old_coord);
         }
 
         self.runtime_id_to_coord.insert(id, new_coord);
         self.coord_to_runtime_id.insert(new_coord, id);
         self.mark_physics_dirty(id); // Dirty new position
         self.mark_render_dirty(new_coord, DirtyReason::Geometry);
+        self.update_spatial_index_at(new_coord);
 
         Ok(())
     }
 
     pub fn delete_cell_runtime(&mut self, id: u64) {
         self.bump_render_revision();
-        if let Some(coord) = self.resolve_cell_id(id) {
+        let coord_opt = self.resolve_cell_id(id);
+        if let Some(coord) = coord_opt {
             self.mark_render_dirty(coord, DirtyReason::Geometry);
         }
         if self.runtime_cells.contains_key(&id) {
@@ -594,6 +729,9 @@ impl World {
         } else if self.id_to_coord.contains_key(&id) {
             self.runtime_state.entry(id).or_default().is_deleted = true;
             self.mark_physics_dirty(id);
+        }
+        if let Some(coord) = coord_opt {
+            self.update_spatial_index_at(coord);
         }
     }
 
@@ -668,19 +806,21 @@ impl World {
         self.runtime_cells.clear();
         self.runtime_id_to_coord.clear();
         self.coord_to_runtime_id.clear();
+        self.rebuild_spatial_index();
     }
 
     pub fn set_cell(&mut self, coord: WorldCoord, cell_type: CellType) -> u64 {
         self.bump_render_revision();
         self.mark_render_dirty(coord, DirtyReason::Geometry);
-        if cell_type == CellType::Empty {
+        let id = if cell_type == CellType::Empty {
             if let Some(cell) = self.cells.remove(&coord) {
                 self.id_to_coord.remove(&cell.id);
                 self.mark_physics_dirty(cell.id);
                 self.runtime_state.remove(&cell.id);
-                return cell.id;
+                cell.id
+            } else {
+                0
             }
-            0
         } else {
             // Default properties for a new cell.
             let mut cell = match cell_type {
@@ -701,7 +841,9 @@ impl World {
             self.mark_physics_dirty(id);
             self.cells.insert(coord, cell);
             id
-        }
+        };
+        self.update_spatial_index_at(coord);
+        id
     }
 
     /// Internal helper to update the ID index when an ID is changed manually (e.g. during loading).
@@ -720,6 +862,7 @@ impl World {
         for (coord, cell) in &self.cells {
             self.id_to_coord.insert(cell.id, *coord);
         }
+        self.rebuild_spatial_index();
     }
 
     pub(crate) fn generate_unique_id(&mut self, coord: WorldCoord, cell_type: CellType) -> u64 {

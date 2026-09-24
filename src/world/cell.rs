@@ -23,6 +23,51 @@ pub enum CellType {
     AudioEmitter,
 }
 
+pub const CHUNK_SIZE: i32 = 16;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ChunkCoord {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+}
+
+impl ChunkCoord {
+    pub fn new(x: i32, y: i32, z: i32) -> Self {
+        Self { x, y, z }
+    }
+
+    pub fn from_world_coord(coord: crate::world::WorldCoord) -> Self {
+        Self {
+            x: coord.x.div_euclid(CHUNK_SIZE),
+            y: coord.y.div_euclid(CHUNK_SIZE),
+            z: coord.z.div_euclid(CHUNK_SIZE),
+        }
+    }
+
+    pub fn local_offset(coord: crate::world::WorldCoord) -> (i32, i32, i32) {
+        (
+            coord.x.rem_euclid(CHUNK_SIZE),
+            coord.y.rem_euclid(CHUNK_SIZE),
+            coord.z.rem_euclid(CHUNK_SIZE),
+        )
+    }
+
+    pub fn world_origin(&self) -> Vec3 {
+        Vec3::new(
+            (self.x * CHUNK_SIZE) as f32,
+            (self.y * CHUNK_SIZE) as f32,
+            (self.z * CHUNK_SIZE) as f32,
+        )
+    }
+
+    pub fn aabb_min_max(&self) -> (Vec3, Vec3) {
+        let min = self.world_origin();
+        let max = min + Vec3::splat(CHUNK_SIZE as f32);
+        (min, max)
+    }
+}
+
 impl CellType {
     pub fn is_entity(self) -> bool {
         matches!(self, Self::Player | Self::NPC)

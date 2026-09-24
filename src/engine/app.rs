@@ -2611,16 +2611,9 @@ impl App {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
 
-                let (rect, _) = ui.allocate_exact_size(
-                    egui::vec2(24.0, 2.0),
-                    egui::Sense::hover(),
-                );
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(24.0, 2.0), egui::Sense::hover());
 
-                ui.painter().rect_filled(
-                    rect,
-                    0.0,
-                    COLOR_ACCENT_ORANGE,
-                );
+                ui.painter().rect_filled(rect, 0.0, COLOR_ACCENT_ORANGE);
 
                 ui.label(
                     RichText::new("AEOENGINE")
@@ -2645,12 +2638,7 @@ impl App {
                     .size(40.0),
             );
 
-            ui.label(
-                RichText::new("BUILD")
-                    .strong()
-                    .color(COLOR_TEXT)
-                    .size(40.0),
-            );
+            ui.label(RichText::new("BUILD").strong().color(COLOR_TEXT).size(40.0));
 
             ui.label(
                 RichText::new("PLAY")

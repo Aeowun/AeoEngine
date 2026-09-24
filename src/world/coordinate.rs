@@ -9,6 +9,14 @@ impl WorldCoord {
     pub fn new(x: i32, y: i32, z: i32) -> Self {
         Self { x, y, z }
     }
+
+    pub fn from_vec3(pos: glam::Vec3) -> Self {
+        Self::new(
+            pos.x.floor() as i32,
+            pos.y.floor() as i32,
+            pos.z.floor() as i32,
+        )
+    }
 }
 
 impl From<(i32, i32, i32)> for WorldCoord {

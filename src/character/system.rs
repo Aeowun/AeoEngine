@@ -874,12 +874,17 @@ impl CharacterSystem {
         previous_position: Vec3,
     ) {
         let radius = character.collision.radius;
-
         let height = character.collision.height;
 
         character.movement.is_grounded = false;
 
-        for (cell_id, v_min) in &physics_world.static_colliders {
+        let min_pos = character.transform.position - Vec3::new(radius + 1.0, 0.5, radius + 1.0);
+        let max_pos =
+            character.transform.position + Vec3::new(radius + 1.0, height + 1.0, radius + 1.0);
+
+        let candidates = physics_world.query_static_colliders_in_aabb(min_pos, max_pos);
+
+        for (cell_id, v_min) in &candidates {
             let v_max = *v_min + Vec3::ONE;
 
             let overlap_x = (character.transform.position.x + radius).min(v_max.x)

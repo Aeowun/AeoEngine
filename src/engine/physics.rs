@@ -1,8 +1,6 @@
-use crate::world::CellType;
-use crate::world::World;
-use crate::world::WorldCoord;
+use crate::world::{CellType, ChunkCoord, World, WorldCoord};
 use glam::Vec3;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 // 60Hz fixed timestep keeps simulation stable and deterministic regardless of frame rate.
 pub const SIMULATION_DT: f32 = 1.0 / 60.0;
@@ -163,6 +161,7 @@ pub struct PhysicsWorld {
     // Static colliders are blocks that are solid and anchored.
     // They are stored with their effective runtime position.
     pub static_colliders: Vec<(u64, Vec3)>,
+    pub static_colliders_by_chunk: HashMap<ChunkCoord, Vec<(u64, Vec3)>>,
 
     id_gen: PhysicsIdGenerator,
 
@@ -175,9 +174,55 @@ impl PhysicsWorld {
         Self {
             bodies: Vec::new(),
             static_colliders: Vec::new(),
+            static_colliders_by_chunk: HashMap::new(),
             id_gen: PhysicsIdGenerator::new(),
             step_count: 0,
         }
+    }
+
+    pub fn rebuild_static_chunk_index(&mut self) {
+        self.static_colliders_by_chunk.clear();
+        for &(cell_id, pos) in &self.static_colliders {
+            let coord = WorldCoord::from_vec3(pos);
+            let chunk_coord = ChunkCoord::from_world_coord(coord);
+            self.static_colliders_by_chunk
+                .entry(chunk_coord)
+                .or_default()
+                .push((cell_id, pos));
+        }
+    }
+
+    pub fn query_static_colliders_in_aabb(&self, min_pos: Vec3, max_pos: Vec3) -> Vec<(u64, Vec3)> {
+        let min_coord = WorldCoord::from_vec3(min_pos);
+        let max_coord = WorldCoord::from_vec3(max_pos);
+
+        let min_chunk = ChunkCoord::from_world_coord(min_coord);
+        let max_chunk = ChunkCoord::from_world_coord(max_coord);
+
+        let mut results = Vec::new();
+
+        for cx in min_chunk.x..=max_chunk.x {
+            for cy in min_chunk.y..=max_chunk.y {
+                for cz in min_chunk.z..=max_chunk.z {
+                    let chunk_coord = ChunkCoord::new(cx, cy, cz);
+                    if let Some(list) = self.static_colliders_by_chunk.get(&chunk_coord) {
+                        for &(id, pos) in list {
+                            if pos.x >= min_pos.x - 1.0
+                                && pos.x <= max_pos.x + 1.0
+                                && pos.y >= min_pos.y - 1.0
+                                && pos.y <= max_pos.y + 1.0
+                                && pos.z >= min_pos.z - 1.0
+                                && pos.z <= max_pos.z + 1.0
+                            {
+                                results.push((id, pos));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        results
     }
 
     // World gravity changes velocity but does not decide where the body ends up.
@@ -261,7 +306,12 @@ impl PhysicsWorld {
                 let mut best_collision: Option<(Vec3, f32)> = None;
                 let mut min_overlap = f32::MAX;
 
-                for (_cell_id, v_min) in &self.static_colliders {
+                let candidates = self.query_static_colliders_in_aabb(
+                    b_min - Vec3::splat(0.5),
+                    b_max + Vec3::splat(0.5),
+                );
+
+                for (_cell_id, v_min) in &candidates {
                     let v_max = v_min + Vec3::ONE;
                     let v_center = v_min + Vec3::new(0.5, 0.5, 0.5);
 
@@ -577,7 +627,8 @@ impl PhysicsWorld {
         let epsilon = 0.01;
         let test_min = body.min_corner() - normal * epsilon;
         let test_max = body.max_corner() - normal * epsilon;
-        for (_cell_id, v_min) in &self.static_colliders {
+        let candidates = self.query_static_colliders_in_aabb(test_min, test_max);
+        for (_cell_id, v_min) in &candidates {
             let v_max = v_min + Vec3::ONE;
             if Self::aabb_overlap_static(test_min, test_max, *v_min, v_max) {
                 return true;
@@ -594,7 +645,8 @@ impl PhysicsWorld {
             }
             let min = body.min_corner();
             let max = body.max_corner();
-            for (_cell_id, v_min) in &self.static_colliders {
+            let candidates = self.query_static_colliders_in_aabb(min, max);
+            for (_cell_id, v_min) in &candidates {
                 let voxel_max = v_min + Vec3::ONE;
                 if Self::aabb_overlap_static(min, max, *v_min, voxel_max) {
                     collisions.push(CollisionRecord {
@@ -657,6 +709,7 @@ impl PhysicsWorld {
                 }
             }
         }
+        self.rebuild_static_chunk_index();
         println!(
             "Physics: Registered {} dynamic bodies and {} static colliders.",
             self.bodies.len(),
@@ -666,6 +719,7 @@ impl PhysicsWorld {
 
     pub fn add_static_collider(&mut self, cell_id: u64, position: Vec3) {
         self.static_colliders.push((cell_id, position));
+        self.rebuild_static_chunk_index();
     }
 
     /// Reconciles the physics simulation state with the World's effective state
@@ -749,6 +803,8 @@ impl PhysicsWorld {
                 body.color_rgb = world.get_effective_color(coord);
             }
         }
+
+        self.rebuild_static_chunk_index();
     }
 }
 
