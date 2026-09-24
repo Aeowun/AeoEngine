@@ -72,6 +72,22 @@ pub trait EngineHost {
     fn move_runtime_cell(&mut self, id: u64, x: i32, y: i32, z: i32) -> Result<(), String>;
     fn delete_cell(&mut self, id: u64) -> Result<(), String>;
 
+    // Runtime NPC / Character spawning
+    fn spawn_character(&mut self, _entity_name: &str, _position: Vec3) -> Result<u64, String> {
+        Err("spawn_character is not supported on this host".to_string())
+    }
+    fn is_entity_declaration_valid(&self, _entity_name: &str) -> bool {
+        false
+    }
+    fn set_valid_entity_declarations(
+        &mut self,
+        _decls: std::sync::Arc<std::collections::HashSet<String>>,
+    ) {
+    }
+    fn drain_pending_spawns(&mut self) -> Vec<(String, u64)> {
+        Vec::new()
+    }
+
     // Runtime UI support
     fn create_ui_element(&mut self, _element_type: &str) -> Result<u64, String> {
         Err("Runtime UI is not supported by this host".to_string())
@@ -292,6 +308,32 @@ pub fn call_host_function(
             }
         }
 
+        "spawn" => {
+            if arguments.len() != 2 {
+                return Err("spawn expects 2 arguments: (entity_name, position)".to_string());
+            }
+
+            let entity_name = arguments[0].as_string()?;
+            let position_basket = arguments[1].as_basket()?;
+            let borrowed = position_basket.borrow();
+
+            if borrowed.elements.len() != 3 {
+                return Err("position must be a basket of 3 numbers [x, y, z]".to_string());
+            }
+
+            let x = borrowed.elements[0].as_number()? as f32;
+            let y = borrowed.elements[1].as_number()? as f32;
+            let z = borrowed.elements[2].as_number()? as f32;
+            let position = Vec3::new(x, y, z);
+
+            let entity_id = context.engine.spawn_character(entity_name, position)?;
+
+            Ok(Some(Value::Handle {
+                kind: HandleKind::Entity,
+                id: entity_id,
+            }))
+        }
+
         "get_light" => {
             if arguments.len() != 3 {
                 return Err("get_light expects exactly 3 arguments (x, y, z)".to_string());
@@ -475,6 +517,7 @@ pub fn resolve_host_member_property(
 
     match handle_kind {
         HandleKind::Entity => match property_name {
+            "id" => Ok(Some(Value::Number(handle_id as f64))),
             "name" => {
                 if let Some(name) = context
                     .engine

@@ -721,7 +721,6 @@
 
 ---
 
-
 ## 0.7.4 — Current Unreleased
 
 ### Added
@@ -734,16 +733,23 @@
 * Transactional Grab / Drag in Select Mode. Click and hold an already-selected cell to drag the entire multi-selection as a group. Uses a 5-pixel drag threshold to distinguish clicks from moves.
 * Additive Multi-Selection (`Ctrl + Click` / `Ctrl + Drag`). Holding `Ctrl` while clicking adds/toggles individual blocks. Holding `Ctrl` while dragging out a selection box adds all blocks in the range to the active selection group without clearing existing selections.
 * Translucent Grab Ghost Preview. Renders translucent preview blocks and outlines at target positions during Grab mode, displaying red highlight indicators if destination coordinates collide with unrelated cells.
+* Generic Runtime Entity Character Controls. AeoScript entities can now expose position, velocity, facing, grounded state, animation, health, maximum health, and alive state, along with jump, damage, heal, destroy, and pathfinding operations.
+* Scripted Runtime Character Spawning. AeoScript can spawn generic runtime character entities and control them through the generic Entity API.
+* Scripted Enemy Orchestration. Enemy behavior can now be organized across multiple AeoScript files using shared events for spawning, AI, combat, damage, death, and respawning.
 
 ### Changed
 
 * Static voxel rendering now uses persistent spatially chunked meshes with texture batching and selective chunk rebuilding.
 * Multi-Cell Copy Pivot Alignment. Copying a multi-selection defaults to the bottom-most cell ($\min(Y)$, $\min(X)$, $\min(Z)$) as the pivot, ensuring pasted structures sit cleanly on top of target surfaces without floor collisions.
 * History & Undo/Redo. History now snapshots both `world.cells` and `world.script_bindings` together, keeping script binding associations synchronized on undo/redo.
+* Character gameplay responsibilities now separate engine-owned movement, gravity, collision, and grounded state from script-owned movement decisions and behavior.
+* AeoScript gameplay control now favors generic Entity APIs rather than specialized NPC-specific namespaces.
 
 ### Fixed
 
 * Fixed a long-standing issue where block shadows could become detached from their source blocks as the camera moved.
+* Fixed runtime Entity method dispatch for scripted character controls.
+* Fixed script event queuing and dispatch for runtime gameplay events.
 
 ### Notes
 
@@ -753,23 +759,21 @@
 >
 > The editor clipboard is strictly session-based and is automatically invalidated when clearing or switching projects to prevent cross-project state leakage.
 >
+> AeoScript enemy behavior is intentionally composed from small scripts communicating through events rather than introducing a large dedicated enemy API.
+>
 > A known rendering issue affecting vertical voxel faces is still under investigation.
 
 ---
 
-| Verification                |                                                       Result |
-| --------------------------- | -----------------------------------------------------------: |
-| Rust tests                  |                                               **419 passed** |
-| Rust test failures          |                                                        **0** |
-| In-game integration testing | Runtime UI, scripting, gameplay, and runtime-system coverage |
-
-### Planned
-
-* Character System: continue moving character-specific behavior toward the project-owned, script-defined model used by controllers and cameras
-* Voxel Rendering: reduce unnecessary voxel geometry by avoiding faces that are completely hidden by neighboring blocks
+| Verification                |                                                                  Result |
+| --------------------------- | ----------------------------------------------------------------------: |
+| Rust tests                  |                                                          **477 passed** |
+| Rust test failures          |                                                                   **0** |
+| In-game integration testing | Runtime UI, scripting, gameplay, character, and runtime-system coverage |
 
 ---
 
 > **Current release:** `0.7.3`
 > **Development cycle:** `0.7.x`
+
 

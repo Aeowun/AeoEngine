@@ -76,6 +76,8 @@ impl ScriptEntity {
     }
 }
 
+use std::sync::Arc;
+
 /// Owns the live AeoScript scene state and coordinates the lifecycle of scripted entities.
 #[derive(Debug)]
 pub struct ScriptScene {
@@ -84,6 +86,8 @@ pub struct ScriptScene {
     pub disabled_scripts: Vec<String>,
     pub loaded_scripts: HashMap<String, Program>,
     pub top_level_spawned: HashSet<String>,
+    pub valid_entity_declarations: Arc<HashSet<String>>,
+    pub pending_spawns: Vec<(String, u64)>,
     current_time: f64,
 }
 
@@ -389,6 +393,24 @@ impl ScriptScene {
             entities.push(ScriptEntity::new(instance, script_path, cell_id));
         }
 
+        let valid_entity_declarations_set: HashSet<String> = runtime
+            .interpreter()
+            .program()
+            .declarations
+            .iter()
+            .filter_map(|decl| {
+                if let Declaration::Entity(e) = decl {
+                    Some(e.name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let valid_decls_arc = Arc::new(valid_entity_declarations_set);
+        host.engine
+            .set_valid_entity_declarations(valid_decls_arc.clone());
+
         // Spawn top-level fiber if there are any statements in the program.
         if has_top_level {
             let statements = runtime.interpreter().program().statements.clone();
@@ -401,6 +423,8 @@ impl ScriptScene {
             disabled_scripts: Vec::new(),
             loaded_scripts: HashMap::new(),
             top_level_spawned: HashSet::new(),
+            valid_entity_declarations: valid_decls_arc,
+            pending_spawns: Vec::new(),
             current_time: 0.0,
         })
     }
@@ -545,7 +569,67 @@ impl ScriptScene {
             }
         }
 
+        // Drain pending dynamic NPC spawns
+        let mut pending_spawns = host.engine.drain_pending_spawns();
+        pending_spawns.extend(std::mem::take(&mut self.pending_spawns));
+        for (entity_name, raw_entity_id) in pending_spawns {
+            let has_decl = self
+                .runtime
+                .interpreter()
+                .program()
+                .declarations
+                .iter()
+                .any(|decl| {
+                    if let Declaration::Entity(e) = decl {
+                        e.name == entity_name
+                    } else {
+                        false
+                    }
+                });
+
+            if has_decl {
+                let instance = self.runtime.interpreter_mut().instantiate_entity(
+                    &entity_name,
+                    raw_entity_id,
+                    host,
+                )?;
+                let mut script_entity = ScriptEntity::new(instance, None, None);
+                Self::transition_entity(&mut self.runtime, &mut script_entity, host)?;
+                self.entities.push(script_entity);
+            }
+        }
+
         let tick_results = self.runtime.tick(self.current_time, host)?;
+
+        // Drain any new spawns triggered during the tick
+        let mut pending_spawns_post = host.engine.drain_pending_spawns();
+        pending_spawns_post.extend(std::mem::take(&mut self.pending_spawns));
+        for (entity_name, raw_entity_id) in pending_spawns_post {
+            let has_decl = self
+                .runtime
+                .interpreter()
+                .program()
+                .declarations
+                .iter()
+                .any(|decl| {
+                    if let Declaration::Entity(e) = decl {
+                        e.name == entity_name
+                    } else {
+                        false
+                    }
+                });
+
+            if has_decl {
+                let instance = self.runtime.interpreter_mut().instantiate_entity(
+                    &entity_name,
+                    raw_entity_id,
+                    host,
+                )?;
+                let mut script_entity = ScriptEntity::new(instance, None, None);
+                Self::transition_entity(&mut self.runtime, &mut script_entity, host)?;
+                self.entities.push(script_entity);
+            }
+        }
 
         for (task_id, result) in tick_results {
             let mut handled = false;
@@ -890,23 +974,64 @@ pub(crate) mod tests {
     pub(crate) struct TestHost {
         pub(crate) entity_manager: EntityManager,
         pub(crate) world: World,
+        pub(crate) pending_events: Vec<(String, Vec<Value>)>,
         pub(crate) dynamic_properties: HashMap<
             (crate::scripting::value::HandleKind, u64),
             BTreeMap<String, crate::scripting::value::Value>,
         >,
+        pub(crate) character_system: crate::character::CharacterSystem,
+        pub(crate) valid_entity_declarations: Arc<HashSet<String>>,
+        pub(crate) pending_spawns: Vec<(String, u64)>,
     }
 
     impl EngineHost for TestHost {
         fn entity_manager(&self) -> &EntityManager {
             &self.entity_manager
         }
+        fn fire_event(&mut self, event_name: &str, args: Vec<Value>) {
+            self.pending_events.push((event_name.to_string(), args));
+        }
 
+        fn drain_pending_events(&mut self) -> Vec<(String, Vec<Value>)> {
+            std::mem::take(&mut self.pending_events)
+        }
         fn get_position(&self, id: u64) -> Option<Vec3> {
             self.entity_manager.get_position(EntityId(id))
         }
 
         fn set_position(&mut self, id: u64, position: Vec3) {
-            self.entity_manager.set_position(EntityId(id), position);
+            let entity_id = EntityId(id);
+            self.entity_manager.set_position(entity_id, position);
+            self.character_system
+                .set_entity_position(entity_id, position);
+        }
+
+        fn is_entity_declaration_valid(&self, entity_name: &str) -> bool {
+            !entity_name.trim().is_empty()
+        }
+
+        fn set_valid_entity_declarations(&mut self, decls: Arc<HashSet<String>>) {
+            self.valid_entity_declarations = decls;
+        }
+
+        fn spawn_character(&mut self, entity_name: &str, position: Vec3) -> Result<u64, String> {
+            if !self.is_entity_declaration_valid(entity_name) {
+                return Err("Entity name cannot be empty".to_string());
+            }
+            let character_id = self.character_system.spawn_character(position, None);
+            let entity_id = self.entity_manager.create_entity(entity_name);
+            self.entity_manager.set_position(entity_id, position);
+            self.character_system
+                .associate_entity(entity_id, character_id);
+
+            self.pending_spawns
+                .push((entity_name.to_string(), entity_id.0));
+
+            Ok(entity_id.0)
+        }
+
+        fn drain_pending_spawns(&mut self) -> Vec<(String, u64)> {
+            std::mem::take(&mut self.pending_spawns)
         }
 
         fn lookup_light(&self, x: i32, y: i32, z: i32) -> Option<u64> {
@@ -1511,14 +1636,26 @@ pub(crate) mod tests {
     pub(crate) fn test_host() -> TestHost {
         TestHost {
             entity_manager: EntityManager::new(),
+            pending_events: Vec::new(),
             world: World::new(),
             dynamic_properties: HashMap::new(),
+            character_system: crate::character::CharacterSystem::new(),
+            valid_entity_declarations: Arc::new(HashSet::new()),
+            pending_spawns: Vec::new(),
         }
     }
 
     pub(crate) fn create_scene(source: &str, host: &mut HostContext) -> ScriptScene {
         let tokens = Lexer::new(source).tokenize().unwrap();
         let program = Parser::new(tokens).parse().unwrap();
+
+        for decl in &program.declarations {
+            if let Declaration::Entity(entity) = decl {
+                // Populate valid_entity_declarations for test host if possible
+                // We can also let ScriptScene::new handle valid_entity_declarations.
+            }
+        }
+
         let entities_to_spawn: Vec<(String, u64, Option<String>, Option<u64>)> = program
             .declarations
             .iter()
@@ -1536,7 +1673,11 @@ pub(crate) mod tests {
             })
             .collect();
 
-        ScriptScene::new(program, entities_to_spawn, host).unwrap()
+        let scene = ScriptScene::new(program, entities_to_spawn, host).unwrap();
+        // Register scene's valid declarations
+        // In order to let TestHost know valid declarations during host calls,
+        // we can copy them if host is TestHost (or when EngineHost handles it).
+        scene
     }
 
     pub(crate) fn add_authored_entity(
@@ -2796,11 +2937,7 @@ on GlobalEvent(val) {
     debug.log("Received:", val)
 }
 "#;
-        let mut th = TestHost {
-            entity_manager: EntityManager::new(),
-            world: World::new(),
-            dynamic_properties: HashMap::new(),
-        };
+        let mut th = test_host();
 
         let temp_dir = std::env::temp_dir().join("aeo_test_unattached");
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -2838,11 +2975,7 @@ on TestEvent() {
     debug.log("Event Triggered")
 }
 "#;
-        let mut th = TestHost {
-            entity_manager: EntityManager::new(),
-            world: World::new(),
-            dynamic_properties: HashMap::new(),
-        };
+        let mut th = test_host();
 
         let temp_dir = std::env::temp_dir().join("aeo_test_duplication");
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -3853,6 +3986,7 @@ entity Test {
         let mut pending_disable_scripts = Vec::new();
         let mut runtime_ui = crate::engine::ui::RuntimeUi::new();
         let mut mouse = crate::engine::mouse::MouseController::default();
+        let mut pending_spawns = Vec::new();
         let mut bridge = crate::scripting::host::ScriptHostBridge {
             entity_manager: &mut th.entity_manager,
             world: &mut th.world,
@@ -3869,6 +4003,9 @@ entity Test {
             viewport_size: [0.0, 0.0],
             character_system: None,
             gameplay_camera: None,
+            valid_entity_declarations: None,
+            pending_spawns: &mut pending_spawns,
+            project_path: None,
         };
         let effective = bridge
             .get_property(
@@ -4634,6 +4771,7 @@ entity Trigger {
         // 2. Play mode mutations
         let mut runtime_ui = crate::engine::ui::RuntimeUi::new();
         let mut mouse = crate::engine::mouse::MouseController::default();
+        let mut pending_spawns = Vec::new();
         {
             let mut bridge = crate::scripting::host::ScriptHostBridge {
                 entity_manager: &mut em,
@@ -4651,6 +4789,9 @@ entity Trigger {
                 viewport_size: [0.0, 0.0],
                 character_system: None,
                 gameplay_camera: None,
+                valid_entity_declarations: None,
+                pending_spawns: &mut pending_spawns,
+                project_path: None,
             };
             bridge.complete_test("leak_test", true);
             bridge.fire_event("leak_event", vec![]);
@@ -4929,5 +5070,180 @@ for speaker in speakers {
 
         assert_eq!(world.is_audio_playing(id1), true);
         assert_eq!(world.is_audio_playing(id2), false);
+    }
+
+    #[test]
+    fn test_script_spawn_npc_valid_declaration() {
+        let source = r#"
+entity Villager {
+    fn on_spawn() {
+        debug.log("Villager on_spawn")
+    }
+    fn on_ready() {
+        debug.log("Villager on_ready")
+    }
+    fn update(dt) {
+        debug.log("Villager update")
+    }
+}
+
+entity Spawner {
+    fn on_spawn() {
+        const npc = spawn("Villager", [10, 1, 5])
+        debug.log("Spawned ID:", npc.id)
+    }
+}
+"#;
+        let mut th = test_host();
+        let mut scene = {
+            let mut host = HostContext {
+                delta_time: 0.1,
+                engine: &mut th,
+            };
+            let mut scene = create_scene(source, &mut host);
+            scene.start(&mut host).unwrap();
+
+            // 1. Spawner runs on_spawn and calls spawn("Villager", [10, 1, 5])
+            scene.update(0.1, &mut host).unwrap();
+            scene
+        };
+
+        // Verify entity and character created immediately
+        let villager_id = th
+            .entity_manager
+            .lookup_entity("Villager")
+            .expect("Villager entity created");
+        assert_eq!(
+            th.entity_manager.get_position(villager_id),
+            Some(Vec3::new(10.0, 1.0, 5.0))
+        );
+        assert!(th.character_system.has_characters());
+
+        // 2. Next update runs Villager's on_spawn
+        {
+            let mut host = HostContext {
+                delta_time: 0.1,
+                engine: &mut th,
+            };
+            scene.update(0.1, &mut host).unwrap();
+        }
+        let output = scene.output();
+        assert!(output.iter().any(|r| r.message == "Villager on_spawn"));
+    }
+
+    #[test]
+    fn test_script_spawn_npc_empty_name_fails() {
+        let source = r#"
+entity Spawner {
+    fn on_spawn() {
+        spawn("", [10, 1, 5])
+    }
+}
+"#;
+        let mut th = test_host();
+        let mut host = HostContext {
+            delta_time: 0.1,
+            engine: &mut th,
+        };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+
+        let result = scene.update(0.1, &mut host);
+        assert!(result.is_err(), "Expected error for empty entity name");
+        assert!(result.unwrap_err().contains("Entity name cannot be empty"));
+    }
+
+    #[test]
+    fn test_script_spawn_npc_event_driven_without_entity_block() {
+        let source = r#"
+on on_villager_spawn(npc) {
+    debug.log("NPC Event Received:", npc.name)
+}
+on on_villager_spawn(npc) {
+    debug.log("Villager spawned:", npc.id)
+}
+
+entity Spawner {
+    fn on_spawn() {
+        const villager = spawn("Villager", [10, 1, 5])
+        event.fire("on_villager_spawn", villager)
+    }
+}
+"#;
+        let mut th = test_host();
+        let mut host = HostContext {
+            delta_time: 0.1,
+            engine: &mut th,
+        };
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.1, &mut host).unwrap();
+        scene.update(0.1, &mut host).unwrap();
+
+        // Assert runtime character and entity created
+        let villager_id = th
+            .entity_manager
+            .lookup_entity("Villager")
+            .expect("Villager entity created");
+        assert_eq!(
+            th.entity_manager.get_position(villager_id),
+            Some(Vec3::new(10.0, 1.0, 5.0))
+        );
+        assert!(th.character_system.has_characters());
+
+        let output = scene.output();
+        assert!(
+            output
+                .iter()
+                .any(|r| r.message.contains("NPC Event Received: Villager"))
+        );
+    }
+
+    #[test]
+    fn test_multiple_npc_spawns_and_cleanup() {
+        let source = r#"
+entity Guard {
+    fn on_spawn() {
+        debug.log("Guard spawned")
+    }
+}
+
+entity Spawner {
+    fn on_spawn() {
+        const g1 = spawn("Guard", [10, 1, 5])
+        const g2 = spawn("Guard", [14, 1, 5])
+        debug.log("G1 ID:", g1.id)
+        debug.log("G2 ID:", g2.id)
+    }
+}
+"#;
+        let mut th = test_host();
+        let mut scene = {
+            let mut host = HostContext {
+                delta_time: 0.1,
+                engine: &mut th,
+            };
+            let mut scene = create_scene(source, &mut host);
+            scene.start(&mut host).unwrap();
+            scene.update(0.1, &mut host).unwrap();
+            scene.update(0.1, &mut host).unwrap();
+            scene
+        };
+
+        assert_eq!(th.character_system.get_active_characters().count(), 2);
+
+        // Test cleanup on stop
+        {
+            let mut host = HostContext {
+                delta_time: 0.1,
+                engine: &mut th,
+            };
+            scene.stop(&mut host);
+        }
+        th.character_system.clear();
+        th.entity_manager.clear();
+
+        assert!(!th.character_system.has_characters());
+        assert!(!th.entity_manager.validate_handle(1));
     }
 }

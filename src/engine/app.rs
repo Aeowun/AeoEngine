@@ -106,6 +106,7 @@ pub struct App {
 
     pub script_pending_enable: Vec<String>,
     pub script_pending_disable: Vec<String>,
+    pub script_pending_spawns: Vec<(String, u64)>,
 
     pub show_exit_confirmation_dialog: bool,
     pub exit_requested: bool,
@@ -191,6 +192,7 @@ impl App {
             script_test_results: BTreeMap::new(),
             script_pending_enable: Vec::new(),
             script_pending_disable: Vec::new(),
+            script_pending_spawns: Vec::new(),
 
             authored_disabled_scripts: Vec::new(),
 
@@ -206,27 +208,10 @@ impl App {
         }
     }
 
-    /// Publishes the authoritative CharacterSystem player transform to the
-    /// script-facing Player entity.
-    ///
-    /// This is deliberately one-way.
-    ///
-    /// A position difference NEVER means "teleport".
-    /// Explicit teleports are handled by ScriptHostBridge::set_position().
+    /// Publishes the authoritative CharacterSystem transforms to script-facing entities.
     fn sync_player_entity_from_character(&mut self) {
-        let Some(player_id) = self.entity_manager.lookup_entity("Player") else {
-            return;
-        };
-
-        let Some(position) = self
-            .character_system
-            .get_active_player()
-            .map(|player| player.transform.position)
-        else {
-            return;
-        };
-
-        self.entity_manager.set_position(player_id, position);
+        self.character_system
+            .sync_entity_positions(&mut self.entity_manager);
     }
 
     pub fn on_window_event(
@@ -1237,8 +1222,10 @@ impl App {
 
                 self.start_scripting();
 
-                if let Some(_character_id) = spawned_id {
+                if let Some(character_id) = spawned_id {
                     let entity_id = self.entity_manager.create_entity("Player");
+                    self.character_system
+                        .associate_entity(entity_id, character_id);
 
                     self.sync_player_entity_from_character();
 
@@ -1319,6 +1306,12 @@ impl App {
                         character_system: Some(&mut self.character_system),
 
                         gameplay_camera: Some(&mut self.gameplay_camera),
+
+                        valid_entity_declarations: Some(scene.valid_entity_declarations.clone()),
+
+                        pending_spawns: &mut self.script_pending_spawns,
+
+                        project_path: self.project_manager.current_project.as_deref(),
                     };
 
                     let mut context = HostContext {
@@ -1450,6 +1443,12 @@ impl App {
 
                 let gameplay_camera = &mut self.gameplay_camera;
 
+                let pending_spawns = &mut self.script_pending_spawns;
+
+                let valid_decls = scene_opt
+                    .as_ref()
+                    .map(|s| s.valid_entity_declarations.clone());
+
                 /*
                  * Input requests are edge-triggered per render frame.
                  *
@@ -1499,6 +1498,12 @@ impl App {
                             character_system: Some(character_system),
 
                             gameplay_camera: Some(gameplay_camera),
+
+                            valid_entity_declarations: valid_decls.clone(),
+
+                            pending_spawns,
+
+                            project_path: self.project_manager.current_project.as_deref(),
                         };
 
                         let mut context = HostContext {
@@ -1550,6 +1555,9 @@ impl App {
                             orbit_delta: step_orbit,
                             character_system: Some(character_system),
                             gameplay_camera: Some(gameplay_camera),
+                            valid_entity_declarations: valid_decls.clone(),
+                            pending_spawns,
+                            project_path: self.project_manager.current_project.as_deref(),
                         };
 
                         let mut context = HostContext {
@@ -1618,6 +1626,12 @@ impl App {
                         character_system: Some(&mut self.character_system),
 
                         gameplay_camera: Some(&mut self.gameplay_camera),
+
+                        valid_entity_declarations: Some(scene.valid_entity_declarations.clone()),
+
+                        pending_spawns: &mut self.script_pending_spawns,
+
+                        project_path: self.project_manager.current_project.as_deref(),
                     };
 
                     let mut context = HostContext {
@@ -1803,6 +1817,9 @@ impl App {
                     orbit_delta: [0.0, 0.0],
                     character_system: Some(&mut self.character_system),
                     gameplay_camera: Some(&mut self.gameplay_camera),
+                    valid_entity_declarations: Some(scene.valid_entity_declarations.clone()),
+                    pending_spawns: &mut self.script_pending_spawns,
+                    project_path: self.project_manager.current_project.as_deref(),
                 };
 
                 let mut context = HostContext {
@@ -1900,6 +1917,12 @@ impl App {
                 character_system: Some(&mut self.character_system),
 
                 gameplay_camera: Some(&mut self.gameplay_camera),
+
+                valid_entity_declarations: Some(scene.valid_entity_declarations.clone()),
+
+                pending_spawns: &mut self.script_pending_spawns,
+
+                project_path: self.project_manager.current_project.as_deref(),
             };
 
             let mut context = HostContext {
@@ -1915,6 +1938,7 @@ impl App {
         self.script_test_results.clear();
         self.script_pending_enable.clear();
         self.script_pending_disable.clear();
+        self.script_pending_spawns.clear();
         self.script_dynamic_properties.clear();
 
         self.runtime_ui.clear();
@@ -1959,6 +1983,12 @@ impl App {
                 character_system: Some(&mut self.character_system),
 
                 gameplay_camera: Some(&mut self.gameplay_camera),
+
+                valid_entity_declarations: Some(scene.valid_entity_declarations.clone()),
+
+                pending_spawns: &mut self.script_pending_spawns,
+
+                project_path: self.project_manager.current_project.as_deref(),
             };
 
             let mut context = HostContext {
