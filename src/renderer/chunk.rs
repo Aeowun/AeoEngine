@@ -2,10 +2,8 @@ use glam::{Mat4, Vec3};
 use std::collections::HashMap;
 
 use crate::engine::EditorMode;
-use crate::renderer::mesh::{
-    BLOCK_VERTEX_FLOATS, CubeFace, add_block_quad, upload_block_vertices_3d,
-};
-use crate::world::{CellType, World, WorldCoord};
+use crate::renderer::mesh::{BLOCK_VERTEX_FLOATS, CubeFace, add_block_quad};
+use crate::world::{CellType, DirtyReason, World, WorldCoord};
 
 pub const CHUNK_SIZE: i32 = 16;
 
@@ -431,6 +429,27 @@ impl CameraFrustum {
     }
 }
 
+pub fn expand_dirty_coords_to_chunks(
+    dirty_coords: &HashMap<WorldCoord, DirtyReason>,
+) -> std::collections::HashSet<ChunkCoord> {
+    let mut dirty_chunks = std::collections::HashSet::new();
+
+    for (&coord, &reason) in dirty_coords {
+        let own_chunk = ChunkCoord::from_world_coord(coord);
+        dirty_chunks.insert(own_chunk);
+
+        if reason == DirtyReason::Geometry {
+            for face in &CubeFace::ALL {
+                let neighbor_coord = face.neighbor_coord(coord);
+                let neighbor_chunk = ChunkCoord::from_world_coord(neighbor_coord);
+                dirty_chunks.insert(neighbor_chunk);
+            }
+        }
+    }
+
+    dirty_chunks
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -549,5 +568,89 @@ mod tests {
         let chunk_far_away = ChunkCoord::new(100, 100, 100);
         let (min2, max2) = chunk_far_away.aabb_min_max();
         assert!(!frustum.intersects_aabb(min2, max2));
+    }
+
+    #[test]
+    fn test_dirty_expansion_geometry_reason() {
+        let mut dirty_coords = HashMap::new();
+        let c = WorldCoord::new(0, 0, 0);
+        dirty_coords.insert(c, crate::world::DirtyReason::Geometry);
+
+        let dirty_chunks = expand_dirty_coords_to_chunks(&dirty_coords);
+
+        // Own chunk is (0,0,0)
+        assert!(dirty_chunks.contains(&ChunkCoord::new(0, 0, 0)));
+        // +Y (0,1,0) -> (0,0,0), -Y (0,-1,0) -> (0,-1,0), +Z (0,0,1) -> (0,0,0), -Z (0,0,-1) -> (0,0,-1), -X (-1,0,0) -> (-1,0,0), +X (1,0,0) -> (0,0,0)
+        assert!(dirty_chunks.contains(&ChunkCoord::new(0, -1, 0)));
+        assert!(dirty_chunks.contains(&ChunkCoord::new(0, 0, -1)));
+        assert!(dirty_chunks.contains(&ChunkCoord::new(-1, 0, 0)));
+    }
+
+    #[test]
+    fn test_dirty_expansion_material_reason() {
+        let mut dirty_coords = HashMap::new();
+        let c = WorldCoord::new(0, 0, 0);
+        dirty_coords.insert(c, crate::world::DirtyReason::MaterialOrOffset);
+
+        let dirty_chunks = expand_dirty_coords_to_chunks(&dirty_coords);
+
+        // Material or offset changes invalidate ONLY own chunk
+        assert_eq!(dirty_chunks.len(), 1);
+        assert!(dirty_chunks.contains(&ChunkCoord::new(0, 0, 0)));
+    }
+
+    #[test]
+    fn test_boundary_invalidation_across_chunks() {
+        let mut dirty_coords = HashMap::new();
+        let boundary_c = WorldCoord::new(15, 0, 0); // At edge of Chunk (0,0,0)
+        dirty_coords.insert(boundary_c, crate::world::DirtyReason::Geometry);
+
+        let dirty_chunks = expand_dirty_coords_to_chunks(&dirty_coords);
+
+        // Own chunk is (0,0,0)
+        assert!(dirty_chunks.contains(&ChunkCoord::new(0, 0, 0)));
+        // +X neighbor is (16,0,0) -> Chunk (1,0,0)
+        assert!(dirty_chunks.contains(&ChunkCoord::new(1, 0, 0)));
+    }
+
+    #[test]
+    fn test_runtime_movement_invalidates_old_and_new() {
+        let mut world = World::new();
+        let id = world.create_runtime_cell(CellType::Block);
+        world
+            .move_runtime_cell(id, WorldCoord::new(15, 0, 0))
+            .unwrap();
+
+        // Drain first move
+        let _ = world.drain_render_dirty_cells();
+
+        // Move across chunk boundary
+        world
+            .move_runtime_cell(id, WorldCoord::new(16, 0, 0))
+            .unwrap();
+
+        let dirty_coords = world.drain_render_dirty_cells();
+        let dirty_chunks = expand_dirty_coords_to_chunks(&dirty_coords);
+
+        // Must invalidate both old chunk (0,0,0) and new chunk (1,0,0)
+        assert!(dirty_chunks.contains(&ChunkCoord::new(0, 0, 0)));
+        assert!(dirty_chunks.contains(&ChunkCoord::new(1, 0, 0)));
+    }
+
+    #[test]
+    fn test_multiple_mutations_same_chunk_deduplicate() {
+        let mut dirty_coords = HashMap::new();
+        for x in 0..10 {
+            for y in 0..10 {
+                dirty_coords.insert(
+                    WorldCoord::new(x, y, 0),
+                    crate::world::DirtyReason::Geometry,
+                );
+            }
+        }
+
+        let dirty_chunks = expand_dirty_coords_to_chunks(&dirty_coords);
+        // All coords are in interior or edges of Chunk (0,0,0). Deduplication ensures small chunk set.
+        assert!(dirty_chunks.contains(&ChunkCoord::new(0, 0, 0)));
     }
 }

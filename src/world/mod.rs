@@ -6,4 +6,4 @@ pub mod world;
 
 pub use cell::{AttributeValue, Cell, CellType};
 pub use coordinate::WorldCoord;
-pub use world::World;
+pub use world::{DirtyReason, World};

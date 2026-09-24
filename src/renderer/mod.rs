@@ -286,91 +286,151 @@ impl Renderer {
     }
 
     pub fn update_chunk_cache(&self, world: &World, mode: EditorMode) {
-        let current_rev = world.render_revision();
-        if *self.last_render_revision.borrow() == current_rev
-            && *self.last_render_mode.borrow() == Some(mode)
-        {
+        let dirty_coords = world.drain_render_dirty_cells();
+        let mode_changed = *self.last_render_mode.borrow() != Some(mode);
+
+        if dirty_coords.is_empty() && !mode_changed && !self.chunk_cache.borrow().is_empty() {
             return;
         }
 
         let mut cache = self.chunk_cache.borrow_mut();
 
-        for chunk_mesh in cache.values_mut() {
-            chunk_mesh.free_gl_resources();
-        }
-        cache.clear();
+        if mode_changed || cache.is_empty() {
+            // Mode transition (Editor <-> Play) or initial build: full rebuild of active chunks
+            for chunk_mesh in cache.values_mut() {
+                chunk_mesh.free_gl_resources();
+            }
+            cache.clear();
 
-        let mut chunk_coords_map: HashMap<ChunkCoord, Vec<WorldCoord>> = HashMap::new();
-        for coord in world.active_effective_blocks() {
-            let chunk_coord = ChunkCoord::from_world_coord(coord);
-            chunk_coords_map.entry(chunk_coord).or_default().push(coord);
-        }
-
-        for (chunk_coord, coords) in chunk_coords_map {
-            let cpu_data = build_cpu_chunk_data(world, chunk_coord, &coords, mode);
-
-            let mut main_vao = 0;
-            let mut main_vbo = 0;
-            let mut main_texture_batches = Vec::new();
-
-            let mut combined_main_vertices = Vec::new();
-            let mut current_vertex_offset = 0i32;
-
-            let mut texture_ids: Vec<_> = cpu_data.main_texture_vertices.keys().cloned().collect();
-            texture_ids.sort();
-
-            for tex_id in texture_ids {
-                if let Some(verts) = cpu_data.main_texture_vertices.get(&tex_id) {
-                    if verts.is_empty() {
-                        continue;
-                    }
-                    let count = (verts.len() / self::mesh::BLOCK_VERTEX_FLOATS) as i32;
-                    main_texture_batches.push(TextureBatchRange {
-                        texture_id: tex_id,
-                        start_vertex: current_vertex_offset,
-                        vertex_count: count,
-                    });
-                    combined_main_vertices.extend_from_slice(verts);
-                    current_vertex_offset += count;
-                }
+            let mut chunk_coords_map: HashMap<ChunkCoord, Vec<WorldCoord>> = HashMap::new();
+            for coord in world.active_effective_blocks() {
+                let chunk_coord = ChunkCoord::from_world_coord(coord);
+                chunk_coords_map.entry(chunk_coord).or_default().push(coord);
             }
 
-            if !combined_main_vertices.is_empty() {
-                let (vao, vbo, _) = self::mesh::upload_block_vertices_3d(&combined_main_vertices);
-                main_vao = vao;
-                main_vbo = vbo;
+            for (chunk_coord, coords) in chunk_coords_map {
+                self.rebuild_single_chunk(world, &mut cache, chunk_coord, &coords, mode);
             }
 
-            let mut shadow_vao = 0;
-            let mut shadow_vbo = 0;
-            let mut shadow_vertex_count = 0;
-
-            if !cpu_data.shadow_positions.is_empty() {
-                let (s_vao, s_vbo, count) =
-                    chunk::upload_position_only_vertices(&cpu_data.shadow_positions);
-                shadow_vao = s_vao;
-                shadow_vbo = s_vbo;
-                shadow_vertex_count = count;
-            }
-
-            if main_vao != 0 || shadow_vao != 0 {
-                let chunk_mesh = ChunkMesh {
-                    chunk_coord,
-                    main_vao,
-                    main_vbo,
-                    main_texture_batches,
-                    shadow_vao,
-                    shadow_vbo,
-                    shadow_vertex_count,
-                };
-                cache.insert(chunk_coord, chunk_mesh);
-            }
+            *self.last_render_mode.borrow_mut() = Some(mode);
+            *self.last_render_revision.borrow_mut() = world.render_revision();
+            return;
         }
 
-        *self.last_render_revision.borrow_mut() = current_rev;
-        *self.last_render_mode.borrow_mut() = Some(mode);
+        // Selective Dirty Chunk Rebuilding (Phase 3)
+        let dirty_chunks = chunk::expand_dirty_coords_to_chunks(&dirty_coords);
+
+        for chunk_coord in dirty_chunks {
+            let coords_in_chunk = get_active_coords_in_chunk(world, chunk_coord);
+            self.rebuild_single_chunk(world, &mut cache, chunk_coord, &coords_in_chunk, mode);
+        }
+
+        *self.last_render_revision.borrow_mut() = world.render_revision();
     }
 
+    fn rebuild_single_chunk(
+        &self,
+        world: &World,
+        cache: &mut HashMap<ChunkCoord, ChunkMesh>,
+        chunk_coord: ChunkCoord,
+        coords_in_chunk: &[WorldCoord],
+        mode: EditorMode,
+    ) {
+        let cpu_data = build_cpu_chunk_data(world, chunk_coord, coords_in_chunk, mode);
+
+        let mut main_vao = 0;
+        let mut main_vbo = 0;
+        let mut main_texture_batches = Vec::new();
+
+        let mut combined_main_vertices = Vec::new();
+        let mut current_vertex_offset = 0i32;
+
+        let mut texture_ids: Vec<_> = cpu_data.main_texture_vertices.keys().cloned().collect();
+        texture_ids.sort();
+
+        for tex_id in texture_ids {
+            if let Some(verts) = cpu_data.main_texture_vertices.get(&tex_id) {
+                if verts.is_empty() {
+                    continue;
+                }
+                let count = (verts.len() / self::mesh::BLOCK_VERTEX_FLOATS) as i32;
+                main_texture_batches.push(TextureBatchRange {
+                    texture_id: tex_id,
+                    start_vertex: current_vertex_offset,
+                    vertex_count: count,
+                });
+                combined_main_vertices.extend_from_slice(verts);
+                current_vertex_offset += count;
+            }
+        }
+
+        if !combined_main_vertices.is_empty() {
+            let (vao, vbo, _) = self::mesh::upload_block_vertices_3d(&combined_main_vertices);
+            main_vao = vao;
+            main_vbo = vbo;
+        }
+
+        let mut shadow_vao = 0;
+        let mut shadow_vbo = 0;
+        let mut shadow_vertex_count = 0;
+
+        if !cpu_data.shadow_positions.is_empty() {
+            let (s_vao, s_vbo, count) =
+                chunk::upload_position_only_vertices(&cpu_data.shadow_positions);
+            shadow_vao = s_vao;
+            shadow_vbo = s_vbo;
+            shadow_vertex_count = count;
+        }
+
+        if main_vao != 0 || shadow_vao != 0 {
+            if let Some(mut old_mesh) = cache.remove(&chunk_coord) {
+                old_mesh.free_gl_resources();
+            }
+
+            let chunk_mesh = ChunkMesh {
+                chunk_coord,
+                main_vao,
+                main_vbo,
+                main_texture_batches,
+                shadow_vao,
+                shadow_vbo,
+                shadow_vertex_count,
+            };
+            cache.insert(chunk_coord, chunk_mesh);
+        } else {
+            if let Some(mut old_mesh) = cache.remove(&chunk_coord) {
+                old_mesh.free_gl_resources();
+            }
+        }
+    }
+}
+
+fn get_active_coords_in_chunk(world: &World, chunk_coord: ChunkCoord) -> Vec<WorldCoord> {
+    let min_x = chunk_coord.x * chunk::CHUNK_SIZE;
+    let max_x = min_x + chunk::CHUNK_SIZE;
+    let min_y = chunk_coord.y * chunk::CHUNK_SIZE;
+    let max_y = min_y + chunk::CHUNK_SIZE;
+    let min_z = chunk_coord.z * chunk::CHUNK_SIZE;
+    let max_z = min_z + chunk::CHUNK_SIZE;
+
+    let mut result = Vec::new();
+
+    for coord in world.active_effective_blocks() {
+        if coord.x >= min_x
+            && coord.x < max_x
+            && coord.y >= min_y
+            && coord.y < max_y
+            && coord.z >= min_z
+            && coord.z < max_z
+        {
+            result.push(coord);
+        }
+    }
+
+    result
+}
+
+impl Renderer {
     pub fn resize(&mut self, width: f32, height: f32) {
         self.width = width.max(1.0);
         self.height = height.max(1.0);

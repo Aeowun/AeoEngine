@@ -127,7 +127,7 @@ pub struct World {
     pub(crate) render_revision: u64,
 
     /// Lightweight runtime-only record of coordinates that need render invalidation.
-    pub(crate) render_dirty_cells: HashMap<WorldCoord, DirtyReason>,
+    pub(crate) render_dirty_cells: std::cell::RefCell<HashMap<WorldCoord, DirtyReason>>,
 }
 
 impl World {
@@ -152,7 +152,7 @@ impl World {
             cursor_visible: false,
             screen_locked: true,
             render_revision: 1,
-            render_dirty_cells: HashMap::new(),
+            render_dirty_cells: std::cell::RefCell::new(HashMap::new()),
         }
     }
 
@@ -164,19 +164,20 @@ impl World {
         self.render_revision = self.render_revision.wrapping_add(1);
     }
 
-    pub fn mark_render_dirty(&mut self, coord: WorldCoord, reason: DirtyReason) {
-        match self.render_dirty_cells.get(&coord) {
+    pub fn mark_render_dirty(&self, coord: WorldCoord, reason: DirtyReason) {
+        let mut map = self.render_dirty_cells.borrow_mut();
+        match map.get(&coord) {
             Some(&DirtyReason::Geometry) => {
                 // Geometry is already the broader invalidation
             }
             _ => {
-                self.render_dirty_cells.insert(coord, reason);
+                map.insert(coord, reason);
             }
         }
     }
 
-    pub fn drain_render_dirty_cells(&mut self) -> HashMap<WorldCoord, DirtyReason> {
-        std::mem::take(&mut self.render_dirty_cells)
+    pub fn drain_render_dirty_cells(&self) -> HashMap<WorldCoord, DirtyReason> {
+        std::mem::take(&mut *self.render_dirty_cells.borrow_mut())
     }
 
     pub fn get(&self, coord: WorldCoord) -> Option<&Cell> {
@@ -250,6 +251,7 @@ impl World {
     /// This does not modify the authored Cell data.
     pub fn set_cell_visible_runtime(&mut self, coord: WorldCoord, visible: bool) {
         self.bump_render_revision();
+        self.mark_render_dirty(coord, DirtyReason::Geometry);
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
             self.runtime_state.entry(id).or_default().visible = Some(visible);
@@ -383,6 +385,7 @@ impl World {
     /// Sets a runtime-only override for cell color.
     pub fn set_cell_color_runtime(&mut self, coord: WorldCoord, color: Vec3) {
         self.bump_render_revision();
+        self.mark_render_dirty(coord, DirtyReason::MaterialOrOffset);
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
             self.runtime_state.entry(id).or_default().color_rgb = Some(color);
@@ -405,6 +408,7 @@ impl World {
     /// Sets a runtime-only override for cell solidity.
     pub fn set_cell_solid_runtime(&mut self, coord: WorldCoord, solid: bool) {
         self.bump_render_revision();
+        self.mark_render_dirty(coord, DirtyReason::Geometry);
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
             self.runtime_state.entry(id).or_default().solid = Some(solid);
@@ -428,6 +432,7 @@ impl World {
     /// Sets a runtime-only override for cell anchored state.
     pub fn set_cell_anchored_runtime(&mut self, coord: WorldCoord, anchored: bool) {
         self.bump_render_revision();
+        self.mark_render_dirty(coord, DirtyReason::Geometry);
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
             self.runtime_state.entry(id).or_default().anchored = Some(anchored);
@@ -450,6 +455,7 @@ impl World {
     /// Sets a runtime-only visual offset for a cell.
     pub fn set_visual_offset_runtime(&mut self, coord: WorldCoord, offset: Vec3) {
         self.bump_render_revision();
+        self.mark_render_dirty(coord, DirtyReason::MaterialOrOffset);
         let id = self.get_effective_cell(coord).map(|c| c.id);
         if let Some(id) = id {
             self.runtime_state.entry(id).or_default().visual_offset = Some(offset);
@@ -562,17 +568,22 @@ impl World {
         if let Some(old_coord) = self.runtime_id_to_coord.remove(&id) {
             self.coord_to_runtime_id.remove(&old_coord);
             self.mark_physics_dirty(id); // Dirty old position
+            self.mark_render_dirty(old_coord, DirtyReason::Geometry);
         }
 
         self.runtime_id_to_coord.insert(id, new_coord);
         self.coord_to_runtime_id.insert(new_coord, id);
         self.mark_physics_dirty(id); // Dirty new position
+        self.mark_render_dirty(new_coord, DirtyReason::Geometry);
 
         Ok(())
     }
 
     pub fn delete_cell_runtime(&mut self, id: u64) {
         self.bump_render_revision();
+        if let Some(coord) = self.resolve_cell_id(id) {
+            self.mark_render_dirty(coord, DirtyReason::Geometry);
+        }
         if self.runtime_cells.contains_key(&id) {
             if let Some(coord) = self.runtime_id_to_coord.remove(&id) {
                 self.coord_to_runtime_id.remove(&coord);
@@ -645,9 +656,13 @@ impl World {
         self.bump_render_revision();
         for id in self.runtime_state.keys() {
             self.physics_dirty_cells.insert(*id);
+            if let Some(coord) = self.id_to_coord.get(id) {
+                self.mark_render_dirty(*coord, DirtyReason::Geometry);
+            }
         }
-        for id in self.runtime_cells.keys() {
+        for (id, coord) in &self.runtime_id_to_coord {
             self.physics_dirty_cells.insert(*id);
+            self.mark_render_dirty(*coord, DirtyReason::Geometry);
         }
         self.runtime_state.clear();
         self.runtime_cells.clear();
@@ -657,6 +672,7 @@ impl World {
 
     pub fn set_cell(&mut self, coord: WorldCoord, cell_type: CellType) -> u64 {
         self.bump_render_revision();
+        self.mark_render_dirty(coord, DirtyReason::Geometry);
         if cell_type == CellType::Empty {
             if let Some(cell) = self.cells.remove(&coord) {
                 self.id_to_coord.remove(&cell.id);
@@ -697,6 +713,9 @@ impl World {
     /// Rebuilds the ID to coordinate index. Call this if the cells map is replaced (e.g. undo/redo).
     pub fn rebuild_id_mapping(&mut self) {
         self.bump_render_revision();
+        for &coord in self.cells.keys() {
+            self.mark_render_dirty(coord, DirtyReason::Geometry);
+        }
         self.id_to_coord.clear();
         for (coord, cell) in &self.cells {
             self.id_to_coord.insert(cell.id, *coord);
