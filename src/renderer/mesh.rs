@@ -148,12 +148,26 @@ pub fn add_block_quad(
     color: [f32; 4],
     normal: [f32; 3],
 ) {
-    add_block_vertex(vertices, v1, normal, color, [0.0, 1.0]);
-    add_block_vertex(vertices, v2, normal, color, [1.0, 1.0]);
-    add_block_vertex(vertices, v3, normal, color, [1.0, 0.0]);
+    add_merged_block_quad(vertices, v1, v2, v3, v4, color, normal, 1.0, 1.0);
+}
 
-    add_block_vertex(vertices, v1, normal, color, [0.0, 1.0]);
-    add_block_vertex(vertices, v3, normal, color, [1.0, 0.0]);
+pub fn add_merged_block_quad(
+    vertices: &mut Vec<f32>,
+    v1: [f32; 3],
+    v2: [f32; 3],
+    v3: [f32; 3],
+    v4: [f32; 3],
+    color: [f32; 4],
+    normal: [f32; 3],
+    width: f32,
+    height: f32,
+) {
+    add_block_vertex(vertices, v1, normal, color, [0.0, height]);
+    add_block_vertex(vertices, v2, normal, color, [width, height]);
+    add_block_vertex(vertices, v3, normal, color, [width, 0.0]);
+
+    add_block_vertex(vertices, v1, normal, color, [0.0, height]);
+    add_block_vertex(vertices, v3, normal, color, [width, 0.0]);
     add_block_vertex(vertices, v4, normal, color, [0.0, 0.0]);
 }
 

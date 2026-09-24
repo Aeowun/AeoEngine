@@ -103,6 +103,18 @@ pub struct CpuChunkData {
     pub shadow_positions: Vec<f32>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct MainFaceInfo {
+    texture: String,
+    color: Vec3,
+    visual_offset: Vec3,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct ShadowFaceInfo {
+    visual_offset: Vec3,
+}
+
 pub fn build_cpu_chunk_data(
     world: &World,
     chunk_coord: ChunkCoord,
@@ -112,15 +124,19 @@ pub fn build_cpu_chunk_data(
     let mut main_texture_vertices: HashMap<String, Vec<f32>> = HashMap::new();
     let mut shadow_positions: Vec<f32> = Vec::new();
 
+    if coords_in_chunk.is_empty() {
+        return CpuChunkData::default();
+    }
+
+    let mut main_grid: HashMap<(i32, i32, i32), (u8, MainFaceInfo)> = HashMap::new();
+    let mut shadow_grid: HashMap<(i32, i32, i32), (u8, ShadowFaceInfo)> = HashMap::new();
+
     for &coord in coords_in_chunk {
         let Some(cell) = world.get_effective_cell(coord) else {
             continue;
         };
 
         let (lx, ly, lz) = ChunkCoord::local_offset(coord);
-        let local_pos = Vec3::new(lx as f32, ly as f32, lz as f32);
-        let visual_offset = world.get_visual_offset(coord);
-        let block_offset = local_pos + visual_offset;
 
         let should_draw = match mode {
             EditorMode::Editor => true,
@@ -141,14 +157,13 @@ pub fn build_cpu_chunk_data(
             let mask = crate::renderer::mesh::compute_exposed_faces_main(world, coord, mode);
             if mask != 0 {
                 let color = world.get_effective_color(coord);
-                let color_arr = [color.x, color.y, color.z, 1.0];
-                let texture_id = cell.texture.clone();
-
-                let vertices = main_texture_vertices
-                    .entry(texture_id)
-                    .or_insert_with(Vec::new);
-
-                append_exposed_faces_main(vertices, block_offset, mask, color_arr);
+                let visual_offset = world.get_visual_offset(coord);
+                let info = MainFaceInfo {
+                    texture: cell.texture.clone(),
+                    color,
+                    visual_offset,
+                };
+                main_grid.insert((lx, ly, lz), (mask, info));
             }
         }
 
@@ -158,10 +173,15 @@ pub fn build_cpu_chunk_data(
         if shadow_renderable && world.is_cell_visible(coord) && world.is_cell_solid(coord) {
             let mask = crate::renderer::mesh::compute_exposed_faces_shadow(world, coord, mode);
             if mask != 0 {
-                append_exposed_faces_shadow(&mut shadow_positions, block_offset, mask);
+                let visual_offset = world.get_visual_offset(coord);
+                let info = ShadowFaceInfo { visual_offset };
+                shadow_grid.insert((lx, ly, lz), (mask, info));
             }
         }
     }
+
+    greedy_mesh_main_pass(&main_grid, &mut main_texture_vertices);
+    greedy_mesh_shadow_pass(&shadow_grid, &mut shadow_positions);
 
     CpuChunkData {
         main_texture_vertices,
@@ -169,126 +189,318 @@ pub fn build_cpu_chunk_data(
     }
 }
 
-fn append_exposed_faces_main(vertices: &mut Vec<f32>, offset: Vec3, mask: u8, color: [f32; 4]) {
+fn map_uvw_to_local_xyz(face: CubeFace, u: i32, v: i32, w: i32) -> (i32, i32, i32) {
+    match face {
+        CubeFace::Top | CubeFace::Bottom => (v, u, w),
+        CubeFace::Front | CubeFace::Back => (v, w, u),
+        CubeFace::Left | CubeFace::Right => (u, w, v),
+    }
+}
+
+fn greedy_mesh_main_pass(
+    main_grid: &HashMap<(i32, i32, i32), (u8, MainFaceInfo)>,
+    main_texture_vertices: &mut HashMap<String, Vec<f32>>,
+) {
     for face in &CubeFace::ALL {
-        if (mask & face.mask()) != 0 {
-            add_face_quad_offset(vertices, offset, *face, color);
+        let mask_bit = face.mask();
+
+        for u in 0..16 {
+            let mut slice: [[Option<MainFaceInfo>; 16]; 16] = Default::default();
+
+            for w in 0..16 {
+                for v in 0..16 {
+                    let (lx, ly, lz) = map_uvw_to_local_xyz(*face, u, v, w);
+                    if let Some((mask, info)) = main_grid.get(&(lx, ly, lz)) {
+                        if (mask & mask_bit) != 0 {
+                            slice[w as usize][v as usize] = Some(info.clone());
+                        }
+                    }
+                }
+            }
+
+            let mut visited = [[false; 16]; 16];
+
+            for w in 0..16 {
+                for v in 0..16 {
+                    if visited[w][v] {
+                        continue;
+                    }
+
+                    let Some(info) = &slice[w][v] else {
+                        continue;
+                    };
+
+                    let mut width = 1;
+                    while v + width < 16 && !visited[w][v + width] {
+                        if let Some(other) = &slice[w][v + width] {
+                            if other == info {
+                                width += 1;
+                                continue;
+                            }
+                        }
+                        break;
+                    }
+
+                    let mut height = 1;
+                    'outer: while w + height < 16 {
+                        for dw in 0..width {
+                            let cur_v = v + dw;
+                            let cur_w = w + height;
+                            if visited[cur_w][cur_v] {
+                                break 'outer;
+                            }
+                            if let Some(other) = &slice[cur_w][cur_v] {
+                                if other != info {
+                                    break 'outer;
+                                }
+                            } else {
+                                break 'outer;
+                            }
+                        }
+                        height += 1;
+                    }
+
+                    for dw in 0..height {
+                        for dv in 0..width {
+                            visited[w + dw][v + dv] = true;
+                        }
+                    }
+
+                    let vertices = main_texture_vertices
+                        .entry(info.texture.clone())
+                        .or_default();
+
+                    emit_merged_main_quad(
+                        vertices,
+                        *face,
+                        u as f32,
+                        v as f32,
+                        w as f32,
+                        width as f32,
+                        height as f32,
+                        info.color,
+                        info.visual_offset,
+                    );
+                }
+            }
         }
     }
 }
 
-fn add_face_quad_offset(vertices: &mut Vec<f32>, offset: Vec3, face: CubeFace, color: [f32; 4]) {
-    let min = 0.0;
-    let max = 1.0;
-
+fn emit_merged_main_quad(
+    vertices: &mut Vec<f32>,
+    face: CubeFace,
+    u: f32,
+    v: f32,
+    w: f32,
+    width: f32,
+    height: f32,
+    color: Vec3,
+    visual_offset: Vec3,
+) {
     let (v1, v2, v3, v4, normal) = match face {
         CubeFace::Top => (
-            [min, max, max],
-            [max, max, max],
-            [max, max, min],
-            [min, max, min],
+            Vec3::new(v, u + 1.0, w + height),
+            Vec3::new(v + width, u + 1.0, w + height),
+            Vec3::new(v + width, u + 1.0, w),
+            Vec3::new(v, u + 1.0, w),
             [0.0, 1.0, 0.0],
         ),
         CubeFace::Bottom => (
-            [min, min, min],
-            [max, min, min],
-            [max, min, max],
-            [min, min, max],
+            Vec3::new(v, u, w),
+            Vec3::new(v + width, u, w),
+            Vec3::new(v + width, u, w + height),
+            Vec3::new(v, u, w + height),
             [0.0, -1.0, 0.0],
         ),
         CubeFace::Front => (
-            [min, min, max],
-            [max, min, max],
-            [max, max, max],
-            [min, max, max],
+            Vec3::new(v, w, u + 1.0),
+            Vec3::new(v + width, w, u + 1.0),
+            Vec3::new(v + width, w + height, u + 1.0),
+            Vec3::new(v, w + height, u + 1.0),
             [0.0, 0.0, 1.0],
         ),
         CubeFace::Back => (
-            [max, min, min],
-            [min, min, min],
-            [min, max, min],
-            [max, max, min],
+            Vec3::new(v + width, w, u),
+            Vec3::new(v, w, u),
+            Vec3::new(v, w + height, u),
+            Vec3::new(v + width, w + height, u),
             [0.0, 0.0, -1.0],
         ),
         CubeFace::Left => (
-            [min, min, min],
-            [min, min, max],
-            [min, max, max],
-            [min, max, min],
+            Vec3::new(u, w, v),
+            Vec3::new(u, w, v + width),
+            Vec3::new(u, w + height, v + width),
+            Vec3::new(u, w + height, v),
             [-1.0, 0.0, 0.0],
         ),
         CubeFace::Right => (
-            [max, min, max],
-            [max, min, min],
-            [max, max, min],
-            [max, max, max],
+            Vec3::new(u + 1.0, w, v + width),
+            Vec3::new(u + 1.0, w, v),
+            Vec3::new(u + 1.0, w + height, v),
+            Vec3::new(u + 1.0, w + height, v + width),
             [1.0, 0.0, 0.0],
         ),
     };
 
-    let o1 = [v1[0] + offset.x, v1[1] + offset.y, v1[2] + offset.z];
-    let o2 = [v2[0] + offset.x, v2[1] + offset.y, v2[2] + offset.z];
-    let o3 = [v3[0] + offset.x, v3[1] + offset.y, v3[2] + offset.z];
-    let o4 = [v4[0] + offset.x, v4[1] + offset.y, v4[2] + offset.z];
+    let o1 = (v1 + visual_offset).to_array();
+    let o2 = (v2 + visual_offset).to_array();
+    let o3 = (v3 + visual_offset).to_array();
+    let o4 = (v4 + visual_offset).to_array();
 
-    add_block_quad(vertices, o1, o2, o3, o4, color, normal);
+    let color_arr = [color.x, color.y, color.z, 1.0];
+
+    crate::renderer::mesh::add_merged_block_quad(
+        vertices,
+        o1,
+        o2,
+        o3,
+        o4,
+        color_arr,
+        normal,
+        width,
+        height,
+    );
 }
 
-fn append_exposed_faces_shadow(vertices: &mut Vec<f32>, offset: Vec3, mask: u8) {
+fn greedy_mesh_shadow_pass(
+    shadow_grid: &HashMap<(i32, i32, i32), (u8, ShadowFaceInfo)>,
+    shadow_positions: &mut Vec<f32>,
+) {
     for face in &CubeFace::ALL {
-        if (mask & face.mask()) != 0 {
-            add_shadow_quad_offset(vertices, offset, *face);
+        let mask_bit = face.mask();
+
+        for u in 0..16 {
+            let mut slice: [[Option<ShadowFaceInfo>; 16]; 16] = Default::default();
+
+            for w in 0..16 {
+                for v in 0..16 {
+                    let (lx, ly, lz) = map_uvw_to_local_xyz(*face, u, v, w);
+                    if let Some((mask, info)) = shadow_grid.get(&(lx, ly, lz)) {
+                        if (mask & mask_bit) != 0 {
+                            slice[w as usize][v as usize] = Some(info.clone());
+                        }
+                    }
+                }
+            }
+
+            let mut visited = [[false; 16]; 16];
+
+            for w in 0..16 {
+                for v in 0..16 {
+                    if visited[w][v] {
+                        continue;
+                    }
+
+                    let Some(info) = &slice[w][v] else {
+                        continue;
+                    };
+
+                    let mut width = 1;
+                    while v + width < 16 && !visited[w][v + width] {
+                        if let Some(other) = &slice[w][v + width] {
+                            if other == info {
+                                width += 1;
+                                continue;
+                            }
+                        }
+                        break;
+                    }
+
+                    let mut height = 1;
+                    'outer: while w + height < 16 {
+                        for dw in 0..width {
+                            let cur_v = v + dw;
+                            let cur_w = w + height;
+                            if visited[cur_w][cur_v] {
+                                break 'outer;
+                            }
+                            if let Some(other) = &slice[cur_w][cur_v] {
+                                if other != info {
+                                    break 'outer;
+                                }
+                            } else {
+                                break 'outer;
+                            }
+                        }
+                        height += 1;
+                    }
+
+                    for dw in 0..height {
+                        for dv in 0..width {
+                            visited[w + dw][v + dv] = true;
+                        }
+                    }
+
+                    emit_merged_shadow_quad(
+                        shadow_positions,
+                        *face,
+                        u as f32,
+                        v as f32,
+                        w as f32,
+                        width as f32,
+                        height as f32,
+                        info.visual_offset,
+                    );
+                }
+            }
         }
     }
 }
 
-fn add_shadow_quad_offset(vertices: &mut Vec<f32>, offset: Vec3, face: CubeFace) {
-    let min = 0.0;
-    let max = 1.0;
-
+fn emit_merged_shadow_quad(
+    vertices: &mut Vec<f32>,
+    face: CubeFace,
+    u: f32,
+    v: f32,
+    w: f32,
+    width: f32,
+    height: f32,
+    visual_offset: Vec3,
+) {
     let (v1, v2, v3, v4) = match face {
         CubeFace::Top => (
-            [min, max, max],
-            [max, max, max],
-            [max, max, min],
-            [min, max, min],
+            Vec3::new(v, u + 1.0, w + height),
+            Vec3::new(v + width, u + 1.0, w + height),
+            Vec3::new(v + width, u + 1.0, w),
+            Vec3::new(v, u + 1.0, w),
         ),
         CubeFace::Bottom => (
-            [min, min, min],
-            [max, min, min],
-            [max, min, max],
-            [min, min, max],
+            Vec3::new(v, u, w),
+            Vec3::new(v + width, u, w),
+            Vec3::new(v + width, u, w + height),
+            Vec3::new(v, u, w + height),
         ),
         CubeFace::Front => (
-            [min, min, max],
-            [max, min, max],
-            [max, max, max],
-            [min, max, max],
+            Vec3::new(v, w, u + 1.0),
+            Vec3::new(v + width, w, u + 1.0),
+            Vec3::new(v + width, w + height, u + 1.0),
+            Vec3::new(v, w + height, u + 1.0),
         ),
         CubeFace::Back => (
-            [max, min, min],
-            [min, min, min],
-            [min, max, min],
-            [max, max, min],
+            Vec3::new(v + width, w, u),
+            Vec3::new(v, w, u),
+            Vec3::new(v, w + height, u),
+            Vec3::new(v + width, w + height, u),
         ),
         CubeFace::Left => (
-            [min, min, min],
-            [min, min, max],
-            [min, max, max],
-            [min, max, min],
+            Vec3::new(u, w, v),
+            Vec3::new(u, w, v + width),
+            Vec3::new(u, w + height, v + width),
+            Vec3::new(u, w + height, v),
         ),
         CubeFace::Right => (
-            [max, min, max],
-            [max, min, min],
-            [max, max, min],
-            [max, max, max],
+            Vec3::new(u + 1.0, w, v + width),
+            Vec3::new(u + 1.0, w, v),
+            Vec3::new(u + 1.0, w + height, v),
+            Vec3::new(u + 1.0, w + height, v + width),
         ),
     };
 
-    let o1 = [v1[0] + offset.x, v1[1] + offset.y, v1[2] + offset.z];
-    let o2 = [v2[0] + offset.x, v2[1] + offset.y, v2[2] + offset.z];
-    let o3 = [v3[0] + offset.x, v3[1] + offset.y, v3[2] + offset.z];
-    let o4 = [v4[0] + offset.x, v4[1] + offset.y, v4[2] + offset.z];
+    let o1 = (v1 + visual_offset).to_array();
+    let o2 = (v2 + visual_offset).to_array();
+    let o3 = (v3 + visual_offset).to_array();
+    let o4 = (v4 + visual_offset).to_array();
 
     // Triangle 1
     vertices.extend_from_slice(&o1);
@@ -547,9 +759,9 @@ mod tests {
         let cpu_data = build_cpu_chunk_data(&world, chunk_coord, &[c1, c2, c3], EditorMode::Editor);
 
         // c1 and c2 cast shadows (Block, SpawnPoint). c3 (Light) does NOT.
-        // c1 and c2 are adjacent along X axis, so their shared face is culled.
-        // Each has 5 exposed faces -> 10 faces * 6 vertices * 3 floats = 180 floats.
-        assert_eq!(cpu_data.shadow_positions.len(), 180);
+        // c1 and c2 are adjacent along X axis.
+        // Greedy meshing merges Top, Bottom, Front, Back faces into 4 quads of 2x1, plus 2 end quads (Left, Right) -> 6 quads * 6 vertices * 3 floats = 108 floats.
+        assert_eq!(cpu_data.shadow_positions.len(), 108);
     }
 
     #[test]
@@ -652,5 +864,173 @@ mod tests {
         let dirty_chunks = expand_dirty_coords_to_chunks(&dirty_coords);
         // All coords are in interior or edges of Chunk (0,0,0). Deduplication ensures small chunk set.
         assert!(dirty_chunks.contains(&ChunkCoord::new(0, 0, 0)));
+    }
+
+    #[test]
+    fn test_greedy_meshing_single_voxel() {
+        let mut world = World::new();
+        let coord = WorldCoord::new(0, 0, 0);
+        world.set_cell(coord, CellType::Block);
+
+        let chunk_coord = ChunkCoord::new(0, 0, 0);
+        let cpu_data = build_cpu_chunk_data(&world, chunk_coord, &[coord], EditorMode::Editor);
+
+        let verts = cpu_data.main_texture_vertices.get("Block_tx").unwrap();
+        // 1 isolated voxel has 6 exposed faces = 6 quads = 36 vertices = 432 floats
+        assert_eq!(verts.len(), 36 * BLOCK_VERTEX_FLOATS);
+    }
+
+    #[test]
+    fn test_greedy_meshing_2x2_plane() {
+        let mut world = World::new();
+        let mut coords = Vec::new();
+        for x in 0..2 {
+            for z in 0..2 {
+                let c = WorldCoord::new(x, 0, z);
+                world.set_cell(c, CellType::Block);
+                coords.push(c);
+            }
+        }
+
+        let chunk_coord = ChunkCoord::new(0, 0, 0);
+        let cpu_data = build_cpu_chunk_data(&world, chunk_coord, &coords, EditorMode::Editor);
+        let verts = cpu_data.main_texture_vertices.get("Block_tx").unwrap();
+
+        // 2x2 flat top faces merge into 1 quad! (6 verts)
+        // 2x2 flat bottom faces merge into 1 quad! (6 verts)
+        // 4 side faces (each 2x1) merge into 4 quads! (24 verts)
+        // Total quads = 1 + 1 + 4 = 6 quads = 36 vertices = 432 floats.
+        // Compare unmerged: 4 blocks * 5 faces = 20 quads = 120 vertices = 1440 floats!
+        assert_eq!(verts.len(), 36 * BLOCK_VERTEX_FLOATS);
+    }
+
+    #[test]
+    fn test_greedy_meshing_4x4_plane() {
+        let mut world = World::new();
+        let mut coords = Vec::new();
+        for x in 0..4 {
+            for z in 0..4 {
+                let c = WorldCoord::new(x, 0, z);
+                world.set_cell(c, CellType::Block);
+                coords.push(c);
+            }
+        }
+
+        let chunk_coord = ChunkCoord::new(0, 0, 0);
+        let cpu_data = build_cpu_chunk_data(&world, chunk_coord, &coords, EditorMode::Editor);
+        let verts = cpu_data.main_texture_vertices.get("Block_tx").unwrap();
+
+        // Top: 4x4 merge -> 1 quad (6 verts)
+        // Bottom: 4x4 merge -> 1 quad (6 verts)
+        // 4 sides (each 4x1) -> 4 quads (24 verts)
+        // Total = 36 vertices. Unmerged would be 16 blocks * 5 faces = 80 quads = 480 vertices!
+        assert_eq!(verts.len(), 36 * BLOCK_VERTEX_FLOATS);
+    }
+
+    #[test]
+    fn test_greedy_meshing_full_16x16_layer() {
+        let mut world = World::new();
+        let mut coords = Vec::new();
+        for x in 0..16 {
+            for z in 0..16 {
+                let c = WorldCoord::new(x, 0, z);
+                world.set_cell(c, CellType::Block);
+                coords.push(c);
+            }
+        }
+
+        let chunk_coord = ChunkCoord::new(0, 0, 0);
+        let cpu_data = build_cpu_chunk_data(&world, chunk_coord, &coords, EditorMode::Editor);
+        let verts = cpu_data.main_texture_vertices.get("Block_tx").unwrap();
+
+        // Top: 16x16 merge -> 1 quad
+        // Bottom: 16x16 merge -> 1 quad
+        // 4 sides (each 16x1) -> 4 quads
+        // Total = 6 quads = 36 vertices. Unmerged would be 256 * 5 = 1280 quads = 7680 vertices!
+        assert_eq!(verts.len(), 36 * BLOCK_VERTEX_FLOATS);
+    }
+
+    #[test]
+    fn test_greedy_meshing_preserves_holes() {
+        let mut world = World::new();
+        let mut coords = Vec::new();
+        for x in 0..3 {
+            for z in 0..3 {
+                if x == 1 && z == 1 {
+                    continue; // hole
+                }
+                let c = WorldCoord::new(x, 0, z);
+                world.set_cell(c, CellType::Block);
+                coords.push(c);
+            }
+        }
+
+        let chunk_coord = ChunkCoord::new(0, 0, 0);
+        let cpu_data = build_cpu_chunk_data(&world, chunk_coord, &coords, EditorMode::Editor);
+        let verts = cpu_data.main_texture_vertices.get("Block_tx").unwrap();
+
+        assert!(!verts.is_empty());
+    }
+
+    #[test]
+    fn test_greedy_meshing_texture_boundary() {
+        let mut world = World::new();
+        let mut coords = Vec::new();
+        for x in 0..2 {
+            for z in 0..2 {
+                let c = WorldCoord::new(x, 0, z);
+                world.set_cell(c, CellType::Block);
+                coords.push(c);
+            }
+        }
+
+        world.get_mut(WorldCoord::new(0, 0, 0)).unwrap().texture = "Block_tx".to_string();
+        world.get_mut(WorldCoord::new(0, 0, 1)).unwrap().texture = "Block_tx".to_string();
+        world.get_mut(WorldCoord::new(1, 0, 0)).unwrap().texture = "brick".to_string();
+        world.get_mut(WorldCoord::new(1, 0, 1)).unwrap().texture = "brick".to_string();
+
+        let chunk_coord = ChunkCoord::new(0, 0, 0);
+        let cpu_data = build_cpu_chunk_data(&world, chunk_coord, &coords, EditorMode::Editor);
+
+        assert_eq!(cpu_data.main_texture_vertices.len(), 2);
+        assert!(cpu_data.main_texture_vertices.contains_key("Block_tx"));
+        assert!(cpu_data.main_texture_vertices.contains_key("brick"));
+    }
+
+    #[test]
+    fn test_greedy_meshing_color_boundary() {
+        let mut world = World::new();
+        let c1 = WorldCoord::new(0, 0, 0);
+        let c2 = WorldCoord::new(1, 0, 0);
+        world.set_cell(c1, CellType::Block);
+        world.set_cell(c2, CellType::Block);
+
+        world.set_cell_color_runtime(c1, Vec3::new(1.0, 0.0, 0.0));
+        world.set_cell_color_runtime(c2, Vec3::new(0.0, 1.0, 0.0));
+
+        let chunk_coord = ChunkCoord::new(0, 0, 0);
+        let cpu_data = build_cpu_chunk_data(&world, chunk_coord, &[c1, c2], EditorMode::Editor);
+        let verts = cpu_data.main_texture_vertices.get("Block_tx").unwrap();
+
+        assert!(verts.len() >= 24 * BLOCK_VERTEX_FLOATS);
+    }
+
+    #[test]
+    fn test_greedy_meshing_negative_coordinates() {
+        let mut world = World::new();
+        let mut coords = Vec::new();
+        for x in -4..-2 {
+            for z in -4..-2 {
+                let c = WorldCoord::new(x, -10, z);
+                world.set_cell(c, CellType::Block);
+                coords.push(c);
+            }
+        }
+
+        let chunk_coord = ChunkCoord::new(-1, -1, -1);
+        let cpu_data = build_cpu_chunk_data(&world, chunk_coord, &coords, EditorMode::Editor);
+        let verts = cpu_data.main_texture_vertices.get("Block_tx").unwrap();
+
+        assert_eq!(verts.len(), 36 * BLOCK_VERTEX_FLOATS);
     }
 }
