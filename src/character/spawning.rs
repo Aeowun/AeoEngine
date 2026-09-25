@@ -1,8 +1,26 @@
 use super::character::Character;
 use super::collision::CharacterCollision;
+use super::system::CharacterSystem;
 use crate::world::{CellType, World, WorldCoord};
 use glam::Vec3;
 use std::path::Path;
+
+impl CharacterSystem {
+    /// Spawns a player character at a valid world spawn point.
+    pub fn spawn_player(&mut self, world: &World, project_path: Option<&Path>) -> Option<u64> {
+        let character = spawn_at_random_point(world, self.next_id, project_path)?;
+
+        let id = character.id;
+
+        self.characters.insert(id, character);
+
+        self.active_player_id = Some(id);
+
+        self.next_id += 1;
+
+        Some(id)
+    }
+}
 
 pub fn spawn_at_random_point(
     world: &World,

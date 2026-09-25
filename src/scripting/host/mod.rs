@@ -1,23 +1,37 @@
+pub mod host_audio;
+pub mod host_camera;
+pub mod host_cells;
+pub mod host_character;
+pub mod host_entities;
+pub mod host_input;
+pub mod host_ui;
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use glam::Vec3;
+
 use crate::engine::entity::{EntityId, EntityManager};
 use crate::engine::mouse::MouseController;
 use crate::scripting::api::EngineHost;
 use crate::scripting::value::{HandleKind, MapKey, Value};
 use crate::world::cell::AttributeValue;
-use crate::world::{CellType, World, WorldCoord};
-use glam::Vec3;
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use crate::world::World;
+
+fn norm_path(path: &str) -> String {
+    let clean = path.replace('\\', "/");
+
+    if clean.starts_with("scripts/")
+        || clean.starts_with("controllers/")
+        || clean.starts_with("cameras/")
+    {
+        clean
+    } else {
+        format!("scripts/{}", clean)
+    }
+}
 
 /// Runtime bridge between AeoScript and the live engine.
-///
-/// The bridge owns references to the systems that scripts are allowed to
-/// interact with during a particular script execution phase.
-///
-/// Important ownership rule:
-/// - EntityManager stores the script-facing entity state.
-/// - CharacterSystem owns the authoritative runtime character state.
-/// - `set_position()` is the explicit bridge between those two systems for
-///   intentional entity teleports.
 pub struct ScriptHostBridge<'a> {
     pub entity_manager: &'a mut EntityManager,
     pub world: &'a mut World,
@@ -39,342 +53,25 @@ pub struct ScriptHostBridge<'a> {
 
     pub viewport_size: [f32; 2],
 
-    /// Raw movement input exposed to controller objects.
-    ///
-    /// Controllers interpret this input themselves. This keeps the scripting
-    /// API generic instead of baking a particular movement model into it.
     pub move_input: glam::Vec2,
 
-    /// One-frame jump request exposed to controller objects.
     pub jump_requested: bool,
 
-    /// Mouse orbit delta exposed to scripted camera/controller objects.
     pub orbit_delta: [f32; 2],
 
-    /// Runtime character system used by player and generic Entity APIs.
     pub character_system: Option<&'a mut crate::character::CharacterSystem>,
 
-    /// Runtime gameplay camera used by scripted camera objects.
     pub gameplay_camera: Option<&'a mut crate::renderer::camera::GameplayCamera>,
 
-    /// Set of valid AeoScript entity declarations.
     pub valid_entity_declarations: Option<Arc<std::collections::HashSet<String>>>,
 
-    /// Pending runtime NPC spawns to be attached to ScriptScene.
     pub pending_spawns: &'a mut Vec<(String, u64)>,
 
-    /// Current project path for character package resolution.
     pub project_path: Option<&'a std::path::Path>,
 }
 
-fn norm_path(path: &str) -> String {
-    let clean = path.replace('\\', "/");
-
-    if clean.starts_with("scripts/")
-        || clean.starts_with("controllers/")
-        || clean.starts_with("cameras/")
-    {
-        clean
-    } else {
-        format!("scripts/{}", clean)
-    }
-}
-
-impl<'a> EngineHost for ScriptHostBridge<'a> {
-    fn enable_script(&mut self, path: &str) {
-        let norm = norm_path(path);
-
-        self.world.disabled_scripts.retain(|s| s != &norm);
-
-        if !self.pending_enable_scripts.contains(&norm) {
-            self.pending_enable_scripts.push(norm);
-        }
-    }
-
-    fn get_viewport_size(&self) -> [f32; 2] {
-        self.viewport_size
-    }
-
-    fn disable_script(&mut self, path: &str) {
-        let norm = norm_path(path);
-
-        if !self.world.disabled_scripts.contains(&norm) {
-            self.world.disabled_scripts.push(norm.clone());
-        }
-
-        if !self.pending_disable_scripts.contains(&norm) {
-            self.pending_disable_scripts.push(norm);
-        }
-    }
-
-    fn is_script_enabled(&self, path: &str) -> bool {
-        let norm = norm_path(path);
-        !self.world.disabled_scripts.contains(&norm)
-    }
-
-    fn drain_enabled_scripts(&mut self) -> Vec<String> {
-        std::mem::take(self.pending_enable_scripts)
-    }
-
-    fn drain_disabled_scripts(&mut self) -> Vec<String> {
-        std::mem::take(self.pending_disable_scripts)
-    }
-
-    fn fire_event(&mut self, event_name: &str, args: Vec<Value>) {
-        self.pending_events.push((event_name.to_string(), args));
-    }
-
-    fn drain_pending_events(&mut self) -> Vec<(String, Vec<Value>)> {
-        std::mem::take(self.pending_events)
-    }
-
-    fn complete_test(&mut self, test_name: &str, passed: bool) {
-        self.test_results.insert(test_name.to_string(), passed);
-    }
-
-    fn is_test_completed(&self, test_name: &str) -> Option<bool> {
-        self.test_results.get(test_name).copied()
-    }
-
-    fn get_test_results(&self) -> (usize, usize, usize) {
-        let passed = self.test_results.values().filter(|&&v| v).count();
-        let total = self.test_results.len();
-        let failed = total - passed;
-
-        (passed, failed, total)
-    }
-
-    fn entity_manager(&self) -> &EntityManager {
-        self.entity_manager
-    }
-
-    fn get_position(&self, id: u64) -> Option<Vec3> {
-        let entity_id = EntityId(id);
-
-        // CharacterSystem is authoritative for runtime character position.
-        if let Some(character_system) = self.character_system.as_deref() {
-            if let Some(character) = character_system
-                .get_active_characters()
-                .find(|character| character.id == id)
-            {
-                return Some(character.transform.position);
-            }
-        }
-
-        // Non-character entities use the script-facing EntityManager state.
-        self.entity_manager.get_position(entity_id)
-    }
-
-    /// Handles the existing generic AeoScript `entity.set_position()` API.
-    ///
-    /// This is the ONLY place where a script-requested entity position change
-    /// is forwarded into CharacterSystem.
-    ///
-    /// Normal character movement never comes through this function.
-    fn set_position(&mut self, id: u64, position: Vec3) {
-        let entity_id = EntityId(id);
-
-        // Always update the script-facing entity representation.
-        self.entity_manager.set_position(entity_id, position);
-
-        // An entity explicitly calling set_position() is a deliberate
-        // teleport request. Forward that operation to the authoritative
-        // CharacterSystem representation.
-        if let Some(character_system) = self.character_system.as_deref_mut() {
-            character_system.set_entity_position(entity_id, position);
-        }
-    }
-
-    fn is_entity_declaration_valid(&self, entity_name: &str) -> bool {
-        !entity_name.trim().is_empty()
-    }
-
-    fn spawn_character(&mut self, entity_name: &str, position: Vec3) -> Result<u64, String> {
-        if !self.is_entity_declaration_valid(entity_name) {
-            return Err("Entity name cannot be empty".to_string());
-        }
-
-        let Some(character_system) = self.character_system.as_deref_mut() else {
-            return Err("CharacterSystem not available for spawning".to_string());
-        };
-
-        let custom_dir = self
-            .project_path
-            .map(|p| p.join("characters").join("custom"));
-        let package_dir = custom_dir.as_deref().filter(|p| p.exists());
-
-        let character_id = character_system.spawn_character(position, package_dir);
-        let entity_id = self.entity_manager.create_entity(entity_name);
-        self.entity_manager.set_position(entity_id, position);
-        character_system.associate_entity(entity_id, character_id);
-
-        self.pending_spawns
-            .push((entity_name.to_string(), entity_id.0));
-
-        Ok(entity_id.0)
-    }
-
-    fn set_valid_entity_declarations(
-        &mut self,
-        decls: std::sync::Arc<std::collections::HashSet<String>>,
-    ) {
-        self.valid_entity_declarations = Some(decls);
-    }
-
-    fn drain_pending_spawns(&mut self) -> Vec<(String, u64)> {
-        std::mem::take(self.pending_spawns)
-    }
-
-    fn lookup_light(&self, x: i32, y: i32, z: i32) -> Option<u64> {
-        let coord = WorldCoord::new(x, y, z);
-
-        if let Some(cell) = self.world.get(coord) {
-            if cell.cell_type == CellType::Light {
-                return Some(cell.id);
-            }
-        }
-
-        None
-    }
-
-    fn is_light_enabled(&self, id: u64) -> Option<bool> {
-        self.world
-            .resolve_cell_id(id)
-            .map(|coord| self.world.is_light_enabled(coord))
-    }
-
-    fn set_light_enabled(&mut self, id: u64, enabled: bool) {
-        if let Some(coord) = self.world.resolve_cell_id(id) {
-            self.world.set_light_enabled_runtime(coord, enabled);
-        }
-    }
-
-    fn is_collision_events_enabled(&self, id: u64) -> bool {
-        if let Some(coord) = self.world.resolve_cell_id(id) {
-            if let Some(runtime_state) = self.world.runtime_state.get(&id) {
-                if let Some(enabled) = runtime_state.collision_events_enabled {
-                    return enabled;
-                }
-            }
-
-            if let Some(cell) = self.world.get_effective_cell(coord) {
-                return cell.collision_events_enabled;
-            }
-        }
-
-        true
-    }
-
-    fn create_runtime_cell(&mut self, cell_type: &str) -> Result<(HandleKind, u64), String> {
-        let cell_type = match cell_type {
-            "Block" => CellType::Block,
-            "FxBlock" => CellType::FxBlock,
-            "Player" => CellType::Player,
-            "NPC" => CellType::NPC,
-            "Light" => CellType::Light,
-            "SpawnPoint" => CellType::SpawnPoint,
-            "AudioEmitter" => CellType::AudioEmitter,
-            "Empty" => {
-                return Err("Cannot create Empty cell".to_string());
-            }
-            _ => {
-                return Err(format!("Unknown cell type: {}", cell_type));
-            }
-        };
-
-        let id = self.world.create_runtime_cell(cell_type);
-
-        let kind = if cell_type == CellType::Light {
-            HandleKind::Light
-        } else {
-            HandleKind::Cell
-        };
-
-        Ok((kind, id))
-    }
-
-    fn move_runtime_cell(&mut self, id: u64, x: i32, y: i32, z: i32) -> Result<(), String> {
-        let coord = WorldCoord::new(x, y, z);
-        self.world.move_runtime_cell(id, coord)
-    }
-
-    fn delete_cell(&mut self, id: u64) -> Result<(), String> {
-        self.world.delete_cell_runtime(id);
-        Ok(())
-    }
-
-    fn get_all_cells_of_class(&self, class_name: &str) -> Vec<u64> {
-        let mut results = Vec::new();
-
-        for coord in self.world.iter_active_effective_coords() {
-            if let Some(cell) = self.world.get_effective_cell(coord) {
-                let matches = match class_name {
-                    "Light" => cell.cell_type == CellType::Light,
-                    "AudioEmitter" => cell.cell_type == CellType::AudioEmitter,
-                    "Block" => cell.cell_type == CellType::Block,
-                    "FxBlock" => cell.cell_type == CellType::FxBlock,
-                    "SpawnPoint" => cell.cell_type == CellType::SpawnPoint,
-                    "Player" => cell.cell_type == CellType::Player,
-                    "NPC" => cell.cell_type == CellType::NPC,
-                    _ => false,
-                };
-
-                if matches {
-                    results.push(cell.id);
-                }
-            }
-        }
-
-        results
-    }
-
-    fn find_objects(&self, query: &str) -> Vec<(HandleKind, u64)> {
-        let mut results = Vec::new();
-
-        if let Some(id) = self.entity_manager.lookup_entity(query) {
-            results.push((HandleKind::Entity, id.0));
-        }
-
-        // Search authored/runtime cells by their script-facing identity.
-        for coord in self.world.iter_active_effective_coords() {
-            if let Some(cell) = self.world.get_effective_cell(coord) {
-                if let Some(identity) = &cell.entity_identity {
-                    if identity == query {
-                        let kind = match cell.cell_type {
-                            CellType::Light => HandleKind::Light,
-                            _ => HandleKind::Cell,
-                        };
-
-                        results.push((kind, cell.id));
-                    }
-                }
-            }
-        }
-
-        results
-    }
-
-    fn get_children(&self, _kind: HandleKind, _id: u64) -> Vec<(HandleKind, u64)> {
-        Vec::new()
-    }
-
-    fn get_parent(&self, _kind: HandleKind, _id: u64) -> Option<(HandleKind, u64)> {
-        None
-    }
-
-    fn get_cell_object(&self, cell_id: u64) -> Option<(HandleKind, u64)> {
-        let coord = self.world.resolve_cell_id(cell_id)?;
-
-        let cell = self.world.get_effective_cell(coord)?;
-
-        let identity = cell.entity_identity.as_ref()?;
-
-        let entity_id = self.entity_manager.lookup_entity(identity)?;
-
-        Some((HandleKind::Entity, entity_id.0))
-    }
-
-    fn get_property(&self, kind: HandleKind, id: u64, name: &str) -> Result<Option<Value>, String> {
+impl<'a> ScriptHostBridge<'a> {
+    pub fn get_property(&self, kind: HandleKind, id: u64, name: &str) -> Result<Option<Value>, String> {
         match kind {
             HandleKind::Mouse => {
                 if id != 0 {
@@ -704,7 +401,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         Ok(None)
     }
 
-    fn set_property(
+    pub fn set_property(
         &mut self,
         kind: HandleKind,
         id: u64,
@@ -1032,7 +729,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         Ok(false)
     }
 
-    fn call_method(
+    pub fn call_method(
         &mut self,
         kind: HandleKind,
         id: u64,
@@ -1293,257 +990,311 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         }
     }
 
-    fn is_audio_playing(&self, id: u64) -> Option<bool> {
-        Some(self.world.is_audio_playing(id))
-    }
-
-    fn is_audio_paused(&self, id: u64) -> Option<bool> {
-        Some(self.world.is_audio_paused(id))
-    }
-
-    fn is_audio_looped(&self, id: u64) -> Option<bool> {
-        Some(self.world.is_audio_looped(id))
-    }
-
-    fn get_audio_volume(&self, id: u64) -> Option<f32> {
-        Some(self.world.get_audio_volume(id))
-    }
-
-    fn set_audio_playing(&mut self, id: u64, playing: bool) {
-        self.world.set_audio_playing_runtime(id, playing);
-    }
-
-    fn set_audio_looped(&mut self, id: u64, looped: bool) {
-        self.world.set_audio_looped_runtime(id, looped);
-    }
-
-    fn set_audio_volume(&mut self, id: u64, volume: f32) {
-        self.world.set_audio_volume_runtime(id, volume);
-    }
-
-    fn audio_play(&mut self, id: u64) {
-        self.world.audio_play_runtime(id);
-    }
-
-    fn audio_stop(&mut self, id: u64) {
-        self.world.audio_stop_runtime(id);
-    }
-
-    fn audio_pause(&mut self, id: u64) {
-        self.world.audio_pause_runtime(id);
-    }
-
-    fn set_attribute(&mut self, id: u64, key: String, value: Value) -> Result<(), String> {
-        if self.world.get_effective_cell_by_id(id).is_some() {
-            let attribute = match value {
-                Value::Number(n) => AttributeValue::Number(n),
-                Value::Bool(b) => AttributeValue::Bool(b),
-                Value::String(s) => AttributeValue::String(s),
-
-                _ => {
-                    return Err(format!(
-                        "Cell attributes only support Number, Bool, or String. Got {}",
-                        value.type_name()
-                    ));
-                }
-            };
-
-            self.world
-                .runtime_state
-                .entry(id)
-                .or_default()
-                .attribute_overrides
-                .insert(key, attribute);
-
-            Ok(())
-        } else {
-            Err("invalid cell handle for attribute assignment".to_string())
-        }
-    }
-
-    fn remove_attribute(&mut self, id: u64, key: &str) -> Result<(), String> {
-        if self.world.get_effective_cell_by_id(id).is_some() {
-            if let Some(runtime_state) = self.world.runtime_state.get_mut(&id) {
-                runtime_state.attribute_overrides.remove(key);
-            }
-
-            Ok(())
-        } else {
-            Err("invalid cell handle for attribute removal".to_string())
-        }
-    }
-
-    fn cell_exists(&self, id: u64) -> bool {
-        self.world.get_effective_cell_by_id(id).is_some()
-    }
-
-    fn entity_exists(&self, id: u64) -> bool {
-        self.entity_manager.validate_handle(id)
-    }
-
-    fn get_script_property(&self, kind: HandleKind, id: u64, name: &str) -> Option<Value> {
+    pub fn get_script_property(&self, kind: HandleKind, id: u64, name: &str) -> Option<Value> {
         self.dynamic_properties
             .get(&(kind, id))
             .and_then(|properties| properties.get(name))
             .cloned()
     }
 
-    fn set_script_property(&mut self, kind: HandleKind, id: u64, name: String, value: Value) {
+    pub fn set_script_property(&mut self, kind: HandleKind, id: u64, name: String, value: Value) {
         self.dynamic_properties
             .entry((kind, id))
             .or_default()
             .insert(name, value);
     }
+}
+
+impl<'a> EngineHost for ScriptHostBridge<'a> {
+    fn enable_script(&mut self, path: &str) {
+        let norm = norm_path(path);
+
+        self.world.disabled_scripts.retain(|s| s != &norm);
+
+        if !self.pending_enable_scripts.contains(&norm) {
+            self.pending_enable_scripts.push(norm);
+        }
+    }
+
+    fn get_viewport_size(&self) -> [f32; 2] {
+        self.viewport_size
+    }
+
+    fn disable_script(&mut self, path: &str) {
+        let norm = norm_path(path);
+
+        if !self.world.disabled_scripts.contains(&norm) {
+            self.world.disabled_scripts.push(norm.clone());
+        }
+
+        if !self.pending_disable_scripts.contains(&norm) {
+            self.pending_disable_scripts.push(norm);
+        }
+    }
+
+    fn is_script_enabled(&self, path: &str) -> bool {
+        let norm = norm_path(path);
+        !self.world.disabled_scripts.contains(&norm)
+    }
+
+    fn drain_enabled_scripts(&mut self) -> Vec<String> {
+        std::mem::take(self.pending_enable_scripts)
+    }
+
+    fn drain_disabled_scripts(&mut self) -> Vec<String> {
+        std::mem::take(self.pending_disable_scripts)
+    }
+
+    fn fire_event(&mut self, event_name: &str, args: Vec<Value>) {
+        self.pending_events.push((event_name.to_string(), args));
+    }
+
+    fn drain_pending_events(&mut self) -> Vec<(String, Vec<Value>)> {
+        std::mem::take(self.pending_events)
+    }
+
+    fn complete_test(&mut self, test_name: &str, passed: bool) {
+        self.test_results.insert(test_name.to_string(), passed);
+    }
+
+    fn is_test_completed(&self, test_name: &str) -> Option<bool> {
+        self.test_results.get(test_name).copied()
+    }
+
+    fn get_test_results(&self) -> (usize, usize, usize) {
+        let passed = self.test_results.values().filter(|&&v| v).count();
+        let total = self.test_results.len();
+        let failed = total - passed;
+
+        (passed, failed, total)
+    }
+
+    fn entity_manager(&self) -> &EntityManager {
+        self.entity_manager
+    }
+
+    fn get_position(&self, id: u64) -> Option<Vec3> {
+        ScriptHostBridge::get_position(self, id)
+    }
+
+    fn set_position(&mut self, id: u64, position: Vec3) {
+        ScriptHostBridge::set_position(self, id, position);
+    }
+
+    fn is_entity_declaration_valid(&self, entity_name: &str) -> bool {
+        ScriptHostBridge::is_entity_declaration_valid(self, entity_name)
+    }
+
+    fn spawn_character(&mut self, entity_name: &str, position: Vec3) -> Result<u64, String> {
+        ScriptHostBridge::spawn_character(self, entity_name, position)
+    }
+
+    fn set_valid_entity_declarations(&mut self, decls: Arc<std::collections::HashSet<String>>) {
+        ScriptHostBridge::set_valid_entity_declarations(self, decls)
+    }
+
+    fn drain_pending_spawns(&mut self) -> Vec<(String, u64)> {
+        ScriptHostBridge::drain_pending_spawns(self)
+    }
+
+    fn lookup_light(&self, x: i32, y: i32, z: i32) -> Option<u64> {
+        ScriptHostBridge::lookup_light(self, x, y, z)
+    }
+
+    fn is_light_enabled(&self, id: u64) -> Option<bool> {
+        ScriptHostBridge::is_light_enabled(self, id)
+    }
+
+    fn set_light_enabled(&mut self, id: u64, enabled: bool) {
+        ScriptHostBridge::set_light_enabled(self, id, enabled);
+    }
+
+    fn is_collision_events_enabled(&self, id: u64) -> bool {
+        ScriptHostBridge::is_collision_events_enabled(self, id)
+    }
+
+    fn create_runtime_cell(&mut self, cell_type: &str) -> Result<(HandleKind, u64), String> {
+        ScriptHostBridge::create_runtime_cell(self, cell_type)
+    }
+
+    fn move_runtime_cell(&mut self, id: u64, x: i32, y: i32, z: i32) -> Result<(), String> {
+        ScriptHostBridge::move_runtime_cell(self, id, x, y, z)
+    }
+
+    fn delete_cell(&mut self, id: u64) -> Result<(), String> {
+        ScriptHostBridge::delete_cell(self, id)
+    }
+
+    fn get_all_cells_of_class(&self, class_name: &str) -> Vec<u64> {
+        ScriptHostBridge::get_all_cells_of_class(self, class_name)
+    }
+
+    fn find_objects(&self, query: &str) -> Vec<(HandleKind, u64)> {
+        ScriptHostBridge::find_objects(self, query)
+    }
+
+    fn get_children(&self, kind: HandleKind, id: u64) -> Vec<(HandleKind, u64)> {
+        ScriptHostBridge::get_children(self, kind, id)
+    }
+
+    fn get_parent(&self, kind: HandleKind, id: u64) -> Option<(HandleKind, u64)> {
+        ScriptHostBridge::get_parent(self, kind, id)
+    }
+
+    fn get_cell_object(&self, cell_id: u64) -> Option<(HandleKind, u64)> {
+        ScriptHostBridge::get_cell_object(self, cell_id)
+    }
+
+    fn get_property(&self, kind: HandleKind, id: u64, name: &str) -> Result<Option<Value>, String> {
+        ScriptHostBridge::get_property(self, kind, id, name)
+    }
+
+    fn set_property(&mut self, kind: HandleKind, id: u64, name: &str, value: Value) -> Result<bool, String> {
+        ScriptHostBridge::set_property(self, kind, id, name, value)
+    }
+
+    fn call_method(&mut self, kind: HandleKind, id: u64, name: &str, arguments: &[Value]) -> Result<Option<Value>, String> {
+        ScriptHostBridge::call_method(self, kind, id, name, arguments)
+    }
+
+    fn is_audio_playing(&self, id: u64) -> Option<bool> {
+        ScriptHostBridge::is_audio_playing(self, id)
+    }
+
+    fn is_audio_paused(&self, id: u64) -> Option<bool> {
+        ScriptHostBridge::is_audio_paused(self, id)
+    }
+
+    fn is_audio_looped(&self, id: u64) -> Option<bool> {
+        ScriptHostBridge::is_audio_looped(self, id)
+    }
+
+    fn get_audio_volume(&self, id: u64) -> Option<f32> {
+        ScriptHostBridge::get_audio_volume(self, id)
+    }
+
+    fn set_audio_playing(&mut self, id: u64, playing: bool) {
+        ScriptHostBridge::set_audio_playing(self, id, playing);
+    }
+
+    fn set_audio_looped(&mut self, id: u64, looped: bool) {
+        ScriptHostBridge::set_audio_looped(self, id, looped);
+    }
+
+    fn set_audio_volume(&mut self, id: u64, volume: f32) {
+        ScriptHostBridge::set_audio_volume(self, id, volume);
+    }
+
+    fn audio_play(&mut self, id: u64) {
+        ScriptHostBridge::audio_play(self, id);
+    }
+
+    fn audio_stop(&mut self, id: u64) {
+        ScriptHostBridge::audio_stop(self, id);
+    }
+
+    fn audio_pause(&mut self, id: u64) {
+        ScriptHostBridge::audio_pause(self, id);
+    }
+
+    fn set_attribute(&mut self, id: u64, key: String, value: Value) -> Result<(), String> {
+        ScriptHostBridge::set_attribute(self, id, key, value)
+    }
+
+    fn remove_attribute(&mut self, id: u64, key: &str) -> Result<(), String> {
+        ScriptHostBridge::remove_attribute(self, id, key)
+    }
+
+    fn cell_exists(&self, id: u64) -> bool {
+        ScriptHostBridge::cell_exists(self, id)
+    }
+
+    fn entity_exists(&self, id: u64) -> bool {
+        ScriptHostBridge::entity_exists(self, id)
+    }
+
+    fn get_script_property(&self, kind: HandleKind, id: u64, name: &str) -> Option<Value> {
+        ScriptHostBridge::get_script_property(self, kind, id, name)
+    }
+
+    fn set_script_property(&mut self, kind: HandleKind, id: u64, name: String, value: Value) {
+        ScriptHostBridge::set_script_property(self, kind, id, name, value);
+    }
 
     fn create_ui_element(&mut self, element_type: &str) -> Result<u64, String> {
-        self.runtime_ui.allocate(element_type)
+        ScriptHostBridge::create_ui_element(self, element_type)
     }
 
     fn delete_ui_element(&mut self, id: u64) -> Result<(), String> {
-        self.runtime_ui.delete(id)
+        ScriptHostBridge::delete_ui_element(self, id)
     }
 
     fn get_ui_property(&self, id: u64, name: &str) -> Result<Option<Value>, String> {
-        self.runtime_ui.get_property(id, name)
+        ScriptHostBridge::get_ui_property(self, id, name)
     }
 
     fn set_ui_property(&mut self, id: u64, name: &str, value: Value) -> Result<bool, String> {
-        self.runtime_ui.set_property(id, name, value)
+        ScriptHostBridge::set_ui_property(self, id, name, value)
     }
 
     fn drain_ui_clicks(&mut self) -> Vec<u64> {
-        self.runtime_ui.drain_pending_clicks()
+        ScriptHostBridge::drain_ui_clicks(self)
     }
 
     fn get_input_move_vector(&self) -> [f32; 2] {
-        [self.move_input.x, self.move_input.y]
+        ScriptHostBridge::get_input_move_vector(self)
     }
 
     fn is_input_jump_pressed(&self) -> bool {
-        self.jump_requested
+        ScriptHostBridge::is_input_jump_pressed(self)
     }
 
     fn get_input_orbit_delta(&self) -> [f32; 2] {
-        self.orbit_delta
+        ScriptHostBridge::get_input_orbit_delta(self)
     }
 
     fn get_camera_horizontal_basis(&self) -> ([f32; 3], [f32; 3]) {
-        if let Some(ref camera) = self.gameplay_camera {
-            let (forward, right) = camera.get_horizontal_basis();
-
-            (
-                [forward.x, forward.y, forward.z],
-                [right.x, right.y, right.z],
-            )
-        } else {
-            ([0.0, 0.0, -1.0], [1.0, 0.0, 0.0])
-        }
+        ScriptHostBridge::get_camera_horizontal_basis(self)
     }
 
     fn set_camera_position(&mut self, position: [f32; 3]) {
-        if let Some(ref mut camera) = self.gameplay_camera {
-            camera.current_position = Vec3::new(position[0], position[1], position[2]);
-        }
+        ScriptHostBridge::set_camera_position(self, position);
     }
 
     fn set_camera_target(&mut self, target: [f32; 3]) {
-        if let Some(ref mut camera) = self.gameplay_camera {
-            camera.current_target = Vec3::new(target[0], target[1], target[2]);
-        }
+        ScriptHostBridge::set_camera_target(self, target);
     }
 
     fn set_camera_orientation(&mut self, yaw: f32, pitch: f32) {
-        if let Some(ref mut camera) = self.gameplay_camera {
-            camera.yaw = yaw;
-            camera.pitch = pitch;
-        }
+        ScriptHostBridge::set_camera_orientation(self, yaw, pitch);
     }
 
     fn resolve_camera_collision(&self, target: [f32; 3], desired: [f32; 3]) -> [f32; 3] {
-        if let Some(ref camera) = self.gameplay_camera {
-            let target = Vec3::new(target[0], target[1], target[2]);
-
-            let desired = Vec3::new(desired[0], desired[1], desired[2]);
-
-            let resolved = camera.resolve_collision(target, desired, self.world);
-
-            [resolved.x, resolved.y, resolved.z]
-        } else {
-            desired
-        }
+        ScriptHostBridge::resolve_camera_collision(self, target, desired)
     }
 
     fn get_player_position(&self) -> Option<[f32; 3]> {
-        let system = self.character_system.as_deref()?;
-        let player = system.get_active_player()?;
-
-        let position = player.transform.position;
-
-        Some([position.x, position.y, position.z])
+        ScriptHostBridge::get_player_position(self)
     }
 
     fn set_player_horizontal_velocity(&mut self, velocity_x: f32, velocity_z: f32) {
-        if let Some(system) = self.character_system.as_deref_mut() {
-            if let Some(player) = system.get_active_player_mut() {
-                player.movement.velocity.x = velocity_x;
-                player.movement.velocity.z = velocity_z;
-            }
-        }
+        ScriptHostBridge::set_player_horizontal_velocity(self, velocity_x, velocity_z);
     }
 
     fn set_player_facing_direction(&mut self, direction_x: f32, direction_z: f32) {
-        if let Some(system) = self.character_system.as_deref_mut() {
-            if let Some(player) = system.get_active_player_mut() {
-                let angle = f32::atan2(direction_x, direction_z);
-
-                player.transform.rotation = glam::Quat::from_rotation_y(angle);
-            }
-        }
+        ScriptHostBridge::set_player_facing_direction(self, direction_x, direction_z);
     }
 
     fn select_player_animation(&mut self, animation: &str) {
-        if let Some(system) = self.character_system.as_deref_mut() {
-            if let Some(player) = system.get_active_player_mut() {
-                let target_animation = match animation {
-                    "Walk" => crate::character_custom::TargetAnimation::Walk,
-                    _ => crate::character_custom::TargetAnimation::Idle,
-                };
-
-                player
-                    .animation_controller
-                    .select_animation(target_animation);
-            }
-        }
+        ScriptHostBridge::select_player_animation(self, animation);
     }
 
     fn is_player_grounded(&self) -> bool {
-        if let Some(system) = self.character_system.as_deref() {
-            if let Some(player) = system.get_active_player() {
-                return player.movement.is_grounded;
-            }
-        }
-
-        true
+        ScriptHostBridge::is_player_grounded(self)
     }
 
     fn apply_player_vertical_impulse(&mut self, impulse: f32) {
-        if let Some(system) = self.character_system.as_deref_mut() {
-            if let Some(player) = system.get_active_player_mut() {
-                player.movement.velocity.y = impulse;
-                player.movement.is_grounded = false;
-            }
-        }
-    }
-}
-
-impl<'a> ScriptHostBridge<'a> {
-    fn entity_character_id(&self, entity_id: EntityId) -> Option<u64> {
-        self.character_system.as_deref().and_then(|system| {
-            system
-                .get_active_characters()
-                .find(|character| character.id == entity_id.0)
-                .map(|character| character.id)
-        })
+        ScriptHostBridge::apply_player_vertical_impulse(self, impulse);
     }
 }
 
@@ -1553,8 +1304,8 @@ mod tests {
     use crate::character::CharacterSystem;
     use crate::scripting::api::EngineHost;
     use crate::scripting::value::{HandleKind, Value};
-    use crate::world::WorldCoord;
     use crate::world::cell::{AttributeValue, CellType};
+    use crate::world::WorldCoord;
 
     fn make_bridge<'a>(
         entity_manager: &'a mut EntityManager,

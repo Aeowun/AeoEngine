@@ -85,7 +85,7 @@ impl CellType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Cell {
     pub id: u64,
     pub cell_type: CellType,

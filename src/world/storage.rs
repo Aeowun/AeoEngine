@@ -248,7 +248,7 @@ impl WorldStorage {
 }
 
 /// Persistent representation of one world chunk.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct StoredChunk {
     pub version: u32,
     pub coord: ChunkCoord,
@@ -277,7 +277,7 @@ impl StoredChunk {
 ///
 /// Coordinates are stored locally inside the chunk. This keeps chunk files
 /// self-contained while avoiding duplication of the chunk origin in every cell.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct StoredCell {
     pub local_x: i32,
     pub local_y: i32,
@@ -410,7 +410,7 @@ impl StoredCell {
 ///
 /// We intentionally do not serialize Rust enum discriminants so adding/reordering
 /// CellType variants later cannot silently corrupt old chunk files.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StoredCellType {
     Block,
     FxBlock,
