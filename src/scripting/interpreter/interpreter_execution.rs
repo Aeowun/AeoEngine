@@ -6,7 +6,10 @@ use crate::scripting::execution::{FiberResult, YieldReason};
 use crate::scripting::value::{Scope, Value};
 
 use super::interpreter_compile::{compile_event, compile_function, compile_top_level};
-use super::{CallFrame, ExecutionFlow, ForState, Interpreter, ScriptFiber, ScriptInstance, FRAME_PUSHED_SENTINEL};
+use super::{
+    CallFrame, ExecutionFlow, FRAME_PUSHED_SENTINEL, ForState, Interpreter, ScriptFiber,
+    ScriptInstance,
+};
 
 impl ScriptFiber {
     pub(super) fn fail(&mut self, message: String) -> FiberResult {

@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use super::World;
 use crate::world::cell::{AttributeValue, Cell, ChunkCoord};
 use crate::world::coordinate::WorldCoord;
-use super::World;
 use glam::Vec3;
+use std::collections::BTreeMap;
 
 impl World {
     pub fn get(&self, coord: WorldCoord) -> Option<&Cell> {
@@ -162,10 +162,7 @@ impl World {
         Vec3::ZERO
     }
 
-    pub fn get_effective_attributes(
-        &self,
-        coord: WorldCoord,
-    ) -> BTreeMap<String, AttributeValue> {
+    pub fn get_effective_attributes(&self, coord: WorldCoord) -> BTreeMap<String, AttributeValue> {
         let mut result = BTreeMap::new();
         if let Some(cell) = self.cells.get(&coord) {
             result.extend(cell.attributes.clone());
@@ -176,11 +173,7 @@ impl World {
         result
     }
 
-    pub fn get_effective_attribute(
-        &self,
-        coord: WorldCoord,
-        key: &str,
-    ) -> Option<AttributeValue> {
+    pub fn get_effective_attribute(&self, coord: WorldCoord, key: &str) -> Option<AttributeValue> {
         if let Some(cell) = self.get_effective_cell(coord) {
             if let Some(rs) = self.runtime_state.get(&cell.id) {
                 if let Some(val) = rs.attribute_overrides.get(key) {
@@ -193,13 +186,17 @@ impl World {
     }
 
     pub fn get_effective_cell(&self, coord: WorldCoord) -> Option<&Cell> {
-        if let Some(id) = self.coord_to_runtime_id.get(&coord) {
-            return self.runtime_cells.get(id);
+        if !self.coord_to_runtime_id.is_empty() {
+            if let Some(id) = self.coord_to_runtime_id.get(&coord) {
+                return self.runtime_cells.get(id);
+            }
         }
         if let Some(cell) = self.cells.get(&coord) {
-            if let Some(rs) = self.runtime_state.get(&cell.id) {
-                if rs.is_deleted {
-                    return None;
+            if !self.runtime_state.is_empty() {
+                if let Some(rs) = self.runtime_state.get(&cell.id) {
+                    if rs.is_deleted {
+                        return None;
+                    }
                 }
             }
             return Some(cell);
@@ -208,13 +205,17 @@ impl World {
     }
 
     pub fn get_effective_cell_by_id(&self, id: u64) -> Option<&Cell> {
-        if let Some(cell) = self.runtime_cells.get(&id) {
-            return Some(cell);
+        if !self.runtime_cells.is_empty() {
+            if let Some(cell) = self.runtime_cells.get(&id) {
+                return Some(cell);
+            }
         }
         if let Some(coord) = self.id_to_coord.get(&id) {
-            if let Some(rs) = self.runtime_state.get(&id) {
-                if rs.is_deleted {
-                    return None;
+            if !self.runtime_state.is_empty() {
+                if let Some(rs) = self.runtime_state.get(&id) {
+                    if rs.is_deleted {
+                        return None;
+                    }
                 }
             }
             return self.cells.get(coord);
@@ -239,14 +240,28 @@ impl World {
     /// Resident-only effective coordinates without allocating a temporary
     /// whole-world vector. Runtime coordinates follow authored coordinates.
     pub fn iter_active_effective_coords(&self) -> impl Iterator<Item = WorldCoord> + '_ {
-        self.cells.iter().filter_map(|(coord, cell)| {
-            (!self.runtime_state.get(&cell.id).is_some_and(|state| state.is_deleted))
+        self.cells
+            .iter()
+            .filter_map(|(coord, cell)| {
+                (!self
+                    .runtime_state
+                    .get(&cell.id)
+                    .is_some_and(|state| state.is_deleted))
                 .then_some(*coord)
-        }).chain(self.runtime_id_to_coord.values().copied())
+            })
+            .chain(self.runtime_id_to_coord.values().copied())
     }
 
     pub fn iter_audio_emitter_ids(&self) -> impl Iterator<Item = u64> + '_ {
         self.audio_emitter_ids.iter().copied()
+    }
+
+    pub fn iter_light_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.light_ids.iter().copied()
+    }
+
+    pub fn iter_editor_marker_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.editor_marker_ids.iter().copied()
     }
 
     pub fn active_blocks(&self) -> Vec<WorldCoord> {
@@ -254,7 +269,8 @@ impl World {
     }
 
     pub fn authored_cells_in_chunk(&self, chunk_coord: ChunkCoord) -> Vec<(WorldCoord, Cell)> {
-        self.cells.iter()
+        self.cells
+            .iter()
             .filter(|(coord, _)| ChunkCoord::from_world_coord(**coord) == chunk_coord)
             .map(|(coord, cell)| (*coord, cell.clone()))
             .collect()

@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
+use super::ChunkCoord;
 use super::cell::{AttributeValue, Cell, CellType};
 use super::coordinate::WorldCoord;
-use super::ChunkCoord;
 
 const CHUNK_FILE_VERSION: u32 = 1;
 const CHUNK_EXTENSION: &str = "chunk";
@@ -43,10 +43,7 @@ impl WorldStorage {
     pub fn chunk_path(&self, chunk_coord: ChunkCoord) -> PathBuf {
         self.root.join(format!(
             "{}_{}_{}.{}",
-            chunk_coord.x,
-            chunk_coord.y,
-            chunk_coord.z,
-            CHUNK_EXTENSION
+            chunk_coord.x, chunk_coord.y, chunk_coord.z, CHUNK_EXTENSION
         ))
     }
     /// Returns every chunk coordinate currently stored on disk.
@@ -65,9 +62,7 @@ impl WorldStorage {
                 continue;
             }
 
-            if path.extension().and_then(|value| value.to_str())
-                != Some(CHUNK_EXTENSION)
-            {
+            if path.extension().and_then(|value| value.to_str()) != Some(CHUNK_EXTENSION) {
                 continue;
             }
 
@@ -108,10 +103,7 @@ impl WorldStorage {
     ///
     /// `Ok(None)` means the chunk has never been saved and should therefore
     /// be treated as an empty chunk.
-    pub fn load_chunk(
-        &self,
-        chunk_coord: ChunkCoord,
-    ) -> io::Result<Option<StoredChunk>> {
+    pub fn load_chunk(&self, chunk_coord: ChunkCoord) -> io::Result<Option<StoredChunk>> {
         let path = self.chunk_path(chunk_coord);
 
         if !path.exists() {
@@ -135,11 +127,7 @@ impl WorldStorage {
                 io::ErrorKind::InvalidData,
                 format!(
                     "Unsupported chunk version {} for ({}, {}, {}); expected {}",
-                    chunk.version,
-                    chunk_coord.x,
-                    chunk_coord.y,
-                    chunk_coord.z,
-                    CHUNK_FILE_VERSION
+                    chunk.version, chunk_coord.x, chunk_coord.y, chunk_coord.z, CHUNK_FILE_VERSION
                 ),
             ));
         }
@@ -226,12 +214,7 @@ impl WorldStorage {
                     io::ErrorKind::InvalidInput,
                     format!(
                         "Cell ({}, {}, {}) does not belong to chunk ({}, {}, {})",
-                        coord.x,
-                        coord.y,
-                        coord.z,
-                        chunk_coord.x,
-                        chunk_coord.y,
-                        chunk_coord.z
+                        coord.x, coord.y, coord.z, chunk_coord.x, chunk_coord.y, chunk_coord.z
                     ),
                 ));
             }
@@ -326,11 +309,7 @@ impl StoredCell {
             anchored: cell.anchored,
 
             texture: cell.texture.clone(),
-            color_rgb: [
-                cell.color_rgb.x,
-                cell.color_rgb.y,
-                cell.color_rgb.z,
-            ],
+            color_rgb: [cell.color_rgb.x, cell.color_rgb.y, cell.color_rgb.z],
 
             audio: cell.audio.clone(),
             playing: cell.playing,
@@ -339,11 +318,7 @@ impl StoredCell {
 
             collision_events_enabled: cell.collision_events_enabled,
 
-            light_color: [
-                cell.light_color.x,
-                cell.light_color.y,
-                cell.light_color.z,
-            ],
+            light_color: [cell.light_color.x, cell.light_color.y, cell.light_color.z],
             light_intensity: cell.light_intensity,
             light_range: cell.light_range,
             light_shadows: cell.light_shadows,
@@ -355,10 +330,7 @@ impl StoredCell {
         }
     }
 
-    pub fn into_cell(
-        self,
-        chunk_coord: ChunkCoord,
-    ) -> (WorldCoord, Cell) {
+    pub fn into_cell(self, chunk_coord: ChunkCoord) -> (WorldCoord, Cell) {
         let coord = WorldCoord::new(
             chunk_coord.x * super::CHUNK_SIZE + self.local_x,
             chunk_coord.y * super::CHUNK_SIZE + self.local_y,
@@ -374,11 +346,7 @@ impl StoredCell {
             anchored: self.anchored,
 
             texture: self.texture,
-            color_rgb: Vec3::new(
-                self.color_rgb[0],
-                self.color_rgb[1],
-                self.color_rgb[2],
-            ),
+            color_rgb: Vec3::new(self.color_rgb[0], self.color_rgb[1], self.color_rgb[2]),
 
             audio: self.audio,
             playing: self.playing,
@@ -480,14 +448,11 @@ mod tests {
         cell.texture = "brick".to_string();
         cell.entity_identity = Some("TestEntity".to_string());
 
-        cell.attributes.insert(
-            "health".to_string(),
-            AttributeValue::Number(100.0),
-        );
+        cell.attributes
+            .insert("health".to_string(), AttributeValue::Number(100.0));
 
         let stored = StoredCell::from_cell(coord, &cell);
-        let (loaded_coord, loaded_cell) =
-            stored.into_cell(chunk_coord);
+        let (loaded_coord, loaded_cell) = stored.into_cell(chunk_coord);
 
         assert_eq!(coord, loaded_coord);
         assert_eq!(cell.id, loaded_cell.id);
@@ -497,14 +462,8 @@ mod tests {
         assert_eq!(cell.anchored, loaded_cell.anchored);
         assert_eq!(cell.texture, loaded_cell.texture);
         assert_eq!(cell.color_rgb, loaded_cell.color_rgb);
-        assert_eq!(
-            cell.entity_identity,
-            loaded_cell.entity_identity
-        );
-        assert_eq!(
-            cell.attributes,
-            loaded_cell.attributes
-        );
+        assert_eq!(cell.entity_identity, loaded_cell.entity_identity);
+        assert_eq!(cell.attributes, loaded_cell.attributes);
     }
 
     #[test]
@@ -518,12 +477,7 @@ mod tests {
         let mut cell = Cell::new_block();
         cell.id = 42;
 
-        let chunk =
-            WorldStorage::create_stored_chunk(
-                chunk_coord,
-                [(coord, cell)],
-            )
-            .unwrap();
+        let chunk = WorldStorage::create_stored_chunk(chunk_coord, [(coord, cell)]).unwrap();
 
         storage.save_chunk(&chunk).unwrap();
 
@@ -553,9 +507,7 @@ mod tests {
 
         let coord = ChunkCoord::new(100, 200, -50);
 
-        assert!(
-            storage.load_chunk(coord).unwrap().is_none()
-        );
+        assert!(storage.load_chunk(coord).unwrap().is_none());
 
         let _ = fs::remove_dir_all(root);
     }

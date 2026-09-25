@@ -131,7 +131,11 @@ impl Editor {
         });
     }
 
-    pub(crate) fn draw_tool_bar(&mut self, ctx: &egui::Context, project_path: &Option<std::path::PathBuf>) {
+    pub(crate) fn draw_tool_bar(
+        &mut self,
+        ctx: &egui::Context,
+        project_path: &Option<std::path::PathBuf>,
+    ) {
         egui::TopBottomPanel::top("tool_bar").show(ctx, |ui| {
             ui.add_space(2.0);
             tools::draw_tool_bar(ui, self, project_path);
@@ -179,7 +183,11 @@ impl Editor {
         }
     }
 
-    pub(crate) fn render_active_color_picker(&mut self, ctx: &egui::Context, world: &mut crate::world::World) {
+    pub(crate) fn render_active_color_picker(
+        &mut self,
+        ctx: &egui::Context,
+        world: &mut crate::world::World,
+    ) {
         if let Some(target) = self.active_color_target {
             let mut still_open = true;
             let title = match target {

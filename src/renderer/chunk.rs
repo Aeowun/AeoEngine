@@ -74,6 +74,11 @@ struct ShadowFaceInfo {
     visual_offset: Vec3,
 }
 
+#[inline(always)]
+fn chunk_local_index(lx: i32, ly: i32, lz: i32) -> usize {
+    (lx as usize) | ((ly as usize) << 4) | ((lz as usize) << 8)
+}
+
 pub fn build_cpu_chunk_data(
     world: &World,
     chunk_coord: ChunkCoord,
@@ -87,8 +92,8 @@ pub fn build_cpu_chunk_data(
         return CpuChunkData::default();
     }
 
-    let mut main_grid: HashMap<(i32, i32, i32), (u8, MainFaceInfo)> = HashMap::new();
-    let mut shadow_grid: HashMap<(i32, i32, i32), (u8, ShadowFaceInfo)> = HashMap::new();
+    let mut main_grid: Vec<Option<(u8, MainFaceInfo)>> = vec![None; 4096];
+    let mut shadow_grid: Vec<Option<(u8, ShadowFaceInfo)>> = vec![None; 4096];
 
     for &coord in coords_in_chunk {
         let Some(cell) = world.get_effective_cell(coord) else {
@@ -106,6 +111,8 @@ pub fn build_cpu_chunk_data(
             continue;
         }
 
+        let idx = chunk_local_index(lx, ly, lz);
+
         // --- Main Pass Static Geometry ---
         let main_renderable = matches!(
             cell.cell_type,
@@ -122,7 +129,7 @@ pub fn build_cpu_chunk_data(
                     color,
                     visual_offset,
                 };
-                main_grid.insert((lx, ly, lz), (mask, info));
+                main_grid[idx] = Some((mask, info));
             }
         }
 
@@ -135,7 +142,7 @@ pub fn build_cpu_chunk_data(
             if mask != 0 {
                 let visual_offset = world.get_visual_offset(coord);
                 let info = ShadowFaceInfo { visual_offset };
-                shadow_grid.insert((lx, ly, lz), (mask, info));
+                shadow_grid[idx] = Some((mask, info));
             }
         }
     }
@@ -158,7 +165,7 @@ fn map_uvw_to_local_xyz(face: CubeFace, u: i32, v: i32, w: i32) -> (i32, i32, i3
 }
 
 fn greedy_mesh_main_pass(
-    main_grid: &HashMap<(i32, i32, i32), (u8, MainFaceInfo)>,
+    main_grid: &[Option<(u8, MainFaceInfo)>],
     main_texture_vertices: &mut HashMap<String, Vec<f32>>,
 ) {
     for face in &CubeFace::ALL {
@@ -170,7 +177,8 @@ fn greedy_mesh_main_pass(
             for w in 0..16 {
                 for v in 0..16 {
                     let (lx, ly, lz) = map_uvw_to_local_xyz(*face, u, v, w);
-                    if let Some((mask, info)) = main_grid.get(&(lx, ly, lz)) {
+                    let idx = chunk_local_index(lx, ly, lz);
+                    if let Some((mask, info)) = &main_grid[idx] {
                         if (mask & mask_bit) != 0 {
                             slice[w as usize][v as usize] = Some(info.clone());
                         }
@@ -316,7 +324,7 @@ fn emit_merged_main_quad(
 }
 
 fn greedy_mesh_shadow_pass(
-    shadow_grid: &HashMap<(i32, i32, i32), (u8, ShadowFaceInfo)>,
+    shadow_grid: &[Option<(u8, ShadowFaceInfo)>],
     shadow_positions: &mut Vec<f32>,
 ) {
     for face in &CubeFace::ALL {
@@ -328,7 +336,8 @@ fn greedy_mesh_shadow_pass(
             for w in 0..16 {
                 for v in 0..16 {
                     let (lx, ly, lz) = map_uvw_to_local_xyz(*face, u, v, w);
-                    if let Some((mask, info)) = shadow_grid.get(&(lx, ly, lz)) {
+                    let idx = chunk_local_index(lx, ly, lz);
+                    if let Some((mask, info)) = &shadow_grid[idx] {
                         if (mask & mask_bit) != 0 {
                             slice[w as usize][v as usize] = Some(info.clone());
                         }

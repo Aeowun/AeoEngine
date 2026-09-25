@@ -4863,14 +4863,10 @@ entity Trigger {
 
         let coord = WorldCoord::new(1, 2, 3);
 
-        let id = world.set_cell(
-            coord,
-            CellType::AudioEmitter,
-        );
+        let id = world.set_cell(coord, CellType::AudioEmitter);
 
         if let Some(cell) = world.get_mut(coord) {
-            cell.audio =
-                "battle/sword-unsheathe.wav".to_string();
+            cell.audio = "battle/sword-unsheathe.wav".to_string();
             cell.playing = true;
             cell.looped = true;
             cell.volume = 0.75;
@@ -4880,24 +4876,13 @@ entity Trigger {
 
         let mut loaded_world = World::new();
 
-        load_world(
-            &mut loaded_world,
-            &path,
-        )
-        .unwrap();
+        load_world(&mut loaded_world, &path).unwrap();
 
-        let loaded =
-            loaded_world.get(coord).unwrap();
+        let loaded = loaded_world.get(coord).unwrap();
 
         assert_eq!(loaded.id, id);
-        assert_eq!(
-            loaded.cell_type,
-            CellType::AudioEmitter
-        );
-        assert_eq!(
-            loaded.audio,
-            "battle/sword-unsheathe.wav"
-        );
+        assert_eq!(loaded.cell_type, CellType::AudioEmitter);
+        assert_eq!(loaded.audio, "battle/sword-unsheathe.wav");
         assert!(loaded.playing);
         assert!(loaded.looped);
         assert!((loaded.volume - 0.75).abs() < 1e-6);

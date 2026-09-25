@@ -8,4 +8,6 @@ pub mod world;
 pub use cell::{AttributeValue, CHUNK_SIZE, Cell, CellType, ChunkCoord};
 pub use coordinate::WorldCoord;
 pub use storage::{StoredChunk, WorldStorage};
-pub use world::{ChunkCellIndex, DirtyReason, LightingSettings, SkySettings, World, WorldSpatialIndex};
+pub use world::{
+    ChunkCellIndex, DirtyReason, LightingSettings, SkySettings, World, WorldSpatialIndex,
+};

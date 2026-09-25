@@ -5,8 +5,8 @@ use image::GenericImageView;
 
 use crate::editor::GridPlane;
 
-use super::mesh::{add_block_quad, add_line, upload_vertices_3d, VERTEX_3D_FLOATS};
 use super::Renderer;
+use super::mesh::{VERTEX_3D_FLOATS, add_block_quad, add_line, upload_vertices_3d};
 
 impl Renderer {
     pub fn get_texture(&self, identifier: &str) -> u32 {

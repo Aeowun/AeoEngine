@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use super::World;
 use crate::world::cell::ChunkCoord;
 use crate::world::coordinate::WorldCoord;
-use super::World;
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DirtyReason {

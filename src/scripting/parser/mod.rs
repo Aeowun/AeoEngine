@@ -74,7 +74,10 @@ impl Parser {
         })
     }
 
-    pub(super) fn consume_identifier(&mut self, message: &str) -> Result<(String, SourceSpan), ParserError> {
+    pub(super) fn consume_identifier(
+        &mut self,
+        message: &str,
+    ) -> Result<(String, SourceSpan), ParserError> {
         match self.peek_kind() {
             TokenKind::Identifier(name) => {
                 let name = name.clone();
@@ -89,7 +92,11 @@ impl Parser {
         }
     }
 
-    pub(super) fn consume_simple(&mut self, expected: TokenKind, message: &str) -> Result<Token, ParserError> {
+    pub(super) fn consume_simple(
+        &mut self,
+        expected: TokenKind,
+        message: &str,
+    ) -> Result<Token, ParserError> {
         if self.check_simple(&expected) {
             Ok(self.advance().clone())
         } else {

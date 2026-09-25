@@ -66,8 +66,7 @@ impl CharacterSystem {
         min_z -= PADDING;
         max_z += PADDING;
 
-        let mut open: BinaryHeap<(Reverse<i32>, Reverse<i32>, (i32, i32, i32))> =
-            BinaryHeap::new();
+        let mut open: BinaryHeap<(Reverse<i32>, Reverse<i32>, (i32, i32, i32))> = BinaryHeap::new();
 
         let mut came_from: HashMap<(i32, i32, i32), (i32, i32, i32)> = HashMap::new();
 

@@ -25,18 +25,7 @@ pub enum CellType {
 
 pub const CHUNK_SIZE: i32 = 16;
 
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ChunkCoord {
     pub x: i32,
     pub y: i32,

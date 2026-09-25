@@ -34,10 +34,7 @@ impl<'a> ScriptHostBridge<'a> {
         Ok(entity_id.0)
     }
 
-    pub fn set_valid_entity_declarations(
-        &mut self,
-        decls: Arc<std::collections::HashSet<String>>,
-    ) {
+    pub fn set_valid_entity_declarations(&mut self, decls: Arc<std::collections::HashSet<String>>) {
         self.valid_entity_declarations = Some(decls);
     }
 

@@ -1,8 +1,8 @@
 use egui::RichText;
 
 use super::{
-    App, EditorMode, View, COLOR_ACCENT_ORANGE, COLOR_TEXT, COLOR_VOID, COLOR_VOID_ELEVATED,
-    COLOR_VOID_PANEL,
+    App, COLOR_ACCENT_ORANGE, COLOR_TEXT, COLOR_VOID, COLOR_VOID_ELEVATED, COLOR_VOID_PANEL,
+    EditorMode, View,
 };
 
 impl App {

@@ -1,8 +1,8 @@
-use std::collections::{HashMap, HashSet};
-use glam::Vec3;
+use super::World;
 use crate::world::cell::{CellType, ChunkCoord};
 use crate::world::coordinate::WorldCoord;
-use super::World;
+use glam::Vec3;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, Default)]
 pub struct ChunkCellIndex {

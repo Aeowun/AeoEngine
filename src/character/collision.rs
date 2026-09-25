@@ -74,8 +74,7 @@ pub fn resolve_static_voxel_collisions(
         let crossed_floor =
             moving_down && previous_bottom >= v_max.y - 0.001 && current_bottom < v_max.y;
 
-        let crossed_ceiling =
-            moving_up && previous_top <= v_min.y + 0.001 && current_top > v_min.y;
+        let crossed_ceiling = moving_up && previous_top <= v_min.y + 0.001 && current_top > v_min.y;
 
         if crossed_floor {
             character.transform.position.y = v_max.y;
@@ -166,8 +165,7 @@ pub fn resolve_dynamic_body_collisions(
         let crossed_floor =
             moving_down && previous_bottom >= v_max.y - 0.001 && current_bottom < v_max.y;
 
-        let crossed_ceiling =
-            moving_up && previous_top <= v_min.y + 0.001 && current_top > v_min.y;
+        let crossed_ceiling = moving_up && previous_top <= v_min.y + 0.001 && current_top > v_min.y;
 
         if crossed_floor {
             character.transform.position.y = v_max.y;

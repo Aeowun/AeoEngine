@@ -1,5 +1,5 @@
-use super::mesh::VERTEX_3D_FLOATS;
 use super::Renderer;
+use super::mesh::VERTEX_3D_FLOATS;
 
 impl Renderer {
     pub fn get_block_mask_range(&self, mask: u8) -> (i32, i32) {

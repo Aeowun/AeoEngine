@@ -519,7 +519,11 @@ impl Interpreter {
             })
     }
 
-    pub(super) fn find_function(&self, entity_name: &str, function_name: &str) -> Option<FunctionDecl> {
+    pub(super) fn find_function(
+        &self,
+        entity_name: &str,
+        function_name: &str,
+    ) -> Option<FunctionDecl> {
         if let Some(entity) = self.find_entity(entity_name) {
             if let Some(function) = entity.members.into_iter().find_map(|member| match member {
                 EntityMember::Function(function) if function.name == function_name => {

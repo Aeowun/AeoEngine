@@ -37,10 +37,7 @@ fn test_world_path(name: &str) -> (PathBuf, PathBuf) {
 fn test_world_default_gravity() {
     let world = World::new();
 
-    assert_eq!(
-        world.gravity,
-        Vec3::new(0.0, -9.81, 0.0)
-    );
+    assert_eq!(world.gravity, Vec3::new(0.0, -9.81, 0.0));
 }
 
 #[test]
@@ -113,13 +110,9 @@ fn test_world_lighting_persistence() {
         Vec3::new(1.0, 0.5, 0.2)
     );
 
-    assert!(
-        (loaded_world.lighting.global_light_intensity - 4.2).abs() < 1e-5
-    );
+    assert!((loaded_world.lighting.global_light_intensity - 4.2).abs() < 1e-5);
 
-    assert!(
-        (loaded_world.lighting.ambient_intensity - 0.88).abs() < 1e-5
-    );
+    assert!((loaded_world.lighting.ambient_intensity - 0.88).abs() < 1e-5);
 
     fs::remove_dir_all(project).ok();
 }
@@ -150,10 +143,7 @@ fn test_light_cell_persistence() {
     let loaded_cell = loaded_world.get(coord).unwrap();
 
     assert_eq!(loaded_cell.cell_type, CellType::Light);
-    assert_eq!(
-        loaded_cell.light_color,
-        Vec3::new(0.1, 0.2, 0.3)
-    );
+    assert_eq!(loaded_cell.light_color, Vec3::new(0.1, 0.2, 0.3));
     assert_eq!(loaded_cell.light_intensity, 99.0);
     assert_eq!(loaded_cell.light_range, 50.0);
     assert!(!loaded_cell.light_shadows);
@@ -180,33 +170,18 @@ fn test_chunked_world_persistence() {
 
     let storage = WorldStorage::new(&project).unwrap();
 
-    assert!(storage.chunk_exists(
-        ChunkCoord::new(0, 0, 0)
-    ));
-    assert!(storage.chunk_exists(
-        ChunkCoord::new(1, 0, 0)
-    ));
-    assert!(storage.chunk_exists(
-        ChunkCoord::new(-1, 0, 0)
-    ));
+    assert!(storage.chunk_exists(ChunkCoord::new(0, 0, 0)));
+    assert!(storage.chunk_exists(ChunkCoord::new(1, 0, 0)));
+    assert!(storage.chunk_exists(ChunkCoord::new(-1, 0, 0)));
 
     let mut loaded = World::new();
     load_world(&mut loaded, &path).unwrap();
 
-    assert_eq!(
-        loaded.get(a).unwrap().cell_type,
-        CellType::Block
-    );
+    assert_eq!(loaded.get(a).unwrap().cell_type, CellType::Block);
 
-    assert_eq!(
-        loaded.get(b).unwrap().cell_type,
-        CellType::Light
-    );
+    assert_eq!(loaded.get(b).unwrap().cell_type, CellType::Light);
 
-    assert_eq!(
-        loaded.get(c).unwrap().cell_type,
-        CellType::NPC
-    );
+    assert_eq!(loaded.get(c).unwrap().cell_type, CellType::NPC);
 
     fs::remove_dir_all(project).ok();
 }
@@ -217,10 +192,7 @@ fn test_chunked_world_file_contains_metadata_only() {
 
     let mut world = World::new();
 
-    world.set_cell(
-        WorldCoord::new(123, 456, 789),
-        CellType::Block,
-    );
+    world.set_cell(WorldCoord::new(123, 456, 789), CellType::Block);
 
     save_world(&world, &path).unwrap();
 
@@ -247,58 +219,42 @@ fn test_chunked_world_file_contains_metadata_only() {
 #[test]
 fn test_chunk_coordinate_math() {
     assert_eq!(
-        ChunkCoord::from_world_coord(
-            WorldCoord::new(0, 0, 0)
-        ),
+        ChunkCoord::from_world_coord(WorldCoord::new(0, 0, 0)),
         ChunkCoord::new(0, 0, 0)
     );
 
     assert_eq!(
-        ChunkCoord::from_world_coord(
-            WorldCoord::new(15, 15, 15)
-        ),
+        ChunkCoord::from_world_coord(WorldCoord::new(15, 15, 15)),
         ChunkCoord::new(0, 0, 0)
     );
 
     assert_eq!(
-        ChunkCoord::from_world_coord(
-            WorldCoord::new(16, 16, 16)
-        ),
+        ChunkCoord::from_world_coord(WorldCoord::new(16, 16, 16)),
         ChunkCoord::new(1, 1, 1)
     );
 
     assert_eq!(
-        ChunkCoord::from_world_coord(
-            WorldCoord::new(-1, -1, -1)
-        ),
+        ChunkCoord::from_world_coord(WorldCoord::new(-1, -1, -1)),
         ChunkCoord::new(-1, -1, -1)
     );
 
     assert_eq!(
-        ChunkCoord::local_offset(
-            WorldCoord::new(-1, -1, -1)
-        ),
+        ChunkCoord::local_offset(WorldCoord::new(-1, -1, -1)),
         (15, 15, 15)
     );
 
     assert_eq!(
-        ChunkCoord::local_offset(
-            WorldCoord::new(-16, -16, -16)
-        ),
+        ChunkCoord::local_offset(WorldCoord::new(-16, -16, -16)),
         (0, 0, 0)
     );
 
     assert_eq!(
-        ChunkCoord::from_world_coord(
-            WorldCoord::new(-17, -17, -17)
-        ),
+        ChunkCoord::from_world_coord(WorldCoord::new(-17, -17, -17)),
         ChunkCoord::new(-2, -2, -2)
     );
 
     assert_eq!(
-        ChunkCoord::local_offset(
-            WorldCoord::new(-17, -17, -17)
-        ),
+        ChunkCoord::local_offset(WorldCoord::new(-17, -17, -17)),
         (15, 15, 15)
     );
 }
@@ -317,9 +273,7 @@ fn test_negative_coordinate_chunk_round_trip() {
 
     let storage = WorldStorage::new(&project).unwrap();
 
-    assert!(storage.chunk_exists(
-        ChunkCoord::new(-2, 2, -4)
-    ));
+    assert!(storage.chunk_exists(ChunkCoord::new(-2, 2, -4)));
 
     let mut loaded = World::new();
     load_world(&mut loaded, &path).unwrap();
@@ -399,19 +353,13 @@ fn test_full_cell_data_round_trip() {
 
         cell.entity_identity = Some("FullRoundTrip".to_string());
 
-        cell.attributes.insert(
-            "health".to_string(),
-            AttributeValue::Number(123.45),
-        );
-        cell.attributes.insert(
-            "active".to_string(),
-            AttributeValue::Bool(true),
-        );
+        cell.attributes
+            .insert("health".to_string(), AttributeValue::Number(123.45));
+        cell.attributes
+            .insert("active".to_string(), AttributeValue::Bool(true));
         cell.attributes.insert(
             "name".to_string(),
-            AttributeValue::String(
-                "A value with spaces".to_string(),
-            ),
+            AttributeValue::String("A value with spaces".to_string()),
         );
     }
 
@@ -428,34 +376,22 @@ fn test_full_cell_data_round_trip() {
     assert!(!cell.solid);
     assert!(!cell.anchored);
     assert_eq!(cell.texture, "custom_texture");
-    assert_eq!(
-        cell.color_rgb,
-        Vec3::new(0.11, 0.22, 0.33)
-    );
+    assert_eq!(cell.color_rgb, Vec3::new(0.11, 0.22, 0.33));
 
-    assert_eq!(
-        cell.audio,
-        "audio/ambient/wind.wav"
-    );
+    assert_eq!(cell.audio, "audio/ambient/wind.wav");
     assert!(cell.playing);
     assert!(cell.looped);
     assert!((cell.volume - 0.37).abs() < 1e-6);
 
     assert!(!cell.collision_events_enabled);
 
-    assert_eq!(
-        cell.light_color,
-        Vec3::new(0.44, 0.55, 0.66)
-    );
+    assert_eq!(cell.light_color, Vec3::new(0.44, 0.55, 0.66));
     assert_eq!(cell.light_intensity, 12.5);
     assert_eq!(cell.light_range, 31.0);
     assert!(!cell.light_shadows);
     assert!(!cell.light_enabled);
 
-    assert_eq!(
-        cell.entity_identity,
-        Some("FullRoundTrip".to_string())
-    );
+    assert_eq!(cell.entity_identity, Some("FullRoundTrip".to_string()));
 
     assert_eq!(
         cell.attributes.get("health"),
@@ -467,9 +403,7 @@ fn test_full_cell_data_round_trip() {
     );
     assert_eq!(
         cell.attributes.get("name"),
-        Some(&AttributeValue::String(
-            "A value with spaces".to_string()
-        ))
+        Some(&AttributeValue::String("A value with spaces".to_string()))
     );
 
     fs::remove_dir_all(project).ok();
@@ -491,24 +425,16 @@ fn test_stale_chunk_is_removed_on_save() {
 
     let storage = WorldStorage::new(&project).unwrap();
 
-    assert!(storage.chunk_exists(
-        ChunkCoord::new(0, 0, 0)
-    ));
-    assert!(storage.chunk_exists(
-        ChunkCoord::new(1, 0, 0)
-    ));
+    assert!(storage.chunk_exists(ChunkCoord::new(0, 0, 0)));
+    assert!(storage.chunk_exists(ChunkCoord::new(1, 0, 0)));
 
     world.cells.remove(&second_coord);
     world.rebuild_id_mapping();
 
     save_world(&world, &path).unwrap();
 
-    assert!(storage.chunk_exists(
-        ChunkCoord::new(0, 0, 0)
-    ));
-    assert!(!storage.chunk_exists(
-        ChunkCoord::new(1, 0, 0)
-    ));
+    assert!(storage.chunk_exists(ChunkCoord::new(0, 0, 0)));
+    assert!(!storage.chunk_exists(ChunkCoord::new(1, 0, 0)));
 
     let mut loaded = World::new();
     load_world(&mut loaded, &path).unwrap();
@@ -529,9 +455,7 @@ fn test_empty_world_has_no_chunk_files() {
 
     let storage = WorldStorage::new(&project).unwrap();
 
-    assert!(
-        storage.list_chunks().unwrap().is_empty()
-    );
+    assert!(storage.list_chunks().unwrap().is_empty());
 
     fs::remove_dir_all(project).ok();
 }
@@ -542,20 +466,11 @@ fn test_world_save_creates_expected_chunk_files() {
 
     let mut world = World::new();
 
-    world.set_cell(
-        WorldCoord::new(0, 0, 0),
-        CellType::Block,
-    );
+    world.set_cell(WorldCoord::new(0, 0, 0), CellType::Block);
 
-    world.set_cell(
-        WorldCoord::new(16, 0, 0),
-        CellType::Block,
-    );
+    world.set_cell(WorldCoord::new(16, 0, 0), CellType::Block);
 
-    world.set_cell(
-        WorldCoord::new(-1, 0, 0),
-        CellType::Block,
-    );
+    world.set_cell(WorldCoord::new(-1, 0, 0), CellType::Block);
 
     save_world(&world, &path).unwrap();
 
@@ -601,19 +516,13 @@ fn test_light_default_enabled_legacy_load() {
     {
         let mut file = File::create(&path).unwrap();
 
-        writeln!(
-            file,
-            "LIGHT 5 5 5 1 1 1 5 10 true"
-        )
-        .unwrap();
+        writeln!(file, "LIGHT 5 5 5 1 1 1 5 10 true").unwrap();
     }
 
     let mut world = World::new();
     load_world(&mut world, &path).unwrap();
 
-    let cell = world
-        .get(WorldCoord::new(5, 5, 5))
-        .unwrap();
+    let cell = world.get(WorldCoord::new(5, 5, 5)).unwrap();
 
     assert_eq!(cell.cell_type, CellType::Light);
     assert!(cell.light_enabled);
@@ -646,18 +555,12 @@ fn test_spawn_point_persistence() {
 
     let loaded_cell = loaded_world.get(coord).unwrap();
 
-    assert_eq!(
-        loaded_cell.cell_type,
-        CellType::SpawnPoint
-    );
+    assert_eq!(loaded_cell.cell_type, CellType::SpawnPoint);
     assert!(!loaded_cell.visible);
     assert!(loaded_cell.solid);
     assert!(!loaded_cell.anchored);
     assert_eq!(loaded_cell.texture, "Block_tx");
-    assert_eq!(
-        loaded_cell.color_rgb,
-        Vec3::new(0.2, 0.4, 0.8)
-    );
+    assert_eq!(loaded_cell.color_rgb, Vec3::new(0.2, 0.4, 0.8));
 
     fs::remove_dir_all(project).ok();
 }
@@ -685,10 +588,7 @@ fn test_one_binding_persistence() {
 
     world
         .script_bindings
-        .push(ScriptBinding::new(
-            12345678,
-            "scripts/player.aeo",
-        ));
+        .push(ScriptBinding::new(12345678, "scripts/player.aeo"));
 
     let (project, path) = test_world_path("one_binding");
 
@@ -697,14 +597,8 @@ fn test_one_binding_persistence() {
     let mut loaded_world = World::new();
     load_world(&mut loaded_world, &path).unwrap();
 
-    assert_eq!(
-        loaded_world.script_bindings.len(),
-        1
-    );
-    assert_eq!(
-        loaded_world.script_bindings[0].target_identity,
-        12345678
-    );
+    assert_eq!(loaded_world.script_bindings.len(), 1);
+    assert_eq!(loaded_world.script_bindings[0].target_identity, 12345678);
     assert_eq!(
         loaded_world.script_bindings[0].script_path,
         "scripts/player.aeo"
@@ -719,22 +613,13 @@ fn test_multiple_bindings_persistence() {
 
     world
         .script_bindings
-        .push(ScriptBinding::new(
-            10000001,
-            "scripts/player.aeo",
-        ));
+        .push(ScriptBinding::new(10000001, "scripts/player.aeo"));
     world
         .script_bindings
-        .push(ScriptBinding::new(
-            10000002,
-            "scripts/door.aeo",
-        ));
+        .push(ScriptBinding::new(10000002, "scripts/door.aeo"));
     world
         .script_bindings
-        .push(ScriptBinding::new(
-            10000003,
-            "scripts/enemy.aeo",
-        ));
+        .push(ScriptBinding::new(10000003, "scripts/enemy.aeo"));
 
     let (project, path) = test_world_path("multiple_bindings");
 
@@ -743,23 +628,11 @@ fn test_multiple_bindings_persistence() {
     let mut loaded_world = World::new();
     load_world(&mut loaded_world, &path).unwrap();
 
-    assert_eq!(
-        loaded_world.script_bindings.len(),
-        3
-    );
+    assert_eq!(loaded_world.script_bindings.len(), 3);
 
-    assert_eq!(
-        loaded_world.script_bindings[0].target_identity,
-        10000001
-    );
-    assert_eq!(
-        loaded_world.script_bindings[1].target_identity,
-        10000002
-    );
-    assert_eq!(
-        loaded_world.script_bindings[2].target_identity,
-        10000003
-    );
+    assert_eq!(loaded_world.script_bindings[0].target_identity, 10000001);
+    assert_eq!(loaded_world.script_bindings[1].target_identity, 10000002);
+    assert_eq!(loaded_world.script_bindings[2].target_identity, 10000003);
 
     fs::remove_dir_all(project).ok();
 }
@@ -773,23 +646,11 @@ fn test_legacy_binding_migration() {
     {
         let mut file = File::create(&path).unwrap();
 
-        writeln!(
-            file,
-            "GRAVITY 0 -9.81 0"
-        )
-        .unwrap();
+        writeln!(file, "GRAVITY 0 -9.81 0").unwrap();
 
-        writeln!(
-            file,
-            "LIGHTING true true 0.5 -1.0 0.5 1 1 1 1 0.2"
-        )
-        .unwrap();
+        writeln!(file, "LIGHTING true true 0.5 -1.0 0.5 1 1 1 1 0.2").unwrap();
 
-        writeln!(
-            file,
-            "SCRIPT_BINDING PlayerOne scripts/player.aeo"
-        )
-        .unwrap();
+        writeln!(file, "SCRIPT_BINDING PlayerOne scripts/player.aeo").unwrap();
 
         writeln!(
             file,
@@ -802,14 +663,8 @@ fn test_legacy_binding_migration() {
     let mut loaded_world = World::new();
     load_world(&mut loaded_world, &path).unwrap();
 
-    assert_eq!(
-        loaded_world.script_bindings.len(),
-        1
-    );
-    assert_eq!(
-        loaded_world.script_bindings[0].target_identity,
-        cell_id
-    );
+    assert_eq!(loaded_world.script_bindings.len(), 1);
+    assert_eq!(loaded_world.script_bindings[0].target_identity, cell_id);
     assert_eq!(
         loaded_world.script_bindings[0].script_path,
         "scripts/player.aeo"
@@ -823,20 +678,13 @@ fn test_existing_data_and_bindings_persistence() {
     let mut world = World::new();
 
     let coord = WorldCoord::new(1, 2, 3);
-    let cell_id = world.set_cell(
-        coord,
-        CellType::Block,
-    );
+    let cell_id = world.set_cell(coord, CellType::Block);
 
     world
         .script_bindings
-        .push(ScriptBinding::new(
-            cell_id,
-            "scripts/box.aeo",
-        ));
+        .push(ScriptBinding::new(cell_id, "scripts/box.aeo"));
 
-    let (project, path) =
-        test_world_path("existing_data_bindings");
+    let (project, path) = test_world_path("existing_data_bindings");
 
     save_world(&world, &path).unwrap();
 
@@ -845,15 +693,9 @@ fn test_existing_data_and_bindings_persistence() {
 
     assert!(loaded_world.get(coord).is_some());
 
-    assert_eq!(
-        loaded_world.script_bindings.len(),
-        1
-    );
+    assert_eq!(loaded_world.script_bindings.len(), 1);
 
-    assert_eq!(
-        loaded_world.script_bindings[0].target_identity,
-        cell_id
-    );
+    assert_eq!(loaded_world.script_bindings[0].target_identity, cell_id);
 
     fs::remove_dir_all(project).ok();
 }
@@ -869,21 +711,18 @@ fn test_entity_identity_persistence() {
     world.set_cell(p_coord, CellType::Player);
 
     if let Some(cell) = world.get_mut(p_coord) {
-        cell.entity_identity =
-            Some("Hero".to_string());
+        cell.entity_identity = Some("Hero".to_string());
     }
 
     world.set_cell(n_coord, CellType::NPC);
 
     if let Some(cell) = world.get_mut(n_coord) {
-        cell.entity_identity =
-            Some("Merchant".to_string());
+        cell.entity_identity = Some("Merchant".to_string());
     }
 
     world.set_cell(b_coord, CellType::Block);
 
-    let (project, path) =
-        test_world_path("entity_identity");
+    let (project, path) = test_world_path("entity_identity");
 
     save_world(&world, &path).unwrap();
 
@@ -892,34 +731,19 @@ fn test_entity_identity_persistence() {
 
     let p_cell = loaded_world.get(p_coord).unwrap();
 
-    assert_eq!(
-        p_cell.cell_type,
-        CellType::Player
-    );
+    assert_eq!(p_cell.cell_type, CellType::Player);
 
-    assert_eq!(
-        p_cell.entity_identity,
-        Some("Hero".to_string())
-    );
+    assert_eq!(p_cell.entity_identity, Some("Hero".to_string()));
 
     let n_cell = loaded_world.get(n_coord).unwrap();
 
-    assert_eq!(
-        n_cell.cell_type,
-        CellType::NPC
-    );
+    assert_eq!(n_cell.cell_type, CellType::NPC);
 
-    assert_eq!(
-        n_cell.entity_identity,
-        Some("Merchant".to_string())
-    );
+    assert_eq!(n_cell.entity_identity, Some("Merchant".to_string()));
 
     let b_cell = loaded_world.get(b_coord).unwrap();
 
-    assert_eq!(
-        b_cell.cell_type,
-        CellType::Block
-    );
+    assert_eq!(b_cell.cell_type, CellType::Block);
 
     assert_eq!(b_cell.entity_identity, None);
 
@@ -935,92 +759,58 @@ fn test_identity_not_derived_dynamically() {
     world.set_cell(coord, CellType::NPC);
 
     if let Some(cell) = world.get_mut(coord) {
-        cell.entity_identity =
-            Some("SpecificGuard".to_string());
+        cell.entity_identity = Some("SpecificGuard".to_string());
     }
 
-    let new_coord =
-        WorldCoord::new(40, 50, 60);
+    let new_coord = WorldCoord::new(40, 50, 60);
 
-    let cell_id =
-        world.get(coord).unwrap().id;
+    let cell_id = world.get(coord).unwrap().id;
 
-    let cell =
-        world.cells.remove(&coord).unwrap();
+    let cell = world.cells.remove(&coord).unwrap();
 
     world.cells.insert(new_coord, cell);
     world.rebuild_id_mapping();
 
     assert_eq!(
-        world
-            .get(new_coord)
-            .unwrap()
-            .entity_identity,
+        world.get(new_coord).unwrap().entity_identity,
         Some("SpecificGuard".to_string())
     );
 
-    assert_eq!(
-        world.resolve_cell_id(cell_id),
-        Some(new_coord)
-    );
+    assert_eq!(world.resolve_cell_id(cell_id), Some(new_coord));
 
-    if let Some(cell) =
-        world.get_mut(new_coord)
-    {
+    if let Some(cell) = world.get_mut(new_coord) {
         cell.cell_type = CellType::Player;
     }
 
     assert_eq!(
-        world
-            .get(new_coord)
-            .unwrap()
-            .entity_identity,
+        world.get(new_coord).unwrap().entity_identity,
         Some("SpecificGuard".to_string())
     );
 
-    if let Some(cell) =
-        world.get_mut(new_coord)
-    {
+    if let Some(cell) = world.get_mut(new_coord) {
         cell.cell_type = CellType::Block;
         cell.entity_identity = None;
     }
 
-    assert_eq!(
-        world
-            .get(new_coord)
-            .unwrap()
-            .entity_identity,
-        None
-    );
+    assert_eq!(world.get(new_coord).unwrap().entity_identity, None);
 }
 
 #[test]
 fn test_legacy_identity_load() {
-    let (project, path) =
-        test_world_path("legacy_identity");
+    let (project, path) = test_world_path("legacy_identity");
 
     {
-        let mut file =
-            File::create(&path).unwrap();
+        let mut file = File::create(&path).unwrap();
 
-        writeln!(
-            file,
-            "PLAYER 0 0 0 true true true Default 0.5 0.5 0.5"
-        )
-        .unwrap();
+        writeln!(file, "PLAYER 0 0 0 true true true Default 0.5 0.5 0.5").unwrap();
     }
 
     let mut loaded_world = World::new();
     load_world(&mut loaded_world, &path).unwrap();
 
-    let cell = loaded_world
-        .get(WorldCoord::new(0, 0, 0))
-        .unwrap();
+    let cell = loaded_world.get(WorldCoord::new(0, 0, 0)).unwrap();
 
-    assert_eq!(
-        cell.cell_type,
-        CellType::Player
-    );
+    assert_eq!(cell.cell_type, CellType::Player);
     assert_eq!(cell.entity_identity, None);
 
     fs::remove_dir_all(project).ok();
@@ -1028,45 +818,24 @@ fn test_legacy_identity_load() {
 
 #[test]
 fn test_older_data_loadability() {
-    let (project, path) =
-        test_world_path("old_format");
+    let (project, path) = test_world_path("old_format");
 
     {
-        let mut file =
-            File::create(&path).unwrap();
+        let mut file = File::create(&path).unwrap();
 
-        writeln!(
-            file,
-            "GRAVITY 0 -9.81 0"
-        )
-        .unwrap();
+        writeln!(file, "GRAVITY 0 -9.81 0").unwrap();
 
-        writeln!(
-            file,
-            "BLOCK 0 0 0 true true true Default 0.5 0.5 0.5"
-        )
-        .unwrap();
+        writeln!(file, "BLOCK 0 0 0 true true true Default 0.5 0.5 0.5").unwrap();
     }
 
     let mut loaded_world = World::new();
     load_world(&mut loaded_world, &path).unwrap();
 
-    assert_eq!(
-        loaded_world.gravity.y,
-        -9.81
-    );
+    assert_eq!(loaded_world.gravity.y, -9.81);
 
-    assert!(
-        loaded_world
-            .get(WorldCoord::new(0, 0, 0))
-            .is_some()
-    );
+    assert!(loaded_world.get(WorldCoord::new(0, 0, 0)).is_some());
 
-    assert!(
-        loaded_world
-            .script_bindings
-            .is_empty()
-    );
+    assert!(loaded_world.script_bindings.is_empty());
 
     fs::remove_dir_all(project).ok();
 }
@@ -1080,13 +849,9 @@ fn test_build_path_id_preservation() {
 
     assert_eq!(template.id, 0);
 
-    world.set_cell(
-        coord,
-        template.cell_type
-    );
+    world.set_cell(coord, template.cell_type);
 
-    let generated_id =
-        world.get(coord).unwrap().id;
+    let generated_id = world.get(coord).unwrap().id;
 
     assert_ne!(generated_id, 0);
 
@@ -1098,32 +863,19 @@ fn test_build_path_id_preservation() {
         target.id = id;
     }
 
-    assert_eq!(
-        world.get(coord).unwrap().id,
-        generated_id
-    );
+    assert_eq!(world.get(coord).unwrap().id, generated_id);
 }
 
 #[test]
 fn test_corrupted_id_migration() {
-    let (project, path) =
-        test_world_path("corrupted_ids");
+    let (project, path) = test_world_path("corrupted_ids");
 
     {
-        let mut file =
-            File::create(&path).unwrap();
+        let mut file = File::create(&path).unwrap();
 
-        writeln!(
-            file,
-            "BLOCK 0 10 10 10 true true true Default 0.5 0.5 0.5"
-        )
-        .unwrap();
+        writeln!(file, "BLOCK 0 10 10 10 true true true Default 0.5 0.5 0.5").unwrap();
 
-        writeln!(
-            file,
-            "LIGHT 0 20 20 20 1 1 1 5 10 true true"
-        )
-        .unwrap();
+        writeln!(file, "LIGHT 0 20 20 20 1 1 1 5 10 true true").unwrap();
 
         writeln!(
             file,
@@ -1135,17 +887,11 @@ fn test_corrupted_id_migration() {
     let mut world = World::new();
     load_world(&mut world, &path).unwrap();
 
-    let c1 = world
-        .get(WorldCoord::new(10, 10, 10))
-        .unwrap();
+    let c1 = world.get(WorldCoord::new(10, 10, 10)).unwrap();
 
-    let c2 = world
-        .get(WorldCoord::new(20, 20, 20))
-        .unwrap();
+    let c2 = world.get(WorldCoord::new(20, 20, 20)).unwrap();
 
-    let c3 = world
-        .get(WorldCoord::new(30, 30, 30))
-        .unwrap();
+    let c3 = world.get(WorldCoord::new(30, 30, 30)).unwrap();
 
     assert_ne!(c1.id, 0);
     assert_ne!(c2.id, 0);
@@ -1172,30 +918,21 @@ fn test_cell_attributes_defaults() {
 fn test_cell_attributes_clone() {
     let mut cell = Cell::default();
 
-    cell.attributes.insert(
-        "health".to_string(),
-        AttributeValue::Number(100.0),
-    );
+    cell.attributes
+        .insert("health".to_string(), AttributeValue::Number(100.0));
 
     cell.attributes.insert(
         "name".to_string(),
-        AttributeValue::String(
-            "Player".to_string()
-        ),
+        AttributeValue::String("Player".to_string()),
     );
 
     let cloned = cell.clone();
 
-    assert_eq!(
-        cloned.attributes,
-        cell.attributes
-    );
+    assert_eq!(cloned.attributes, cell.attributes);
 
     assert_eq!(
         cloned.attributes.get("health"),
-        Some(
-            &AttributeValue::Number(100.0)
-        )
+        Some(&AttributeValue::Number(100.0))
     );
 }
 
@@ -1205,64 +942,45 @@ fn test_world_attributes_persistence() {
 
     let coord = WorldCoord::new(1, 1, 1);
 
-    let id = world.set_cell(
-        coord,
-        CellType::Block
-    );
+    let id = world.set_cell(coord, CellType::Block);
 
     if let Some(cell) = world.get_mut(coord) {
-        cell.attributes.insert(
-            "score".to_string(),
-            AttributeValue::Number(123.45),
-        );
+        cell.attributes
+            .insert("score".to_string(), AttributeValue::Number(123.45));
 
-        cell.attributes.insert(
-            "is_active".to_string(),
-            AttributeValue::Bool(true),
-        );
+        cell.attributes
+            .insert("is_active".to_string(), AttributeValue::Bool(true));
 
         cell.attributes.insert(
             "description".to_string(),
-            AttributeValue::String(
-                "A block with spaces".to_string()
-            ),
+            AttributeValue::String("A block with spaces".to_string()),
         );
     }
 
-    let (project, path) =
-        test_world_path("attributes");
+    let (project, path) = test_world_path("attributes");
 
     save_world(&world, &path).unwrap();
 
     let mut loaded_world = World::new();
     load_world(&mut loaded_world, &path).unwrap();
 
-    let loaded_cell =
-        loaded_world.get(coord).unwrap();
+    let loaded_cell = loaded_world.get(coord).unwrap();
 
     assert_eq!(loaded_cell.id, id);
 
     assert_eq!(
         loaded_cell.attributes.get("score"),
-        Some(
-            &AttributeValue::Number(123.45)
-        )
+        Some(&AttributeValue::Number(123.45))
     );
 
     assert_eq!(
         loaded_cell.attributes.get("is_active"),
-        Some(
-            &AttributeValue::Bool(true)
-        )
+        Some(&AttributeValue::Bool(true))
     );
 
     assert_eq!(
         loaded_cell.attributes.get("description"),
-        Some(
-            &AttributeValue::String(
-                "A block with spaces".to_string()
-            )
-        )
+        Some(&AttributeValue::String("A block with spaces".to_string()))
     );
 
     fs::remove_dir_all(project).ok();
@@ -1278,30 +996,23 @@ fn test_world_multiple_attributes_persistence() {
     world.set_cell(c1, CellType::Player);
 
     if let Some(cell) = world.get_mut(c1) {
-        cell.attributes.insert(
-            "speed".to_string(),
-            AttributeValue::Number(5.0),
-        );
+        cell.attributes
+            .insert("speed".to_string(), AttributeValue::Number(5.0));
     }
 
     world.set_cell(c2, CellType::NPC);
 
     if let Some(cell) = world.get_mut(c2) {
-        cell.attributes.insert(
-            "aggro".to_string(),
-            AttributeValue::Bool(false),
-        );
+        cell.attributes
+            .insert("aggro".to_string(), AttributeValue::Bool(false));
 
         cell.attributes.insert(
             "greeting".to_string(),
-            AttributeValue::String(
-                "Hello traveler".to_string()
-            ),
+            AttributeValue::String("Hello traveler".to_string()),
         );
     }
 
-    let (project, path) =
-        test_world_path("multiple_attributes");
+    let (project, path) = test_world_path("multiple_attributes");
 
     save_world(&world, &path).unwrap();
 
@@ -1309,38 +1020,18 @@ fn test_world_multiple_attributes_persistence() {
     load_world(&mut loaded_world, &path).unwrap();
 
     assert_eq!(
-        loaded_world
-            .get(c1)
-            .unwrap()
-            .attributes
-            .get("speed"),
-        Some(
-            &AttributeValue::Number(5.0)
-        )
+        loaded_world.get(c1).unwrap().attributes.get("speed"),
+        Some(&AttributeValue::Number(5.0))
     );
 
     assert_eq!(
-        loaded_world
-            .get(c2)
-            .unwrap()
-            .attributes
-            .get("aggro"),
-        Some(
-            &AttributeValue::Bool(false)
-        )
+        loaded_world.get(c2).unwrap().attributes.get("aggro"),
+        Some(&AttributeValue::Bool(false))
     );
 
     assert_eq!(
-        loaded_world
-            .get(c2)
-            .unwrap()
-            .attributes
-            .get("greeting"),
-        Some(
-            &AttributeValue::String(
-                "Hello traveler".to_string()
-            )
-        )
+        loaded_world.get(c2).unwrap().attributes.get("greeting"),
+        Some(&AttributeValue::String("Hello traveler".to_string()))
     );
 
     fs::remove_dir_all(project).ok();
@@ -1348,32 +1039,20 @@ fn test_world_multiple_attributes_persistence() {
 
 #[test]
 fn test_legacy_load_empty_attributes() {
-    let (project, path) =
-        test_world_path("legacy_no_attributes");
+    let (project, path) = test_world_path("legacy_no_attributes");
 
     {
-        let mut file =
-            File::create(&path).unwrap();
+        let mut file = File::create(&path).unwrap();
 
-        writeln!(
-            file,
-            "GRAVITY 0 -9.81 0"
-        )
-        .unwrap();
+        writeln!(file, "GRAVITY 0 -9.81 0").unwrap();
 
-        writeln!(
-            file,
-            "BLOCK 12345 0 0 0 true true true Default 0.5 0.5 0.5"
-        )
-        .unwrap();
+        writeln!(file, "BLOCK 12345 0 0 0 true true true Default 0.5 0.5 0.5").unwrap();
     }
 
     let mut world = World::new();
     load_world(&mut world, &path).unwrap();
 
-    let cell = world
-        .get(WorldCoord::new(0, 0, 0))
-        .unwrap();
+    let cell = world.get(WorldCoord::new(0, 0, 0)).unwrap();
 
     assert!(cell.attributes.is_empty());
 
@@ -1387,8 +1066,7 @@ fn test_world_mouse_settings_persistence() {
     world.cursor_visible = true;
     world.screen_locked = false;
 
-    let (project, path) =
-        test_world_path("mouse_settings");
+    let (project, path) = test_world_path("mouse_settings");
 
     save_world(&world, &path).unwrap();
 
@@ -1403,51 +1081,31 @@ fn test_world_mouse_settings_persistence() {
 
 #[test]
 fn test_next_cell_id_persistence() {
-    let (project, path) =
-        test_world_path("next_cell_id");
+    let (project, path) = test_world_path("next_cell_id");
 
     let mut world = World::new();
 
-    let id1 = world.set_cell(
-        WorldCoord::new(0, 0, 0),
-        CellType::Block,
-    );
+    let id1 = world.set_cell(WorldCoord::new(0, 0, 0), CellType::Block);
 
-    let id2 = world.set_cell(
-        WorldCoord::new(16, 0, 0),
-        CellType::Block,
-    );
+    let id2 = world.set_cell(WorldCoord::new(16, 0, 0), CellType::Block);
 
     assert_eq!(id2, id1 + 1);
 
     save_world(&world, &path).unwrap();
 
-    let saved =
-        fs::read_to_string(&path).unwrap();
+    let saved = fs::read_to_string(&path).unwrap();
 
-    assert!(saved.contains(&format!(
-        "NEXT_CELL_ID {}",
-        world.next_cell_id
-    )));
+    assert!(saved.contains(&format!("NEXT_CELL_ID {}", world.next_cell_id)));
 
     let mut loaded = World::new();
 
     load_world(&mut loaded, &path).unwrap();
 
-    assert_eq!(
-        loaded.next_cell_id,
-        world.next_cell_id
-    );
+    assert_eq!(loaded.next_cell_id, world.next_cell_id);
 
-    let new_id = loaded.set_cell(
-        WorldCoord::new(32, 0, 0),
-        CellType::Block,
-    );
+    let new_id = loaded.set_cell(WorldCoord::new(32, 0, 0), CellType::Block);
 
-    assert_eq!(
-        new_id,
-        world.next_cell_id
-    );
+    assert_eq!(new_id, world.next_cell_id);
 
     fs::remove_dir_all(project).ok();
 }
@@ -1458,18 +1116,12 @@ fn test_allocator_does_not_depend_on_resident_cells() {
 
     let coord = WorldCoord::new(0, 0, 0);
 
-    let id = world.set_cell(
-        coord,
-        CellType::Block,
-    );
+    let id = world.set_cell(coord, CellType::Block);
 
     world.cells.remove(&coord);
     world.id_to_coord.remove(&id);
 
-    let new_id = world.set_cell(
-        WorldCoord::new(1, 0, 0),
-        CellType::Block,
-    );
+    let new_id = world.set_cell(WorldCoord::new(1, 0, 0), CellType::Block);
 
     assert_eq!(new_id, id + 1);
 }
@@ -1478,18 +1130,13 @@ fn test_allocator_does_not_depend_on_resident_cells() {
 fn test_empty_attributes_no_line() {
     let mut world = World::new();
 
-    world.set_cell(
-        WorldCoord::new(0, 0, 0),
-        CellType::Block
-    );
+    world.set_cell(WorldCoord::new(0, 0, 0), CellType::Block);
 
-    let (project, path) =
-        test_world_path("empty_attributes");
+    let (project, path) = test_world_path("empty_attributes");
 
     save_world(&world, &path).unwrap();
 
-    let content =
-        fs::read_to_string(&path).unwrap();
+    let content = fs::read_to_string(&path).unwrap();
 
     assert!(!content.contains("ATTRIBUTES"));
 
@@ -1502,90 +1149,45 @@ fn test_persistence_firewall_regression() {
 
     let auth_coord = WorldCoord::new(1, 1, 1);
 
-    let auth_id = world.set_cell(
-        auth_coord,
-        CellType::Block
-    );
+    let auth_id = world.set_cell(auth_coord, CellType::Block);
 
-    let runtime_id =
-        world.create_runtime_cell(
-            CellType::Block
-        );
+    let runtime_id = world.create_runtime_cell(CellType::Block);
 
-    let runtime_coord =
-        WorldCoord::new(2, 2, 2);
+    let runtime_coord = WorldCoord::new(2, 2, 2);
 
-    world
-        .move_runtime_cell(
-            runtime_id,
-            runtime_coord
-        )
-        .unwrap();
+    world.move_runtime_cell(runtime_id, runtime_coord).unwrap();
 
-    if let Some(cell) =
-        world.runtime_cells.get_mut(&runtime_id)
-    {
-        cell.color_rgb =
-            Vec3::new(1.0, 0.0, 0.0);
+    if let Some(cell) = world.runtime_cells.get_mut(&runtime_id) {
+        cell.color_rgb = Vec3::new(1.0, 0.0, 0.0);
 
-        cell.attributes.insert(
-            "temp".to_string(),
-            AttributeValue::Bool(true),
-        );
+        cell.attributes
+            .insert("temp".to_string(), AttributeValue::Bool(true));
     }
 
-    let (project, path) =
-        test_world_path("firewall");
+    let (project, path) = test_world_path("firewall");
 
     save_world(&world, &path).unwrap();
 
     let mut loaded_world = World::new();
     load_world(&mut loaded_world, &path).unwrap();
 
-    assert!(
-        loaded_world
-            .resolve_cell_id(runtime_id)
-            .is_none()
-    );
+    assert!(loaded_world.resolve_cell_id(runtime_id).is_none());
 
-    assert!(
-        loaded_world
-            .get(runtime_coord)
-            .is_none()
-    );
+    assert!(loaded_world.get(runtime_coord).is_none());
 
-    assert!(
-        loaded_world
-            .resolve_cell_id(auth_id)
-            .is_some()
-    );
+    assert!(loaded_world.resolve_cell_id(auth_id).is_some());
 
-    assert!(
-        loaded_world
-            .get(auth_coord)
-            .is_some()
-    );
+    assert!(loaded_world.get(auth_coord).is_some());
 
     world.clear_runtime_state();
 
     assert!(world.runtime_cells.is_empty());
 
-    assert!(
-        world
-            .resolve_cell_id(runtime_id)
-            .is_none()
-    );
+    assert!(world.resolve_cell_id(runtime_id).is_none());
 
-    assert!(
-        world
-            .get(auth_coord)
-            .is_some()
-    );
+    assert!(world.get(auth_coord).is_some());
 
-    assert_eq!(
-        world.get(auth_coord).unwrap().id,
-        auth_id
-    );
+    assert_eq!(world.get(auth_coord).unwrap().id, auth_id);
 
     fs::remove_dir_all(project).ok();
 }
@@ -1596,42 +1198,29 @@ fn test_audio_emitter_persistence() {
 
     let coord = WorldCoord::new(2, 4, 6);
 
-    let id = world.set_cell(
-        coord,
-        CellType::AudioEmitter
-    );
+    let id = world.set_cell(coord, CellType::AudioEmitter);
 
     if let Some(cell) = world.get_mut(coord) {
-        cell.audio =
-            "battle/sword-unsheathe.wav"
-                .to_string();
+        cell.audio = "battle/sword-unsheathe.wav".to_string();
 
         cell.playing = true;
         cell.looped = true;
         cell.volume = 0.65;
     }
 
-    let (project, path) =
-        test_world_path("audio_emitter");
+    let (project, path) = test_world_path("audio_emitter");
 
     save_world(&world, &path).unwrap();
 
     let mut loaded_world = World::new();
     load_world(&mut loaded_world, &path).unwrap();
 
-    let loaded_cell =
-        loaded_world.get(coord).unwrap();
+    let loaded_cell = loaded_world.get(coord).unwrap();
 
     assert_eq!(loaded_cell.id, id);
-    assert_eq!(
-        loaded_cell.cell_type,
-        CellType::AudioEmitter
-    );
+    assert_eq!(loaded_cell.cell_type, CellType::AudioEmitter);
 
-    assert_eq!(
-        loaded_cell.audio,
-        "battle/sword-unsheathe.wav"
-    );
+    assert_eq!(loaded_cell.audio, "battle/sword-unsheathe.wav");
 
     assert!(loaded_cell.playing);
     assert!(loaded_cell.looped);

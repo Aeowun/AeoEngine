@@ -1,3 +1,10 @@
+//! Renderer ownership and OpenGL resource initialization.
+//!
+//! Owns the OpenGL programs, buffers, textures, framebuffers, cached chunk
+//! meshes, cached editor ghost data, and other GPU resources used by the
+//! engine renderer. The renderer reads engine state and produces graphics;
+//! it does not own or modify the World or Editor.
+
 pub mod camera;
 pub mod character_render;
 pub mod chunk;
@@ -13,9 +20,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::CString;
 
+use glam::Vec3;
+
 use crate::editor::GridPlane;
 use crate::engine::EditorMode;
-use crate::world::ChunkCoord;
+use crate::world::{ChunkCoord, WorldCoord};
 
 use self::chunk::ChunkMesh;
 use self::resources::{
@@ -23,6 +32,14 @@ use self::resources::{
     create_grid_plane_vao, create_highlight_box, get_uniform_location, load_texture_from_file,
 };
 use self::shader::create_program;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct GhostRenderCell {
+    pub(super) coord: WorldCoord,
+    pub(super) mask: u8,
+    pub(super) color: Vec3,
+    pub(super) visual_offset: Vec3,
+}
 
 /// Owns the OpenGL resources required by the engine renderer.
 ///
@@ -68,6 +85,10 @@ pub struct Renderer {
     pub(super) chunk_cache: RefCell<HashMap<ChunkCoord, ChunkMesh>>,
     pub(super) last_render_revision: RefCell<u64>,
     pub(super) last_render_mode: RefCell<Option<EditorMode>>,
+
+    pub(super) ghost_cache: RefCell<Vec<GhostRenderCell>>,
+    pub(super) last_ghost_revision: RefCell<u64>,
+    pub(super) last_ghost_mode: RefCell<Option<EditorMode>>,
 
     pub(super) billboard_vao: u32,
     pub(super) billboard_vbo: u32,
@@ -165,13 +186,24 @@ impl Renderer {
                 std::ptr::null(),
             );
 
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+            gl::TexParameteri(
+                gl::TEXTURE_2D,
+                gl::TEXTURE_MIN_FILTER,
+                gl::NEAREST as i32,
+            );
+
+            gl::TexParameteri(
+                gl::TEXTURE_2D,
+                gl::TEXTURE_MAG_FILTER,
+                gl::NEAREST as i32,
+            );
+
             gl::TexParameteri(
                 gl::TEXTURE_2D,
                 gl::TEXTURE_WRAP_S,
                 gl::CLAMP_TO_BORDER as i32,
             );
+
             gl::TexParameteri(
                 gl::TEXTURE_2D,
                 gl::TEXTURE_WRAP_T,
@@ -202,7 +234,8 @@ impl Renderer {
             let framebuffer_status = gl::CheckFramebufferStatus(gl::FRAMEBUFFER);
 
             assert_eq!(
-                framebuffer_status, gl::FRAMEBUFFER_COMPLETE,
+                framebuffer_status,
+                gl::FRAMEBUFFER_COMPLETE,
                 "shadow framebuffer is incomplete: 0x{framebuffer_status:04X}"
             );
 
@@ -228,8 +261,17 @@ impl Renderer {
                 white_data.as_ptr() as *const _,
             );
 
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+            gl::TexParameteri(
+                gl::TEXTURE_2D,
+                gl::TEXTURE_MIN_FILTER,
+                gl::NEAREST as i32,
+            );
+
+            gl::TexParameteri(
+                gl::TEXTURE_2D,
+                gl::TEXTURE_MAG_FILTER,
+                gl::NEAREST as i32,
+            );
 
             gl::BindTexture(gl::TEXTURE_2D, 0);
 
@@ -283,6 +325,10 @@ impl Renderer {
             last_render_revision: RefCell::new(0),
             last_render_mode: RefCell::new(None),
 
+            ghost_cache: RefCell::new(Vec::new()),
+            last_ghost_revision: RefCell::new(0),
+            last_ghost_mode: RefCell::new(None),
+
             billboard_vao,
             billboard_vbo,
 
@@ -318,6 +364,82 @@ impl Renderer {
         }
 
         renderer
+    }
+
+    /// Creates a renderer with no OpenGL resources for unit tests.
+    ///
+    /// This constructor must remain free of OpenGL calls so application-state
+    /// tests can construct an App without creating a graphics context.
+    #[cfg(test)]
+    pub(crate) fn new_for_tests(width: f32, height: f32) -> Self {
+        Self {
+            grid_program: 0,
+            ghost_program: 0,
+
+            ghost_view_projection_location: -1,
+            ghost_model_location: -1,
+            ghost_color_location: -1,
+            ghost_alpha_location: -1,
+
+            grid_vao_xz: 0,
+            grid_vbo_xz: 0,
+            grid_count_xz: 0,
+
+            grid_vao_yz: 0,
+            grid_vbo_yz: 0,
+            grid_count_yz: 0,
+
+            grid_vao_xy: 0,
+            grid_vbo_xy: 0,
+            grid_count_xy: 0,
+
+            axis_vao: 0,
+            axis_vbo: 0,
+            axis_vertex_count: 0,
+
+            highlight_vao: 0,
+            highlight_vbo: 0,
+            highlight_vertex_count: 0,
+
+            anchor_vao: 0,
+            anchor_vbo: 0,
+            anchor_vertex_count: 0,
+
+            block_vao: 0,
+            block_vbo: 0,
+            block_mask_ranges: [(0, 0); 64],
+
+            chunk_cache: RefCell::new(HashMap::new()),
+            last_render_revision: RefCell::new(0),
+            last_render_mode: RefCell::new(None),
+
+            ghost_cache: RefCell::new(Vec::new()),
+            last_ghost_revision: RefCell::new(0),
+            last_ghost_mode: RefCell::new(None),
+
+            billboard_vao: 0,
+            billboard_vbo: 0,
+
+            character_vao: 0,
+            character_vbo: 0,
+
+            shadow_program: 0,
+            shadow_fbo: 0,
+            shadow_depth_tex: 0,
+
+            textures: RefCell::new(HashMap::new()),
+            cubemaps: RefCell::new(HashMap::new()),
+            fallback_tex: 0,
+
+            sky_renderer: sky::SkyRenderer {
+                program: 0,
+                vao: 0,
+                vbo: 0,
+            },
+
+            width: width.max(1.0),
+            height: height.max(1.0),
+        }
     }
 
     pub fn resize(&mut self, width: f32, height: f32) {
@@ -561,13 +683,72 @@ uniform bool u_use_texture;
 
 out vec4 FragColor;
 
+const float SHADOW_MIN_BIAS = 0.0008;
+const float SHADOW_SLOPE_BIAS_SCALE = 3.0;
+const float SHADOW_NORMAL_OFFSET = 0.005;
+
 float calculate_shadow(
     vec3 world_pos,
     vec3 normal
 ) {
+    vec3 N =
+        normalize(normal);
+
+    vec3 L =
+        normalize(
+            -u_global_light_direction
+        );
+
+    float normal_alignment =
+        max(
+            dot(N, L),
+            0.0
+        );
+
+    if (normal_alignment <= 0.0) {
+        return 0.0;
+    }
+
+    ivec2 shadow_texture_size =
+        textureSize(
+            u_shadow_map,
+            0
+        );
+
+    vec2 texel_size =
+        vec2(1.0) /
+        vec2(shadow_texture_size);
+
+    float slope =
+        1.0 -
+        normal_alignment;
+
+    float bias =
+        max(
+            SHADOW_MIN_BIAS,
+            texel_size.x *
+                (
+                    1.0 +
+                    SHADOW_SLOPE_BIAS_SCALE *
+                    slope
+                )
+        );
+
+    vec3 shadow_world_pos =
+        world_pos +
+        N *
+        SHADOW_NORMAL_OFFSET;
+
     vec4 light_space_pos =
         u_light_space_matrix *
-        vec4(world_pos, 1.0);
+        vec4(
+            shadow_world_pos,
+            1.0
+        );
+
+    if (abs(light_space_pos.w) <= 0.000001) {
+        return 0.0;
+    }
 
     vec3 proj_coords =
         light_space_pos.xyz /
@@ -591,35 +772,7 @@ float calculate_shadow(
     float current_depth =
         proj_coords.z;
 
-    vec3 light_direction =
-        normalize(
-            -u_global_light_direction
-        );
-
-    float normal_alignment =
-        max(
-            dot(
-                normalize(normal),
-                light_direction
-            ),
-            0.0
-        );
-
-    float bias =
-        mix(
-            0.0005,
-            0.00005,
-            normal_alignment
-        );
-
     float shadow = 0.0;
-
-    vec2 texel_size =
-        1.0 /
-        textureSize(
-            u_shadow_map,
-            0
-        );
 
     for (
         int x = -1;

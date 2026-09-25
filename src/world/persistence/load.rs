@@ -45,8 +45,7 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
             continue;
         }
         if parts[0] == "WORLD_FORMAT" && parts.len() >= 2 {
-            world_format_version =
-                parts[1].parse::<u32>().unwrap_or(1);
+            world_format_version = parts[1].parse::<u32>().unwrap_or(1);
             continue;
         }
         if parts[0] == "NEXT_CELL_ID" && parts.len() >= 2 {
@@ -306,15 +305,12 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
         }
     }
     if world_format_version >= 2 {
-        let project_root =
-            path.parent().unwrap_or_else(|| Path::new("."));
+        let project_root = path.parent().unwrap_or_else(|| Path::new("."));
 
         let storage = WorldStorage::new(project_root)?;
 
         for chunk_coord in storage.list_chunks()? {
-            let Some(stored_chunk) =
-                storage.load_chunk(chunk_coord)?
-            else {
+            let Some(stored_chunk) = storage.load_chunk(chunk_coord)? else {
                 continue;
             };
 

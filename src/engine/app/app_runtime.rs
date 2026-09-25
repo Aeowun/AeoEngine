@@ -7,8 +7,8 @@ use crate::scripting::host::ScriptHostBridge;
 use crate::scripting::scene::ScriptScene;
 use crate::scripting::value::{HandleKind, Value};
 
-use super::app_project::get_timestamp;
 use super::App;
+use super::app_project::get_timestamp;
 
 impl App {
     pub(crate) fn sync_player_entity_from_character(&mut self) {
@@ -326,9 +326,7 @@ impl App {
             for record in scene.drain_output() {
                 let timestamp = get_timestamp();
 
-                let formatted = if record.script_path.is_none()
-                    && record.entity_name.is_none()
-                {
+                let formatted = if record.script_path.is_none() && record.entity_name.is_none() {
                     let engine_context = match record.severity {
                         crate::scripting::log::LogSeverity::Error => "Engine Error",
 
@@ -637,8 +635,7 @@ impl App {
 
             for &cell_id in &contacted_this_frame {
                 if !self.script_contacted_last_frame.contains(&cell_id) {
-                    if let Err(error) = scene.on_player_overlap(cell_id, true, &mut context)
-                    {
+                    if let Err(error) = scene.on_player_overlap(cell_id, true, &mut context) {
                         self.editor.terminal_output.push_str(&format!(
                             "[{}] [ERROR] Overlap start error: {}\n",
                             get_timestamp(),
@@ -650,9 +647,7 @@ impl App {
 
             for &cell_id in &self.script_contacted_last_frame {
                 if !contacted_this_frame.contains(&cell_id) {
-                    if let Err(error) =
-                        scene.on_player_overlap(cell_id, false, &mut context)
-                    {
+                    if let Err(error) = scene.on_player_overlap(cell_id, false, &mut context) {
                         self.editor.terminal_output.push_str(&format!(
                             "[{}] [ERROR] Overlap end error: {}\n",
                             get_timestamp(),
@@ -663,9 +658,7 @@ impl App {
             }
 
             if !contacted_this_frame.is_empty() {
-                if let Err(error) =
-                    scene.on_player_contact(&contacted_this_frame, &mut context)
-                {
+                if let Err(error) = scene.on_player_contact(&contacted_this_frame, &mut context) {
                     self.editor.terminal_output.push_str(&format!(
                         "[{}] [ERROR] Scripting contact event error: {}\n",
                         get_timestamp(),

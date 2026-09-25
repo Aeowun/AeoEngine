@@ -15,8 +15,8 @@ use crate::engine::entity::{EntityId, EntityManager};
 use crate::engine::mouse::MouseController;
 use crate::scripting::api::EngineHost;
 use crate::scripting::value::{HandleKind, MapKey, Value};
-use crate::world::cell::AttributeValue;
 use crate::world::World;
+use crate::world::cell::AttributeValue;
 
 fn norm_path(path: &str) -> String {
     let clean = path.replace('\\', "/");
@@ -71,7 +71,12 @@ pub struct ScriptHostBridge<'a> {
 }
 
 impl<'a> ScriptHostBridge<'a> {
-    pub fn get_property(&self, kind: HandleKind, id: u64, name: &str) -> Result<Option<Value>, String> {
+    pub fn get_property(
+        &self,
+        kind: HandleKind,
+        id: u64,
+        name: &str,
+    ) -> Result<Option<Value>, String> {
         match kind {
             HandleKind::Mouse => {
                 if id != 0 {
@@ -1149,11 +1154,23 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         ScriptHostBridge::get_property(self, kind, id, name)
     }
 
-    fn set_property(&mut self, kind: HandleKind, id: u64, name: &str, value: Value) -> Result<bool, String> {
+    fn set_property(
+        &mut self,
+        kind: HandleKind,
+        id: u64,
+        name: &str,
+        value: Value,
+    ) -> Result<bool, String> {
         ScriptHostBridge::set_property(self, kind, id, name, value)
     }
 
-    fn call_method(&mut self, kind: HandleKind, id: u64, name: &str, arguments: &[Value]) -> Result<Option<Value>, String> {
+    fn call_method(
+        &mut self,
+        kind: HandleKind,
+        id: u64,
+        name: &str,
+        arguments: &[Value],
+    ) -> Result<Option<Value>, String> {
         ScriptHostBridge::call_method(self, kind, id, name, arguments)
     }
 
@@ -1304,8 +1321,8 @@ mod tests {
     use crate::character::CharacterSystem;
     use crate::scripting::api::EngineHost;
     use crate::scripting::value::{HandleKind, Value};
-    use crate::world::cell::{AttributeValue, CellType};
     use crate::world::WorldCoord;
+    use crate::world::cell::{AttributeValue, CellType};
 
     fn make_bridge<'a>(
         entity_manager: &'a mut EntityManager,

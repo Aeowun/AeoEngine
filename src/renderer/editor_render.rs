@@ -3,13 +3,12 @@ use std::ffi::CString;
 use glam::{Mat4, Vec3};
 
 use crate::editor::{Editor, GridPlane};
-use crate::engine::physics::PhysicsWorld;
 use crate::engine::EditorMode;
+use crate::engine::physics::PhysicsWorld;
 use crate::world::{CellType, World, WorldCoord};
 
-use super::chunk::CameraFrustum;
-use super::mesh::compute_exposed_faces_main;
 use super::Renderer;
+use super::chunk::CameraFrustum;
 use super::{SHADOW_FAR, SHADOW_LIGHT_DISTANCE, SHADOW_NEAR, SHADOW_ORTHO_HALF_EXTENT, SHADOW_RES};
 
 impl Renderer {
@@ -22,21 +21,20 @@ impl Renderer {
         gameplay_camera: &crate::renderer::camera::GameplayCamera,
         drag_start: Option<WorldCoord>,
     ) {
-        let (camera_pos, view, target) = if editor.mode == EditorMode::Play
-            && character_system.has_characters()
-        {
-            (
-                gameplay_camera.current_position,
-                gameplay_camera.get_view_matrix(),
-                gameplay_camera.current_target,
-            )
-        } else {
-            (
-                editor.camera.get_position(),
-                editor.camera.get_view_matrix(),
-                editor.camera.target,
-            )
-        };
+        let (camera_pos, view, target) =
+            if editor.mode == EditorMode::Play && character_system.has_characters() {
+                (
+                    gameplay_camera.current_position,
+                    gameplay_camera.get_view_matrix(),
+                    gameplay_camera.current_target,
+                )
+            } else {
+                (
+                    editor.camera.get_position(),
+                    editor.camera.get_view_matrix(),
+                    editor.camera.target,
+                )
+            };
 
         let ppp = editor.viewport_ppp.max(1.0);
 
@@ -230,14 +228,12 @@ impl Renderer {
 
             let use_tex_name = CString::new("u_use_texture").unwrap();
 
-            let use_tex_location =
-                gl::GetUniformLocation(self.grid_program, use_tex_name.as_ptr());
+            let use_tex_location = gl::GetUniformLocation(self.grid_program, use_tex_name.as_ptr());
 
             // Global lighting.
             let ambient_name = CString::new("u_ambient_intensity").unwrap();
 
-            let ambient_location =
-                gl::GetUniformLocation(self.grid_program, ambient_name.as_ptr());
+            let ambient_location = gl::GetUniformLocation(self.grid_program, ambient_name.as_ptr());
 
             gl::Uniform1f(ambient_location, world.lighting.ambient_intensity);
 
@@ -284,7 +280,10 @@ impl Renderer {
             let global_intensity_location =
                 gl::GetUniformLocation(self.grid_program, global_intensity_name.as_ptr());
 
-            gl::Uniform1f(global_intensity_location, world.lighting.global_light_intensity);
+            gl::Uniform1f(
+                global_intensity_location,
+                world.lighting.global_light_intensity,
+            );
 
             // Shadow uniforms.
             let lsm_name = CString::new("u_light_space_matrix").unwrap();
@@ -305,11 +304,7 @@ impl Renderer {
 
             gl::Uniform1i(
                 shadows_enabled_location,
-                if world.lighting.shadows_enabled {
-                    1
-                } else {
-                    0
-                },
+                if world.lighting.shadows_enabled { 1 } else { 0 },
             );
 
             gl::ActiveTexture(gl::TEXTURE0);
@@ -330,12 +325,16 @@ impl Renderer {
             // Point lights.
             let mut point_lights = Vec::new();
 
-            for coord in world.iter_active_effective_coords() {
+            for light_id in world.iter_light_ids() {
+                let Some(coord) = world.resolve_cell_id(light_id) else {
+                    continue;
+                };
+
                 let Some(cell) = world.get_effective_cell(coord) else {
                     continue;
                 };
 
-                if cell.cell_type == CellType::Light && world.is_light_enabled(coord) {
+                if world.is_light_enabled(coord) {
                     point_lights.push((coord, cell));
 
                     if point_lights.len() >= 16 {
@@ -367,8 +366,7 @@ impl Renderer {
 
                 let color_name = CString::new(format!("{base}.color")).unwrap();
 
-                let color_location =
-                    gl::GetUniformLocation(self.grid_program, color_name.as_ptr());
+                let color_location = gl::GetUniformLocation(self.grid_program, color_name.as_ptr());
 
                 gl::Uniform3f(
                     color_location,
@@ -386,25 +384,26 @@ impl Renderer {
 
                 let range_name = CString::new(format!("{base}.range")).unwrap();
 
-                let range_location =
-                    gl::GetUniformLocation(self.grid_program, range_name.as_ptr());
+                let range_location = gl::GetUniformLocation(self.grid_program, range_name.as_ptr());
 
                 gl::Uniform1f(range_location, cell.light_range);
             }
 
-            // Authored world cells.
+            // Authored world editor markers (Light and AudioEmitter).
             let cam_right = Vec3::new(view.col(0).x, view.col(1).x, view.col(2).x);
 
             let cam_up = Vec3::new(view.col(0).y, view.col(1).y, view.col(2).y);
 
-            for coord in world.iter_active_effective_coords() {
-                let Some(cell) = world.get_effective_cell(coord) else {
-                    continue;
-                };
+            if editor.mode == EditorMode::Editor {
+                for marker_id in world.iter_editor_marker_ids() {
+                    let Some(coord) = world.resolve_cell_id(marker_id) else {
+                        continue;
+                    };
 
-                if editor.mode == EditorMode::Editor
-                    && matches!(cell.cell_type, CellType::Light | CellType::AudioEmitter)
-                {
+                    let Some(cell) = world.get_effective_cell(coord) else {
+                        continue;
+                    };
+
                     gl::BindVertexArray(self.billboard_vao);
 
                     gl::Uniform1i(use_tex_location, 1);
@@ -412,7 +411,7 @@ impl Renderer {
                     let tex_name = match cell.cell_type {
                         CellType::Light => "lightbulb",
                         CellType::AudioEmitter => "speaker",
-                        _ => unreachable!(),
+                        _ => continue,
                     };
 
                     let tex = self.get_texture(tex_name);
@@ -421,8 +420,11 @@ impl Renderer {
 
                     gl::BindTexture(gl::TEXTURE_2D, tex);
 
-                    let center =
-                        Vec3::new(coord.x as f32 + 0.5, coord.y as f32 + 0.5, coord.z as f32 + 0.5);
+                    let center = Vec3::new(
+                        coord.x as f32 + 0.5,
+                        coord.y as f32 + 0.5,
+                        coord.z as f32 + 0.5,
+                    );
 
                     let scale = 0.35;
 
@@ -468,12 +470,7 @@ impl Renderer {
 
                 let model = Mat4::from_translation(origin);
 
-                gl::UniformMatrix4fv(
-                    model_location,
-                    1,
-                    gl::FALSE,
-                    model.to_cols_array().as_ptr(),
-                );
+                gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
 
                 gl::BindVertexArray(chunk_mesh.main_vao);
 
@@ -580,12 +577,7 @@ impl Renderer {
 
                 let model = Mat4::from_translation(center);
 
-                gl::UniformMatrix4fv(
-                    model_location,
-                    1,
-                    gl::FALSE,
-                    model.to_cols_array().as_ptr(),
-                );
+                gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
 
                 self.bind_grid_vao(plane);
 
@@ -601,12 +593,7 @@ impl Renderer {
 
                 let model = Mat4::from_translation(anchor_pos);
 
-                gl::UniformMatrix4fv(
-                    model_location,
-                    1,
-                    gl::FALSE,
-                    model.to_cols_array().as_ptr(),
-                );
+                gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
 
                 gl::BindVertexArray(self.anchor_vao);
 
@@ -681,12 +668,7 @@ impl Renderer {
 
                 let model = Mat4::from_translation(anchor_pos);
 
-                gl::UniformMatrix4fv(
-                    model_location,
-                    1,
-                    gl::FALSE,
-                    model.to_cols_array().as_ptr(),
-                );
+                gl::UniformMatrix4fv(model_location, 1, gl::FALSE, model.to_cols_array().as_ptr());
 
                 gl::BindVertexArray(self.axis_vao);
 
@@ -715,10 +697,8 @@ impl Renderer {
                             coord.z + grab.delta.z,
                         );
 
-                        let is_marker = matches!(
-                            cell.cell_type,
-                            CellType::Light | CellType::AudioEmitter
-                        );
+                        let is_marker =
+                            matches!(cell.cell_type, CellType::Light | CellType::AudioEmitter);
 
                         if is_marker {
                             gl::BindVertexArray(self.highlight_vao);
@@ -784,7 +764,8 @@ impl Renderer {
                     gl::Uniform1f(alpha_location, 1.0);
                 }
 
-                // Invisible-cell ghosts use a dedicated unlit shader.
+                // Invisible-cell ghosts are cached by Renderer. The cache is
+                // rebuilt only when render-relevant World state or editor mode changes.
                 gl::UseProgram(self.ghost_program);
 
                 gl::UniformMatrix4fv(
@@ -803,39 +784,24 @@ impl Renderer {
 
                 gl::BindVertexArray(self.block_vao);
 
-                for coord in world.iter_active_effective_coords() {
-                    let Some(cell) = world.get_effective_cell(coord) else {
-                        continue;
-                    };
+                let ghosts = self.ghost_cache.borrow();
 
-                    if !matches!(cell.cell_type, CellType::Block | CellType::SpawnPoint) {
-                        continue;
-                    }
-
-                    if world.is_cell_visible(coord) {
-                        continue;
-                    }
-
-                    let mask = compute_exposed_faces_main(world, coord, editor.mode);
-
-                    if mask == 0 {
-                        continue;
-                    }
-
-                    let (first_vertex, count) = self.get_block_mask_range(mask);
-
-                    let color = world.get_effective_color(coord);
+                for ghost in ghosts.iter() {
+                    let (first_vertex, count) = self.get_block_mask_range(ghost.mask);
 
                     gl::Uniform3f(
                         self.ghost_color_location,
-                        color.x,
-                        color.y,
-                        color.z,
+                        ghost.color.x,
+                        ghost.color.y,
+                        ghost.color.z,
                     );
 
                     let model = Mat4::from_translation(
-                        Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32)
-                            + world.get_visual_offset(coord),
+                        Vec3::new(
+                            ghost.coord.x as f32,
+                            ghost.coord.y as f32,
+                            ghost.coord.z as f32,
+                        ) + ghost.visual_offset,
                     );
 
                     gl::UniformMatrix4fv(
@@ -847,6 +813,8 @@ impl Renderer {
 
                     gl::DrawArrays(gl::TRIANGLES, first_vertex, count);
                 }
+
+                drop(ghosts);
 
                 // Return to the normal world shader before any
                 // of the remaining editor previews use its uniforms.
@@ -884,13 +852,12 @@ impl Renderer {
                             if is_marker {
                                 gl::BindVertexArray(self.highlight_vao);
 
-                                let (r, g, b) = if editor.build_template.cell_type
-                                    == CellType::AudioEmitter
-                                {
-                                    (0.2, 0.8, 1.0)
-                                } else {
-                                    (1.0, 1.0, 0.2)
-                                };
+                                let (r, g, b) =
+                                    if editor.build_template.cell_type == CellType::AudioEmitter {
+                                        (0.2, 0.8, 1.0)
+                                    } else {
+                                        (1.0, 1.0, 0.2)
+                                    };
 
                                 gl::Uniform3f(base_color_location, r, g, b);
 
@@ -967,11 +934,7 @@ impl Renderer {
                                             model.to_cols_array().as_ptr(),
                                         );
 
-                                        gl::DrawArrays(
-                                            gl::LINES,
-                                            0,
-                                            self.highlight_vertex_count,
-                                        );
+                                        gl::DrawArrays(gl::LINES, 0, self.highlight_vertex_count);
                                     }
                                 }
                             }

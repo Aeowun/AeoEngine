@@ -1,5 +1,5 @@
-use super::script_editor_highlighting::{build_layout_job, byte_offset_to_char_index};
 use super::ScriptEditor;
+use super::script_editor_highlighting::{build_layout_job, byte_offset_to_char_index};
 use egui::{Color32, RichText};
 use std::path::PathBuf;
 

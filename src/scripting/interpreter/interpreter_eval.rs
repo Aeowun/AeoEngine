@@ -3,16 +3,16 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::scripting::api::{
-    call_host_function, call_host_member, resolve_host_member_property, resolve_host_property,
-    set_host_member_property, HostContext,
+    HostContext, call_host_function, call_host_member, resolve_host_member_property,
+    resolve_host_property, set_host_member_property,
 };
 use crate::scripting::ast::*;
 use crate::scripting::log::{LogRecord, LogSeverity};
 use crate::scripting::source::SourceSpan;
 use crate::scripting::value::{HandleKind, MapKey, Scope, Value};
 
-use super::interpreter_compile::{compile_function, FunctionCompiler};
-use super::{CallFrame, Interpreter, ScriptFiber, ScriptInstance, FRAME_PUSHED_SENTINEL};
+use super::interpreter_compile::{FunctionCompiler, compile_function};
+use super::{CallFrame, FRAME_PUSHED_SENTINEL, Interpreter, ScriptFiber, ScriptInstance};
 
 impl Interpreter {
     pub(super) fn assign_target(
@@ -656,8 +656,7 @@ impl Interpreter {
 
                 match object_value {
                     Value::Handle { kind, id } => {
-                        if let Some(result) =
-                            call_host_member(host, kind, id, method, &arg_values)?
+                        if let Some(result) = call_host_member(host, kind, id, method, &arg_values)?
                         {
                             Ok(result)
                         } else if let Some(Value::Function(compiled, params, caps)) =
@@ -993,7 +992,13 @@ impl Interpreter {
                 }
 
                 if let Some(res) = crate::scripting::stdlib::call_stdlib_function(
-                    self, instance, scopes, namespace, name, &arg_values, host,
+                    self,
+                    instance,
+                    scopes,
+                    namespace,
+                    name,
+                    &arg_values,
+                    host,
                 )? {
                     return Ok(res);
                 }

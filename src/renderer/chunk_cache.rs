@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
 use crate::engine::EditorMode;
-use crate::world::{ChunkCoord, World, WorldCoord};
+use crate::world::{CellType, ChunkCoord, World, WorldCoord};
 
 use super::Renderer;
-use super::chunk::{build_cpu_chunk_data, expand_dirty_coords_to_chunks, upload_position_only_vertices, ChunkMesh, TextureBatchRange};
-use super::mesh::{upload_block_vertices_3d, BLOCK_VERTEX_FLOATS};
+use super::chunk::{
+    ChunkMesh, TextureBatchRange, build_cpu_chunk_data, expand_dirty_coords_to_chunks,
+    upload_position_only_vertices,
+};
+use super::mesh::{BLOCK_VERTEX_FLOATS, compute_exposed_faces_main, upload_block_vertices_3d};
 
 impl Renderer {
     /// Clears and frees all GPU resources for cached voxel chunk meshes.
@@ -23,19 +26,75 @@ impl Renderer {
 
         *self.last_render_mode.borrow_mut() = None;
         *self.last_render_revision.borrow_mut() = 0;
+
+        self.ghost_cache.borrow_mut().clear();
+        *self.last_ghost_revision.borrow_mut() = 0;
+        *self.last_ghost_mode.borrow_mut() = None;
+    }
+
+    /// Updates the cached editor ghosts only when render-relevant world state
+    /// or renderer mode changes.
+    ///
+    /// Unchanged frames must not rescan the World or recompute exposed faces.
+    pub(super) fn update_ghost_cache(&self, world: &World, mode: EditorMode) {
+        let revision = world.render_revision();
+
+        let unchanged = *self.last_ghost_revision.borrow() == revision
+            && *self.last_ghost_mode.borrow() == Some(mode);
+
+        if unchanged {
+            return;
+        }
+
+        let mut ghosts = self.ghost_cache.borrow_mut();
+
+        ghosts.clear();
+
+        if mode == EditorMode::Editor {
+            for coord in world.iter_active_effective_coords() {
+                let Some(cell) = world.get_effective_cell(coord) else {
+                    continue;
+                };
+
+                if !matches!(cell.cell_type, CellType::Block | CellType::SpawnPoint) {
+                    continue;
+                }
+
+                if world.is_cell_visible(coord) {
+                    continue;
+                }
+
+                let mask = compute_exposed_faces_main(world, coord, mode);
+
+                if mask == 0 {
+                    continue;
+                }
+
+                ghosts.push(super::GhostRenderCell {
+                    coord,
+                    mask,
+                    color: world.get_effective_color(coord),
+                    visual_offset: world.get_visual_offset(coord),
+                });
+            }
+        }
+
+        *self.last_ghost_revision.borrow_mut() = revision;
+        *self.last_ghost_mode.borrow_mut() = Some(mode);
     }
 
     pub fn update_chunk_cache(&self, world: &World, mode: EditorMode) {
+        self.update_ghost_cache(world, mode);
+
         let dirty_coords = world.drain_render_dirty_cells();
 
         let mode_changed = *self.last_render_mode.borrow() != Some(mode);
 
-        let revision_changed =
-            *self.last_render_revision.borrow() != world.render_revision();
+        let revision_reset = world.render_revision() < *self.last_render_revision.borrow();
 
         if dirty_coords.is_empty()
             && !mode_changed
-            && !revision_changed
+            && !revision_reset
             && !self.chunk_cache.borrow().is_empty()
         {
             return;
@@ -43,7 +102,7 @@ impl Renderer {
 
         let mut cache = self.chunk_cache.borrow_mut();
 
-        if mode_changed || revision_changed || cache.is_empty() {
+        if mode_changed || revision_reset || cache.is_empty() {
             for chunk_mesh in cache.values_mut() {
                 chunk_mesh.free_gl_resources();
             }
@@ -54,13 +113,7 @@ impl Renderer {
                 if let Some(coords) = world.get_active_coords_in_chunk(chunk_coord) {
                     let coords_vec: Vec<WorldCoord> = coords.iter().copied().collect();
 
-                    self.rebuild_single_chunk(
-                        world,
-                        &mut cache,
-                        chunk_coord,
-                        &coords_vec,
-                        mode,
-                    );
+                    self.rebuild_single_chunk(world, &mut cache, chunk_coord, &coords_vec, mode);
                 }
             }
 
@@ -101,6 +154,7 @@ impl Renderer {
             if let Some(mut old_mesh) = cache.remove(&chunk_coord) {
                 old_mesh.free_gl_resources();
             }
+
             return;
         }
 
@@ -109,7 +163,6 @@ impl Renderer {
         let mut main_texture_batches = Vec::new();
 
         let mut combined_main_vertices = Vec::new();
-
         let mut current_vertex_offset = 0i32;
 
         let mut texture_ids: Vec<_> = cpu_data.main_texture_vertices.keys().cloned().collect();
@@ -179,66 +232,13 @@ impl Renderer {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::collections::HashMap;
-
     use super::*;
-    use crate::engine::EditorMode;
-    use crate::renderer::chunk::ChunkMesh;
-    use crate::renderer::sky;
-    use crate::world::{World, WorldCoord};
+    use crate::renderer::Renderer;
+    use crate::world::DirtyReason;
 
     #[test]
     fn test_renderer_chunk_cache_cleared_on_project_reset() {
-        let renderer = Renderer {
-            chunk_cache: RefCell::new(HashMap::new()),
-            last_render_mode: RefCell::new(Some(EditorMode::Editor)),
-            last_render_revision: RefCell::new(10),
-            grid_program: 0,
-            ghost_program: 0,
-            ghost_view_projection_location: -1,
-            ghost_model_location: -1,
-            ghost_color_location: -1,
-            ghost_alpha_location: -1,
-            grid_vao_xz: 0,
-            grid_vbo_xz: 0,
-            grid_count_xz: 0,
-            grid_vao_yz: 0,
-            grid_vbo_yz: 0,
-            grid_count_yz: 0,
-            grid_vao_xy: 0,
-            grid_vbo_xy: 0,
-            grid_count_xy: 0,
-            axis_vao: 0,
-            axis_vbo: 0,
-            axis_vertex_count: 0,
-            highlight_vao: 0,
-            highlight_vbo: 0,
-            highlight_vertex_count: 0,
-            anchor_vao: 0,
-            anchor_vbo: 0,
-            anchor_vertex_count: 0,
-            block_vao: 0,
-            block_vbo: 0,
-            block_mask_ranges: [(0, 0); 64],
-            billboard_vao: 0,
-            billboard_vbo: 0,
-            character_vao: 0,
-            character_vbo: 0,
-            shadow_program: 0,
-            shadow_fbo: 0,
-            shadow_depth_tex: 0,
-            textures: RefCell::new(HashMap::new()),
-            cubemaps: RefCell::new(HashMap::new()),
-            fallback_tex: 0,
-            sky_renderer: sky::SkyRenderer {
-                program: 0,
-                vao: 0,
-                vbo: 0,
-            },
-            width: 800.0,
-            height: 600.0,
-        };
+        let renderer = Renderer::new_for_tests(800.0, 600.0);
 
         let mock_mesh = ChunkMesh {
             chunk_coord: ChunkCoord::new(0, 0, 0),
@@ -267,59 +267,20 @@ mod tests {
         assert_eq!(*renderer.last_render_revision.borrow(), 0);
 
         assert_eq!(*renderer.last_render_mode.borrow(), None);
+
+        assert!(
+            renderer.ghost_cache.borrow().is_empty(),
+            "Ghost cache must be cleared when the renderer cache is cleared"
+        );
+
+        assert_eq!(*renderer.last_ghost_revision.borrow(), 0);
+
+        assert_eq!(*renderer.last_ghost_mode.borrow(), None);
     }
 
     #[test]
-    fn test_renderer_chunk_cache_invalidates_on_world_revision_change() {
-        let renderer = Renderer {
-            chunk_cache: RefCell::new(HashMap::new()),
-            last_render_mode: RefCell::new(Some(EditorMode::Editor)),
-            last_render_revision: RefCell::new(999),
-            grid_program: 0,
-            ghost_program: 0,
-            ghost_view_projection_location: -1,
-            ghost_model_location: -1,
-            ghost_color_location: -1,
-            ghost_alpha_location: -1,
-            grid_vao_xz: 0,
-            grid_vbo_xz: 0,
-            grid_count_xz: 0,
-            grid_vao_yz: 0,
-            grid_vbo_yz: 0,
-            grid_count_yz: 0,
-            grid_vao_xy: 0,
-            grid_vbo_xy: 0,
-            grid_count_xy: 0,
-            axis_vao: 0,
-            axis_vbo: 0,
-            axis_vertex_count: 0,
-            highlight_vao: 0,
-            highlight_vbo: 0,
-            highlight_vertex_count: 0,
-            anchor_vao: 0,
-            anchor_vbo: 0,
-            anchor_vertex_count: 0,
-            block_vao: 0,
-            block_vbo: 0,
-            block_mask_ranges: [(0, 0); 64],
-            billboard_vao: 0,
-            billboard_vbo: 0,
-            character_vao: 0,
-            character_vbo: 0,
-            shadow_program: 0,
-            shadow_fbo: 0,
-            shadow_depth_tex: 0,
-            textures: RefCell::new(HashMap::new()),
-            cubemaps: RefCell::new(HashMap::new()),
-            fallback_tex: 0,
-            sky_renderer: sky::SkyRenderer {
-                program: 0,
-                vao: 0,
-                vbo: 0,
-            },
-            width: 800.0,
-            height: 600.0,
-        };
+    fn test_renderer_chunk_cache_invalidates_on_world_revision_reset() {
+        let renderer = Renderer::new_for_tests(800.0, 600.0);
 
         let mock_mesh = ChunkMesh {
             chunk_coord: ChunkCoord::new(0, 0, 0),
@@ -349,5 +310,204 @@ mod tests {
             *renderer.last_render_revision.borrow(),
             new_blank_world.render_revision()
         );
+    }
+
+    #[test]
+    fn test_renderer_selective_chunk_rebuild_preserves_unmodified_chunks() {
+        let renderer = Renderer::new_for_tests(800.0, 600.0);
+
+        let mut world = World::new();
+
+        // This represents a renderer whose cache has already been populated
+        // for the current world and editor mode.
+        *renderer.last_render_mode.borrow_mut() = Some(EditorMode::Editor);
+        *renderer.last_render_revision.borrow_mut() = world.render_revision();
+
+        let distant_chunk = ChunkCoord::new(10, 10, 10);
+
+        let mock_mesh = ChunkMesh {
+            chunk_coord: distant_chunk,
+            main_vao: 0,
+            main_vbo: 0,
+            main_texture_batches: Vec::new(),
+            shadow_vao: 0,
+            shadow_vbo: 0,
+            shadow_vertex_count: 0,
+        };
+
+        renderer
+            .chunk_cache
+            .borrow_mut()
+            .insert(distant_chunk, mock_mesh);
+
+        world.mark_render_dirty(WorldCoord::new(0, 0, 0), DirtyReason::Geometry);
+
+        world.bump_render_revision();
+
+        renderer.update_chunk_cache(&world, EditorMode::Editor);
+
+        let cache = renderer.chunk_cache.borrow();
+
+        assert!(
+            cache.contains_key(&distant_chunk),
+            "Distant chunk mesh should remain cached when an unrelated chunk is dirtied"
+        );
+    }
+
+    #[test]
+    fn test_renderer_ghost_cache_rebuilds_only_when_render_state_changes() {
+        let renderer = Renderer::new_for_tests(800.0, 600.0);
+
+        let mut world = World::new();
+
+        let coord = WorldCoord::new(0, 0, 0);
+
+        world.set_cell(coord, CellType::Block);
+        world.set_cell_visible_runtime(coord, false);
+
+        renderer.update_ghost_cache(&world, EditorMode::Editor);
+
+        let first_revision = *renderer.last_ghost_revision.borrow();
+
+        let first_cache = renderer.ghost_cache.borrow().clone();
+
+        assert_eq!(first_cache.len(), 1);
+
+        renderer.update_ghost_cache(&world, EditorMode::Editor);
+
+        assert_eq!(*renderer.last_ghost_revision.borrow(), first_revision);
+
+        assert_eq!(*renderer.ghost_cache.borrow(), first_cache);
+    }
+
+    #[test]
+    fn test_renderer_ghost_cache_updates_when_cell_render_state_changes() {
+        use glam::Vec3;
+
+        let renderer = Renderer::new_for_tests(800.0, 600.0);
+
+        let mut world = World::new();
+
+        let coord = WorldCoord::new(0, 0, 0);
+
+        world.set_cell(coord, CellType::Block);
+        world.set_cell_visible_runtime(coord, false);
+
+        renderer.update_ghost_cache(&world, EditorMode::Editor);
+
+        let first_revision = *renderer.last_ghost_revision.borrow();
+
+        world.set_cell_color_runtime(coord, Vec3::new(1.0, 0.0, 0.0));
+
+        renderer.update_ghost_cache(&world, EditorMode::Editor);
+
+        let ghosts = renderer.ghost_cache.borrow();
+
+        assert_eq!(ghosts.len(), 1);
+
+        assert_eq!(ghosts[0].color, Vec3::new(1.0, 0.0, 0.0));
+
+        assert!(
+            *renderer.last_ghost_revision.borrow() > first_revision,
+            "Ghost cache revision must advance after a render-relevant world change"
+        );
+    }
+
+    #[test]
+    fn test_renderer_ghost_cache_clears_outside_editor_mode() {
+        let renderer = Renderer::new_for_tests(800.0, 600.0);
+
+        let mut world = World::new();
+
+        let coord = WorldCoord::new(0, 0, 0);
+
+        world.set_cell(coord, CellType::Block);
+        world.set_cell_visible_runtime(coord, false);
+
+        renderer.update_ghost_cache(&world, EditorMode::Editor);
+
+        assert_eq!(renderer.ghost_cache.borrow().len(), 1);
+
+        renderer.update_ghost_cache(&world, EditorMode::Play);
+
+        assert!(
+            renderer.ghost_cache.borrow().is_empty(),
+            "Editor ghost geometry must not remain cached in Play mode"
+        );
+    }
+
+    #[test]
+    fn test_benchmark_large_world_performance_cliff() {
+        use std::time::Instant;
+
+        use crate::renderer::chunk::build_cpu_chunk_data;
+
+        for &block_count in &[5_000, 10_000, 20_000] {
+            let mut world = World::new();
+
+            let side = (block_count as f32).cbrt().ceil() as i32;
+
+            let mut count = 0;
+
+            'outer: for x in 0..side {
+                for y in 0..side {
+                    for z in 0..side {
+                        world.set_cell(WorldCoord::new(x, y, z), CellType::Block);
+
+                        count += 1;
+
+                        if count >= block_count {
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+
+            let start_full = Instant::now();
+
+            let mut total_batches = 0;
+
+            for chunk_coord in world.iter_active_chunks() {
+                if let Some(coords) = world.get_active_coords_in_chunk(chunk_coord) {
+                    let coords_vec: Vec<WorldCoord> = coords.iter().copied().collect();
+
+                    let cpu_data =
+                        build_cpu_chunk_data(&world, chunk_coord, &coords_vec, EditorMode::Editor);
+
+                    total_batches += cpu_data.main_texture_vertices.len();
+                }
+            }
+
+            let full_build_time = start_full.elapsed();
+
+            world.set_cell(WorldCoord::new(0, 0, 0), CellType::Empty);
+
+            let start_edit = Instant::now();
+
+            let dirty_coords = world.drain_render_dirty_cells();
+
+            let dirty_chunks = expand_dirty_coords_to_chunks(&dirty_coords);
+
+            let mut edit_batches = 0;
+
+            for chunk_coord in dirty_chunks {
+                let coords_vec: Vec<WorldCoord> = world
+                    .get_active_coords_in_chunk(chunk_coord)
+                    .map(|set| set.iter().copied().collect())
+                    .unwrap_or_default();
+
+                let cpu_data =
+                    build_cpu_chunk_data(&world, chunk_coord, &coords_vec, EditorMode::Editor);
+
+                edit_batches += cpu_data.main_texture_vertices.len();
+            }
+
+            let edit_time = start_edit.elapsed();
+
+            println!(
+                "[BENCHMARK] World size: {} blocks | Full CPU chunk build: {:?} (batches: {}) | Selective edit rebuild: {:?} (batches: {})",
+                block_count, full_build_time, total_batches, edit_time, edit_batches
+            );
+        }
     }
 }

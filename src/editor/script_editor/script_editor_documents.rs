@@ -1,5 +1,5 @@
-use super::script_editor_highlighting::{build_highlight_spans, HighlightSpan};
 use super::ScriptEditor;
+use super::script_editor_highlighting::{HighlightSpan, build_highlight_spans};
 use crate::scripting::ast::Program;
 use crate::scripting::diagnostic::Diagnostics;
 use crate::scripting::lexer::Lexer;

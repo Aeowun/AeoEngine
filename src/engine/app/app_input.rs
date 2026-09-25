@@ -7,8 +7,8 @@ use crate::editor::EditorTool;
 use crate::world::{CellType, WorldCoord};
 
 use super::{
-    App, EditorMode, View, RMB_GUARD_EDGE_SCROLL_SPEED, RMB_GUARD_INNER_RADIUS_FACTOR,
-    RMB_GUARD_MAX_RADIUS_FACTOR,
+    App, EditorMode, RMB_GUARD_EDGE_SCROLL_SPEED, RMB_GUARD_INNER_RADIUS_FACTOR,
+    RMB_GUARD_MAX_RADIUS_FACTOR, View,
 };
 
 #[derive(Clone, Debug)]
@@ -749,11 +749,8 @@ impl App {
 
         for coord in &coords {
             if let Some(cell) = self.world.get(*coord) {
-                let offset = WorldCoord::new(
-                    coord.x - pivot.x,
-                    coord.y - pivot.y,
-                    coord.z - pivot.z,
-                );
+                let offset =
+                    WorldCoord::new(coord.x - pivot.x, coord.y - pivot.y, coord.z - pivot.z);
                 let script_binding = self
                     .world
                     .script_bindings

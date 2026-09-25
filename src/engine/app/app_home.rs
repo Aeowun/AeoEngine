@@ -1,9 +1,8 @@
 use egui::RichText;
 
 use super::{
-    App, View, COLOR_ACCENT_ORANGE, COLOR_ACCENT_RED, COLOR_BORDER, COLOR_BORDER_BRIGHT,
-    COLOR_TEXT, COLOR_TEXT_BRIGHT, COLOR_TEXT_DIM, COLOR_VOID, COLOR_VOID_ELEVATED,
-    COLOR_VOID_PANEL,
+    App, COLOR_ACCENT_ORANGE, COLOR_ACCENT_RED, COLOR_BORDER, COLOR_BORDER_BRIGHT, COLOR_TEXT,
+    COLOR_TEXT_BRIGHT, COLOR_TEXT_DIM, COLOR_VOID, COLOR_VOID_ELEVATED, COLOR_VOID_PANEL, View,
 };
 
 impl App {
@@ -875,7 +874,11 @@ impl App {
         });
     }
 
-    pub(crate) fn draw_home_utility_button(&self, ui: &mut egui::Ui, label: &str) -> egui::Response {
+    pub(crate) fn draw_home_utility_button(
+        &self,
+        ui: &mut egui::Ui,
+        label: &str,
+    ) -> egui::Response {
         let button = egui::Button::new(RichText::new(label).monospace().color(COLOR_TEXT))
             .min_size(egui::vec2(0.0, 28.0))
             .fill(COLOR_VOID)

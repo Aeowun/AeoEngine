@@ -1,3 +1,7 @@
+//! Application state and frame/update orchestration.
+//!
+//! Owns the main application state shared by the editor, renderer, world,
+//! gameplay systems, scripting runtime, input handling, and mode transitions.
 pub mod app_home;
 pub mod app_input;
 pub mod app_project;
@@ -142,10 +146,19 @@ pub struct App {
 
 impl App {
     pub fn new(width: f32, height: f32) -> Self {
+        Self::with_renderer(Renderer::new(width, height))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_for_tests(width: f32, height: f32) -> Self {
+        Self::with_renderer(Renderer::new_for_tests(width, height))
+    }
+
+    fn with_renderer(renderer: Renderer) -> Self {
         Self {
             view: View::Splash,
 
-            renderer: Renderer::new(width, height),
+            renderer,
             editor: Editor::new(),
             world: World::new(),
             project_manager: ProjectManager::new(),
@@ -238,6 +251,7 @@ impl App {
 
                 self.physics_world.register_from_world(&self.world);
                 self.world.physics_dirty_cells.clear();
+
                 let spawned_id = self
                     .character_system
                     .spawn_player(&self.world, self.project_manager.current_project.as_deref());
@@ -249,6 +263,7 @@ impl App {
 
                 if let Some(character_id) = spawned_id {
                     let entity_id = self.entity_manager.create_entity("Player");
+
                     self.character_system
                         .associate_entity(entity_id, character_id);
 
@@ -258,33 +273,10 @@ impl App {
                 }
             }
 
-            if self.editor.mode == EditorMode::Editor && self.last_mode == EditorMode::Play {
-                if let Some(saved) = self.saved_editor_camera.take() {
-                    self.editor.camera = saved;
-                }
-
-                self.physics_clock.reset();
-
-                self.character_system.clear();
-
-                self.physics_world.bodies.clear();
-
-                self.audio_system.stop_all();
-
-                self.stop_scripting();
-                self.mouse.set_editor_defaults();
-
-                self.world.clear_runtime_state();
-            }
-
-            self.last_mode = self.editor.mode;
+            self.handle_mode_transition();
 
             if self.editor.mode == EditorMode::Play {
                 self.update_gameplay(frame_time);
-            } else {
-                self.physics_clock.reset();
-                self.character_system.clear();
-                self.physics_world.bodies.clear();
             }
 
             if egui_ctx.wants_keyboard_input() {
@@ -369,5 +361,81 @@ impl App {
                 self.editor.needs_exit = false;
             }
         }
+    }
+
+    pub(crate) fn handle_mode_transition(&mut self) {
+        if self.editor.mode == EditorMode::Editor && self.last_mode == EditorMode::Play {
+            if let Some(saved) = self.saved_editor_camera.take() {
+                self.editor.camera = saved;
+            }
+
+            self.physics_clock.reset();
+
+            self.character_system.clear();
+
+            self.physics_world.bodies.clear();
+
+            self.audio_system.stop_all();
+
+            self.stop_scripting();
+            self.mouse.set_editor_defaults();
+
+            self.world.clear_runtime_state();
+        }
+
+        self.last_mode = self.editor.mode;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::physics::{PhysicsBody, PhysicsBodyId};
+
+    #[test]
+    fn test_editor_idle_and_transition_cleanup() {
+        let mut app = App::new_for_tests(800.0, 600.0);
+
+        app.view = View::Editor;
+
+        // Simulate that the previous frame was in Play mode.
+        app.last_mode = EditorMode::Play;
+        app.editor.mode = EditorMode::Editor;
+
+        // Seed state that the transition is supposed to clear.
+        app.physics_world.bodies.push(PhysicsBody::new(
+            PhysicsBodyId(1),
+            1,
+            glam::Vec3::ZERO,
+            glam::Vec3::ONE,
+        ));
+
+        app.physics_clock.update(0.1, |_| {});
+
+        app.saved_editor_camera = Some(app.editor.camera.clone());
+
+        // Exercise the actual transition handler.
+        app.handle_mode_transition();
+
+        assert!(
+            app.physics_world.bodies.is_empty(),
+            "Play -> Editor must clear physics bodies"
+        );
+
+        assert_eq!(
+            app.physics_clock.accumulator, 0.0,
+            "Play -> Editor must reset the physics clock"
+        );
+
+        assert!(
+            app.saved_editor_camera.is_none(),
+            "Play -> Editor must consume the saved gameplay camera"
+        );
+
+        assert_eq!(
+            app.last_mode,
+            EditorMode::Editor,
+            "Transition handler must update last_mode"
+        );
     }
 }

@@ -69,7 +69,7 @@ impl ScriptEditor {
 mod tests {
     use super::script_editor_files::sanitize_entity_name;
     use super::script_editor_highlighting::{
-        build_highlight_spans, byte_offset_to_char_index, HighlightKind,
+        HighlightKind, build_highlight_spans, byte_offset_to_char_index,
     };
     use super::*;
     use crate::scripting::lexer::Lexer;

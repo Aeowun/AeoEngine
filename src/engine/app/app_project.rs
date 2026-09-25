@@ -65,8 +65,7 @@ impl App {
                     let parts: Vec<&str> = content.split_whitespace().collect();
 
                     if parts.len() >= 6 {
-                        self.editor.camera.yaw =
-                            parts[0].parse().unwrap_or(self.editor.camera.yaw);
+                        self.editor.camera.yaw = parts[0].parse().unwrap_or(self.editor.camera.yaw);
 
                         self.editor.camera.pitch =
                             parts[1].parse().unwrap_or(self.editor.camera.pitch);

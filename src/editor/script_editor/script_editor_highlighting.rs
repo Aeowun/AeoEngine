@@ -1,6 +1,6 @@
 use crate::scripting::token::{Token, TokenKind};
-use egui::text::{LayoutJob, TextFormat};
 use egui::Color32;
+use egui::text::{LayoutJob, TextFormat};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HighlightKind {

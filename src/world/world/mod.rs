@@ -1,6 +1,11 @@
+//! Core World state and world-level data structures.
+//!
+//! Owns authored and runtime cell storage, ID and spatial indices, render
+//! invalidation state, scene settings, and the specialized lookup indices
+//! used by rendering and editor systems.
+use crate::scripting::binding::ScriptBinding;
 use crate::world::cell::{Cell, ChunkCoord, RuntimeCellState};
 use crate::world::coordinate::WorldCoord;
-use crate::scripting::binding::ScriptBinding;
 use glam::Vec3;
 use std::collections::{HashMap, HashSet};
 
@@ -29,21 +34,32 @@ pub struct World {
 
     // Optimized lookup for cell coordinates by ID.
     pub(crate) id_to_coord: HashMap<u64, WorldCoord>,
+
     /// Next globally unique authored cell ID.
     ///
     /// This is persistent world state. It must not depend on which chunks
     /// happen to be resident in memory.
     pub(crate) next_cell_id: u64,
+
     // Storage for cells created at runtime via cell.new()
     pub(crate) runtime_cells: HashMap<u64, Cell>,
+
     // ID -> Coord index for runtime cells
     pub(crate) runtime_id_to_coord: HashMap<u64, WorldCoord>,
+
     // Coord -> ID index for runtime cells (spatial index)
     pub(crate) coord_to_runtime_id: HashMap<WorldCoord, u64>,
 
-    /// Resident authored/runtime audio emitters. Audio uses this index rather
-    /// than scanning every resident cell each frame.
+    /// Resident authored/runtime audio emitters.
+    /// Audio uses this index rather than scanning every resident cell each frame.
     pub(crate) audio_emitter_ids: HashSet<u64>,
+
+    /// Dedicated index for point lights (`CellType::Light`).
+    pub(crate) light_ids: HashSet<u64>,
+
+    /// Dedicated index for editor markers
+    /// (`CellType::Light` and `CellType::AudioEmitter`).
+    pub(crate) editor_marker_ids: HashSet<u64>,
 
     // The world wide gravity vector used by the physics simulation.
     pub gravity: Vec3,
@@ -100,6 +116,8 @@ impl World {
             runtime_id_to_coord: HashMap::new(),
             coord_to_runtime_id: HashMap::new(),
             audio_emitter_ids: HashSet::new(),
+            light_ids: HashSet::new(),
+            editor_marker_ids: HashSet::new(),
             gravity: Vec3::new(0.0, -9.81, 0.0),
             lighting: LightingSettings::default(),
             sky: SkySettings::default(),
@@ -140,6 +158,7 @@ mod tests {
         let c2 = WorldCoord::new(11, 2, 10);
 
         let id1 = world.set_cell(c1, CellType::Block);
+
         if let Some(cell) = world.get_mut(c1) {
             cell.color_rgb = Vec3::new(1.0, 0.0, 0.0);
             cell.texture = "CustomTexture".to_string();
@@ -151,6 +170,7 @@ mod tests {
         }
 
         let id2 = world.set_cell(c2, CellType::Light);
+
         world
             .script_bindings
             .push(ScriptBinding::new(id1, "scripts/player.aeo"));
@@ -179,7 +199,6 @@ mod tests {
                 .cloned(),
         };
 
-        // 1. Copy preserves full cell data
         assert_eq!(clip_cell1.cell.color_rgb, Vec3::new(1.0, 0.0, 0.0));
         assert_eq!(clip_cell1.cell.texture, "CustomTexture");
         assert_eq!(
@@ -191,7 +210,6 @@ mod tests {
             "scripts/player.aeo"
         );
 
-        // 2. Relative coordinates stored correctly
         assert_eq!(clip_cell1.offset, WorldCoord::new(0, 0, 0));
         assert_eq!(clip_cell2.offset, WorldCoord::new(1, 0, 0));
     }
@@ -200,25 +218,13 @@ mod tests {
     fn test_authored_ids_are_monotonic() {
         let mut world = World::new();
 
-        let id1 = world.set_cell(
-            WorldCoord::new(0, 0, 0),
-            CellType::Block,
-        );
-
-        let id2 = world.set_cell(
-            WorldCoord::new(1, 0, 0),
-            CellType::Block,
-        );
-
-        let id3 = world.set_cell(
-            WorldCoord::new(2, 0, 0),
-            CellType::Block,
-        );
+        let id1 = world.set_cell(WorldCoord::new(0, 0, 0), CellType::Block);
+        let id2 = world.set_cell(WorldCoord::new(1, 0, 0), CellType::Block);
+        let id3 = world.set_cell(WorldCoord::new(2, 0, 0), CellType::Block);
 
         assert_eq!(id1, 10_000_000);
         assert_eq!(id2, 10_000_001);
         assert_eq!(id3, 10_000_002);
-
         assert_eq!(world.next_cell_id, 10_000_003);
     }
 
@@ -245,10 +251,7 @@ mod tests {
 
         world.observe_authored_id(50_000_000);
 
-        let id = world.set_cell(
-            WorldCoord::new(0, 0, 0),
-            CellType::Block,
-        );
+        let id = world.set_cell(WorldCoord::new(0, 0, 0), CellType::Block);
 
         assert_eq!(id, 50_000_001);
         assert_eq!(world.next_cell_id, 50_000_002);
@@ -261,12 +264,14 @@ mod tests {
         let c2 = WorldCoord::new(11, 2, 10);
 
         let id1 = world.set_cell(c1, CellType::Block);
+
         if let Some(cell) = world.get_mut(c1) {
             cell.color_rgb = Vec3::new(0.8, 0.1, 0.2);
             cell.entity_identity = Some("Hero".to_string());
         }
 
         let id2 = world.set_cell(c2, CellType::Block);
+
         world
             .script_bindings
             .push(ScriptBinding::new(id1, "scripts/hero.aeo"));
@@ -289,29 +294,28 @@ mod tests {
         ];
 
         let target_pivot = WorldCoord::new(20, 5, 20);
+
         let pasted_coords = world
             .paste_cells(&clipboard, target_pivot)
             .expect("Paste should succeed");
 
-        // 3. New IDs
         let pasted_cell1 = world.get(WorldCoord::new(20, 5, 20)).unwrap();
         let pasted_cell2 = world.get(WorldCoord::new(21, 5, 20)).unwrap();
+
         assert_ne!(pasted_cell1.id, id1);
         assert_ne!(pasted_cell2.id, id2);
 
-        // 4. Pasted properties preserved
         assert_eq!(pasted_cell1.color_rgb, Vec3::new(0.8, 0.1, 0.2));
         assert_eq!(pasted_cell1.entity_identity, Some("Hero".to_string()));
 
-        // 5. Pasted script binding remapped
         let new_binding = world
             .script_bindings
             .iter()
             .find(|b| b.target_identity == pasted_cell1.id);
+
         assert!(new_binding.is_some());
         assert_eq!(new_binding.unwrap().script_path, "scripts/hero.aeo");
 
-        // 6. Multi-cell paste relative layout preserved
         assert_eq!(
             pasted_coords,
             vec![WorldCoord::new(20, 5, 20), WorldCoord::new(21, 5, 20)]
@@ -326,6 +330,7 @@ mod tests {
 
         let id1 = world.set_cell(c1, CellType::Block);
         let id2 = world.set_cell(c2, CellType::Block);
+
         world
             .script_bindings
             .push(ScriptBinding::new(id1, "scripts/block1.aeo"));
@@ -333,21 +338,18 @@ mod tests {
         let source_coords = vec![c1, c2];
         let delta = WorldCoord::new(1, 0, 0);
 
-        // 11. Moving onto own positions allowed!
         world
             .move_cells(&source_coords, delta)
             .expect("Move onto own positions should succeed");
 
-        // 7. Multi-cell move preserves IDs
         let moved1 = world.get(WorldCoord::new(11, 2, 10)).unwrap();
         let moved2 = world.get(WorldCoord::new(12, 2, 10)).unwrap();
+
         assert_eq!(moved1.id, id1);
         assert_eq!(moved2.id, id2);
 
-        // 8. Script bindings preserved
         assert_eq!(world.resolve_cell_id(id1), Some(WorldCoord::new(11, 2, 10)));
 
-        // 9. Relative layout preserved
         assert!(world.get(c1).is_none());
     }
 
@@ -360,10 +362,8 @@ mod tests {
         let id1 = world.set_cell(c1, CellType::Block);
         let _id_obs = world.set_cell(c_obstacle, CellType::Block);
 
-        // Try moving c1 to c_obstacle
         let res = world.move_cells(&[c1], WorldCoord::new(5, 0, 0));
 
-        // 10. Destination collision rejects operation atomically
         assert!(res.is_err());
         assert_eq!(world.get(c1).unwrap().id, id1);
     }
@@ -372,10 +372,11 @@ mod tests {
     fn test_noop_move_does_nothing() {
         let mut world = World::new();
         let c1 = WorldCoord::new(10, 2, 10);
+
         let id1 = world.set_cell(c1, CellType::Block);
 
-        // 12. No-op move does nothing
         assert!(world.move_cells(&[c1], WorldCoord::new(0, 0, 0)).is_ok());
+
         assert_eq!(world.get(c1).unwrap().id, id1);
     }
 
@@ -383,24 +384,28 @@ mod tests {
     fn test_undo_and_redo_restore_exact_previous_world() {
         let mut world = World::new();
         let c1 = WorldCoord::new(10, 2, 10);
+
         let id1 = world.set_cell(c1, CellType::Block);
+
         world
             .script_bindings
             .push(ScriptBinding::new(id1, "scripts/test.aeo"));
 
         let mut history = History::new();
+
         history.push(world.cells.clone(), world.script_bindings.clone());
 
-        // Perform move
         world.move_cells(&[c1], WorldCoord::new(5, 5, 5)).unwrap();
+
         assert!(world.get(c1).is_none());
         assert!(world.get(WorldCoord::new(15, 7, 15)).is_some());
 
-        // 13. Undo restores exact previous world
         let (prev_cells, prev_bindings) = history.undo_stack.pop().unwrap();
+
         history
             .redo_stack
             .push((world.cells.clone(), world.script_bindings.clone()));
+
         world.cells = prev_cells;
         world.script_bindings = prev_bindings;
         world.rebuild_id_mapping();
@@ -409,13 +414,207 @@ mod tests {
         assert!(world.get(WorldCoord::new(15, 7, 15)).is_none());
         assert_eq!(world.script_bindings.len(), 1);
 
-        // 14. Redo reapplies move
         let (next_cells, next_bindings) = history.redo_stack.pop().unwrap();
+
         world.cells = next_cells;
         world.script_bindings = next_bindings;
         world.rebuild_id_mapping();
 
         assert!(world.get(c1).is_none());
         assert_eq!(world.get(WorldCoord::new(15, 7, 15)).unwrap().id, id1);
+    }
+
+    #[test]
+    fn test_paste_and_move_update_spatial_index_and_dirty_chunks() {
+        let mut world = World::new();
+
+        let c1 = WorldCoord::new(0, 0, 0);
+        let _id1 = world.set_cell(c1, CellType::Block);
+
+        let _ = world.drain_render_dirty_cells();
+
+        let clipboard = vec![ClipboardCell {
+            offset: WorldCoord::new(0, 0, 0),
+            cell: world.get(c1).unwrap().clone(),
+            script_binding: None,
+        }];
+
+        let target = WorldCoord::new(20, 20, 20);
+
+        world.paste_cells(&clipboard, target).unwrap();
+
+        let target_chunk = crate::world::cell::ChunkCoord::from_world_coord(target);
+
+        let active = world
+            .get_active_coords_in_chunk(target_chunk)
+            .expect("Chunk in spatial index");
+
+        assert!(active.contains(&target));
+        assert!(world.is_authored_chunk_dirty(target_chunk));
+        assert!(world.render_dirty_cells.borrow().contains_key(&target));
+
+        let delta = WorldCoord::new(5, 5, 5);
+
+        let move_dest = WorldCoord::new(target.x + delta.x, target.y + delta.y, target.z + delta.z);
+
+        world.move_cells(&[target], delta).unwrap();
+
+        if let Some(active_old) = world.get_active_coords_in_chunk(target_chunk) {
+            assert!(!active_old.contains(&target));
+        }
+
+        let dest_chunk = crate::world::cell::ChunkCoord::from_world_coord(move_dest);
+
+        let active_new = world
+            .get_active_coords_in_chunk(dest_chunk)
+            .expect("Dest chunk in spatial index");
+
+        assert!(active_new.contains(&move_dest));
+        assert!(world.is_authored_chunk_dirty(dest_chunk));
+    }
+
+    #[test]
+    fn test_light_and_marker_indices_maintenance() {
+        let mut world = World::new();
+
+        let c1 = WorldCoord::new(1, 1, 1);
+        let c2 = WorldCoord::new(2, 2, 2);
+
+        let id_light = world.set_cell(c1, CellType::Light);
+        let id_audio = world.set_cell(c2, CellType::AudioEmitter);
+
+        let lights: Vec<u64> = world.iter_light_ids().collect();
+        let markers: Vec<u64> = world.iter_editor_marker_ids().collect();
+
+        assert_eq!(lights, vec![id_light]);
+        assert!(markers.contains(&id_light));
+        assert!(markers.contains(&id_audio));
+
+        world.set_cell(c1, CellType::Empty);
+
+        let lights_after: Vec<u64> = world.iter_light_ids().collect();
+
+        let markers_after: Vec<u64> = world.iter_editor_marker_ids().collect();
+
+        assert!(lights_after.is_empty());
+        assert_eq!(markers_after, vec![id_audio]);
+    }
+
+    #[test]
+    fn test_special_indices_update_when_cell_type_is_replaced() {
+        let mut world = World::new();
+        let coord = WorldCoord::new(0, 0, 0);
+
+        let light_id = world.set_cell(coord, CellType::Light);
+
+        assert!(world.light_ids.contains(&light_id));
+        assert!(world.editor_marker_ids.contains(&light_id));
+        assert!(!world.audio_emitter_ids.contains(&light_id));
+
+        let block_id = world.set_cell(coord, CellType::Block);
+
+        assert!(!world.light_ids.contains(&light_id));
+        assert!(!world.editor_marker_ids.contains(&light_id));
+        assert!(!world.audio_emitter_ids.contains(&light_id));
+        assert!(world.get(coord).is_some());
+        assert_eq!(world.get(coord).unwrap().id, block_id);
+
+        let audio_id = world.set_cell(coord, CellType::AudioEmitter);
+
+        assert!(!world.light_ids.contains(&block_id));
+        assert!(!world.editor_marker_ids.contains(&block_id));
+
+        assert!(world.audio_emitter_ids.contains(&audio_id));
+        assert!(world.editor_marker_ids.contains(&audio_id));
+    }
+
+    #[test]
+    fn test_paste_updates_special_indices() {
+        let mut world = World::new();
+
+        let light_coord = WorldCoord::new(0, 0, 0);
+        let audio_coord = WorldCoord::new(1, 0, 0);
+
+        let light_id = world.set_cell(light_coord, CellType::Light);
+
+        let audio_id = world.set_cell(audio_coord, CellType::AudioEmitter);
+
+        let clipboard = vec![
+            ClipboardCell {
+                offset: WorldCoord::new(0, 0, 0),
+                cell: world.get(light_coord).unwrap().clone(),
+                script_binding: None,
+            },
+            ClipboardCell {
+                offset: WorldCoord::new(1, 0, 0),
+                cell: world.get(audio_coord).unwrap().clone(),
+                script_binding: None,
+            },
+        ];
+
+        let target = WorldCoord::new(10, 0, 0);
+
+        world.paste_cells(&clipboard, target).unwrap();
+
+        let pasted_light = world.get(target).unwrap();
+        let pasted_audio = world.get(WorldCoord::new(11, 0, 0)).unwrap();
+
+        assert_ne!(pasted_light.id, light_id);
+        assert_ne!(pasted_audio.id, audio_id);
+
+        assert!(world.light_ids.contains(&pasted_light.id));
+        assert!(world.editor_marker_ids.contains(&pasted_light.id));
+
+        assert!(world.audio_emitter_ids.contains(&pasted_audio.id));
+
+        assert!(world.editor_marker_ids.contains(&pasted_audio.id));
+    }
+
+    #[test]
+    fn test_update_id_mapping_updates_special_indices() {
+        let mut world = World::new();
+
+        let coord = WorldCoord::new(4, 4, 4);
+        let old_id = world.set_cell(coord, CellType::Light);
+        let new_id = 77_777_777;
+
+        world.update_id_mapping(old_id, new_id, coord);
+
+        assert!(!world.light_ids.contains(&old_id));
+        assert!(!world.editor_marker_ids.contains(&old_id));
+
+        assert!(world.light_ids.contains(&new_id));
+        assert!(world.editor_marker_ids.contains(&new_id));
+
+        assert_eq!(world.resolve_cell_id(new_id), Some(coord));
+
+        assert_eq!(world.resolve_cell_id(old_id), None);
+    }
+
+    #[test]
+    fn test_rebuild_restores_special_indices() {
+        let mut world = World::new();
+
+        let light_coord = WorldCoord::new(1, 1, 1);
+        let audio_coord = WorldCoord::new(2, 2, 2);
+
+        let light_id = world.set_cell(light_coord, CellType::Light);
+
+        let audio_id = world.set_cell(audio_coord, CellType::AudioEmitter);
+
+        world.light_ids.clear();
+        world.audio_emitter_ids.clear();
+        world.editor_marker_ids.clear();
+
+        assert!(world.light_ids.is_empty());
+        assert!(world.audio_emitter_ids.is_empty());
+        assert!(world.editor_marker_ids.is_empty());
+
+        world.rebuild_id_mapping();
+
+        assert!(world.light_ids.contains(&light_id));
+        assert!(world.audio_emitter_ids.contains(&audio_id));
+        assert!(world.editor_marker_ids.contains(&light_id));
+        assert!(world.editor_marker_ids.contains(&audio_id));
     }
 }

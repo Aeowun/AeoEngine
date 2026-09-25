@@ -22,9 +22,7 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
     writeln!(
         file,
         "GRAVITY {} {} {}",
-        world.gravity.x,
-        world.gravity.y,
-        world.gravity.z
+        world.gravity.x, world.gravity.y, world.gravity.z
     )?;
 
     writeln!(
@@ -56,17 +54,14 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
     writeln!(
         file,
         "MOUSE {} {}",
-        world.cursor_visible,
-        world.screen_locked
+        world.cursor_visible, world.screen_locked
     )?;
 
     for binding in &world.script_bindings {
         writeln!(
             file,
             "SCRIPT_BINDING {} {} {}",
-            binding.target_identity,
-            binding.script_path,
-            binding.enabled
+            binding.target_identity, binding.script_path, binding.enabled
         )?;
     }
 
@@ -74,29 +69,14 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
         writeln!(file, "DISABLED_SCRIPT {}", path)?;
     }
 
-    writeln!(
-        file,
-        "SELECTED_CHARACTER {}",
-        world.selected_character
-    )?;
+    writeln!(file, "SELECTED_CHARACTER {}", world.selected_character)?;
 
-    writeln!(
-        file,
-        "SELECTED_CONTROLLER {}",
-        world.selected_controller
-    )?;
+    writeln!(file, "SELECTED_CONTROLLER {}", world.selected_controller)?;
 
-    writeln!(
-        file,
-        "SELECTED_CAMERA {}",
-        world.selected_camera
-    )?;
+    writeln!(file, "SELECTED_CAMERA {}", world.selected_camera)?;
 
     // Group all authored cells by their owning chunk.
-    let mut cells_by_chunk: BTreeMap<
-        ChunkCoord,
-        Vec<(WorldCoord, Cell)>,
-    > = BTreeMap::new();
+    let mut cells_by_chunk: BTreeMap<ChunkCoord, Vec<(WorldCoord, Cell)>> = BTreeMap::new();
 
     for coord in world.active_blocks() {
         if let Some(cell) = world.get(coord) {
@@ -120,11 +100,7 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
 
     // Write the current chunks.
     for (chunk_coord, cells) in &cells_by_chunk {
-        let stored_chunk =
-            WorldStorage::create_stored_chunk(
-                *chunk_coord,
-                cells.clone(),
-            )?;
+        let stored_chunk = WorldStorage::create_stored_chunk(*chunk_coord, cells.clone())?;
 
         storage.save_chunk(&stored_chunk)?;
     }
