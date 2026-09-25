@@ -1,6 +1,6 @@
 ﻿# World Architecture
 
-The `World` is AeoEngine's authoritative representation of authored scene data.
+The `World` is AeoEngine's authoritative query surface for authored scene data.
 
 It stores authored Cells on a 3D integer grid and also owns the temporary runtime overrides required while Play mode is running.
 
@@ -8,15 +8,24 @@ It stores authored Cells on a 3D integer grid and also owns the temporary runtim
 
 # 1. World Storage
 
-The authored World stores Cells by `WorldCoord`.
+Authored Cells are stored on disk in 16³ chunks. `World.cells` is the bounded
+resident cache used by editor, renderer, physics, and gameplay queries.
 
 ~~~text
 World
-└── cells
-    └── WorldCoord → Cell
+├── global metadata
+├── resident cells
+│   └── WorldCoord → Cell
+└── WorldStreamer
+    └── chunks/ChunkCoord → chunk file
 ~~~
 
-The World is sparse. Empty coordinates do not need to be stored.
+The resident cache is sparse. Empty coordinates do not need to be stored.
+
+`WorldStreamer` uses a Chebyshev-distance policy centered on the editor or
+gameplay camera: chunks within 4 are resident, chunks within 5 are prefetched,
+and chunks beyond 7 are saved (when dirty) and evicted. Runtime-created cells
+are intentionally separate and are never persisted or evicted as authored data.
 
 ---
 
@@ -221,4 +230,3 @@ Runtime systems = temporary simulation state
 ~~~
 
 Future architecture changes should preserve that distinction.
-

@@ -17,6 +17,16 @@ const WORLD_FORMAT_VERSION: u32 = 2;
 /// We save the world to a simple text format. This is easier to debug and
 /// version than a binary format for now.
 pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
+    save_world_impl(world, path, true)
+}
+
+/// Saves global world metadata without treating nonresident streamed chunks as
+/// deleted. Call `WorldStreamer::flush_all` first to persist dirty residents.
+pub fn save_world_metadata(world: &World, path: &Path) -> std::io::Result<()> {
+    save_world_impl(world, path, false)
+}
+
+fn save_world_impl(world: &World, path: &Path, write_chunks: bool) -> std::io::Result<()> {
     let project_root = path.parent().unwrap_or_else(|| Path::new("."));
     let storage = WorldStorage::new(project_root)?;
 
@@ -97,6 +107,10 @@ pub fn save_world(world: &World, path: &Path) -> std::io::Result<()> {
         world.selected_camera
     )?;
 
+    if !write_chunks {
+        return Ok(());
+    }
+
     // Group all authored cells by their owning chunk.
     let mut cells_by_chunk: BTreeMap<
         ChunkCoord,
@@ -150,6 +164,21 @@ fn parse_block_properties(cell: &mut Cell, parts: &[&str], offset: usize) {
 /// We clear and reload the world from disk. This supports the standard project
 /// save format used by the engine.
 pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
+    load_world_impl(world, path, true)
+}
+
+/// Loads world metadata but leaves format-2 chunk files on disk for
+/// `WorldStreamer`. Legacy worlds are fully loaded so they can be migrated on
+/// the next save.
+pub fn load_world_metadata(world: &mut World, path: &Path) -> std::io::Result<()> {
+    load_world_impl(world, path, false)
+}
+
+fn load_world_impl(
+    world: &mut World,
+    path: &Path,
+    load_chunk_data: bool,
+) -> std::io::Result<()> {
     *world = World::new();
     let mut has_sky_line = false;
     let mut world_format_version = 1;
@@ -438,20 +467,22 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
 
         let storage = WorldStorage::new(project_root)?;
 
-        for chunk_coord in storage.list_chunks()? {
-            let Some(stored_chunk) =
-                storage.load_chunk(chunk_coord)?
-            else {
-                continue;
-            };
+        if load_chunk_data {
+            for chunk_coord in storage.list_chunks()? {
+                let Some(stored_chunk) =
+                    storage.load_chunk(chunk_coord)?
+                else {
+                    continue;
+                };
 
-            for (coord, cell) in stored_chunk.into_cells() {
-                world.observe_authored_id(cell.id);
-                world.cells.insert(coord, cell);
+                for (coord, cell) in stored_chunk.into_cells() {
+                    world.observe_authored_id(cell.id);
+                    world.cells.insert(coord, cell);
+                }
             }
-        }
 
-        world.rebuild_id_mapping();
+            world.rebuild_id_mapping();
+        }
 
         if !has_sky_line {
             world.sky.enabled = false;

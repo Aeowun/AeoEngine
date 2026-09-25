@@ -30,6 +30,10 @@ Discarded when Play stops
 
 # 2. World Persistence
 
+`world.dat` (format 2) stores global world metadata. Authored cells live in
+individual `chunks/<x>_<y>_<z>.chunk` files, which lets the runtime load and
+evict bounded areas without reconstructing the entire world.
+
 World persistence stores authored World data including Cells and their relevant authored properties.
 
 Depending on the Cell type, persisted information can include:
@@ -111,9 +115,9 @@ A simplified World/script load flow is:
 ~~~text
 Project files
     ↓
-World persistence loader
+World metadata loader
     ↓
-Authored World reconstructed
+WorldStreamer loads nearby chunks on demand
     ↓
 Cell IDs restored
     ↓
@@ -165,4 +169,3 @@ temporary derived/simulated data
 ~~~
 
 Saving should preserve that boundary.
-

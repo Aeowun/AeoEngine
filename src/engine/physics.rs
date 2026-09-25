@@ -677,7 +677,7 @@ impl PhysicsWorld {
         self.static_colliders.clear();
         self.id_gen = PhysicsIdGenerator::new();
         self.step_count = 0;
-        for coord in world.active_effective_blocks() {
+        for coord in world.iter_active_effective_coords() {
             if let Some(cell) = world.get_effective_cell(coord) {
                 if cell.cell_type == CellType::Light {
                     continue;
@@ -725,9 +725,21 @@ impl PhysicsWorld {
     /// Reconciles the physics simulation state with the World's effective state
     /// (authored data + runtime overrides).
     pub fn sync_with_world(&mut self, world: &mut World) {
+        // Streaming introduces/removes an entire chunk at once. Rebuild the
+        // bounded resident physics view once instead of replaying thousands
+        // of individual dirty-cell transitions.
+        if world.take_streaming_physics_rebuild_request() {
+            self.register_from_world(world);
+            world.physics_dirty_cells.clear();
+            return;
+        }
+
         // 1. Process dirty cells (Create/Update/Remove static colliders and dynamic bodies).
         // This is O(number of changes) and handles all static-collider transitions.
         let dirty_ids: Vec<u64> = world.physics_dirty_cells.drain().collect();
+        if dirty_ids.is_empty() {
+            return;
+        }
         for cell_id in dirty_ids {
             if let Some(coord) = world.resolve_cell_id(cell_id) {
                 if let Some(cell) = world.get_effective_cell_by_id(cell_id) {
@@ -793,14 +805,6 @@ impl PhysicsWorld {
                 // Cell was deleted
                 self.static_colliders.retain(|(id, _)| *id != cell_id);
                 self.bodies.retain(|b| b.cell_id != cell_id);
-            }
-        }
-
-        // 2. Sync non-collision properties for existing dynamic bodies (O(bodies)).
-        for body in &mut self.bodies {
-            if let Some(coord) = world.resolve_cell_id(body.cell_id) {
-                body.visible = world.is_cell_visible(coord);
-                body.color_rgb = world.get_effective_color(coord);
             }
         }
 

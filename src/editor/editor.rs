@@ -79,6 +79,10 @@ pub struct Editor {
     pub selected_coords: Vec<WorldCoord>,
     pub current_tool: EditorTool,
 
+    /// Resident streaming radius used while authoring and while playing.
+    pub editor_max_distance_chunks: i32,
+    pub play_max_distance_chunks: i32,
+
     // Windows
     pub navigation_window: NavigationWindow,
     pub show_properties_window: bool,
@@ -141,6 +145,8 @@ impl Editor {
             selected_coord: None,
             selected_coords: Vec::new(),
             current_tool: EditorTool::Select,
+            editor_max_distance_chunks: 4,
+            play_max_distance_chunks: 4,
 
             navigation_window: NavigationWindow::new(),
             show_properties_window: true,
@@ -1111,6 +1117,21 @@ impl Editor {
         world: &mut crate::world::World,
         project_path: &Option<std::path::PathBuf>,
     ) {
+        ui.label("STREAMING");
+        ui.add(
+            egui::DragValue::new(&mut self.editor_max_distance_chunks)
+                .range(0..=64)
+                .prefix("Editor max: ")
+                .suffix(" chunks"),
+        );
+        ui.add(
+            egui::DragValue::new(&mut self.play_max_distance_chunks)
+                .range(0..=64)
+                .prefix("Play max: ")
+                .suffix(" chunks"),
+        );
+        ui.separator();
+
         let active = world.active_blocks();
 
         let mut blocks = Vec::new();

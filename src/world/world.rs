@@ -83,6 +83,10 @@ pub struct World {
     // Tracks which cells have had physics-relevant properties changed at runtime.
     pub(crate) physics_dirty_cells: std::collections::HashSet<u64>,
 
+    /// Streamed chunk transitions are reconciled as a single physics rebuild,
+    /// rather than one dirty-cell update per cell in a chunk.
+    pub(crate) streaming_physics_rebuild_requested: bool,
+
     // Optimized lookup for cell coordinates by ID.
     pub(crate) id_to_coord: HashMap<u64, WorldCoord>,
     /// Next globally unique authored cell ID.
@@ -96,6 +100,10 @@ pub struct World {
     pub(crate) runtime_id_to_coord: HashMap<u64, WorldCoord>,
     // Coord -> ID index for runtime cells (spatial index)
     pub(crate) coord_to_runtime_id: HashMap<WorldCoord, u64>,
+
+    /// Resident authored/runtime audio emitters. Audio uses this index rather
+    /// than scanning every resident cell each frame.
+    pub(crate) audio_emitter_ids: HashSet<u64>,
 
     // The world wide gravity vector used by the physics simulation.
     pub gravity: Vec3,
@@ -135,6 +143,10 @@ pub struct World {
 
     /// Persistent spatial index partitioning cells into 16x16x16 chunks.
     pub spatial_index: WorldSpatialIndex,
+
+    /// Authored chunks changed while resident.  The streamer uses this to
+    /// flush only chunks that need to be written before eviction.
+    pub(crate) dirty_authored_chunks: HashSet<ChunkCoord>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -179,11 +191,13 @@ impl World {
             cells: HashMap::new(),
             runtime_state: HashMap::new(),
             physics_dirty_cells: std::collections::HashSet::new(),
+            streaming_physics_rebuild_requested: false,
             id_to_coord: HashMap::new(),
             next_cell_id: 10_000_000,
             runtime_cells: HashMap::new(),
             runtime_id_to_coord: HashMap::new(),
             coord_to_runtime_id: HashMap::new(),
+            audio_emitter_ids: HashSet::new(),
             gravity: Vec3::new(0.0, -9.81, 0.0),
             lighting: LightingSettings::default(),
             sky: SkySettings::default(),
@@ -197,6 +211,7 @@ impl World {
             render_revision: 1,
             render_dirty_cells: std::cell::RefCell::new(HashMap::new()),
             spatial_index: WorldSpatialIndex::default(),
+            dirty_authored_chunks: HashSet::new(),
         }
     }
 
@@ -321,7 +336,86 @@ impl World {
     pub fn get_mut(&mut self, coord: WorldCoord) -> Option<&mut Cell> {
         self.bump_render_revision();
         self.mark_render_dirty(coord, DirtyReason::Geometry);
+        self.dirty_authored_chunks
+            .insert(ChunkCoord::from_world_coord(coord));
         self.cells.get_mut(&coord)
+    }
+
+    /// Promotes an authored chunk into the resident query cache without
+    /// allocating IDs or enqueuing one physics change per cell.
+    pub(crate) fn insert_loaded_chunk(
+        &mut self,
+        cells: impl IntoIterator<Item = (WorldCoord, Cell)>,
+    ) {
+        for (coord, cell) in cells {
+            if let Some(previous) = self.cells.insert(coord, cell.clone()) {
+                self.id_to_coord.remove(&previous.id);
+                self.runtime_state.remove(&previous.id);
+            }
+            self.id_to_coord.insert(cell.id, coord);
+            self.observe_authored_id(cell.id);
+            if cell.cell_type == CellType::AudioEmitter {
+                self.audio_emitter_ids.insert(cell.id);
+            }
+            self.update_spatial_index_at(coord);
+            self.mark_render_dirty(coord, DirtyReason::Geometry);
+        }
+        self.streaming_physics_rebuild_requested = true;
+    }
+
+    /// Removes all authored cells belonging to a chunk from RAM. Runtime
+    /// cells deliberately remain independent of authored chunk eviction.
+    pub(crate) fn evict_authored_chunk(&mut self, chunk_coord: ChunkCoord) -> Vec<(WorldCoord, Cell)> {
+        let coords: Vec<WorldCoord> = self.cells.keys().copied()
+            .filter(|coord| ChunkCoord::from_world_coord(*coord) == chunk_coord)
+            .collect();
+        let mut cells = Vec::with_capacity(coords.len());
+        for coord in coords {
+            if let Some(cell) = self.cells.remove(&coord) {
+                self.id_to_coord.remove(&cell.id);
+                self.runtime_state.remove(&cell.id);
+                self.audio_emitter_ids.remove(&cell.id);
+                self.update_spatial_index_at(coord);
+                self.mark_render_dirty(coord, DirtyReason::Geometry);
+                cells.push((coord, cell));
+            }
+        }
+        self.streaming_physics_rebuild_requested = true;
+        cells
+    }
+
+    pub(crate) fn request_streaming_physics_rebuild(&mut self) {
+        self.streaming_physics_rebuild_requested = true;
+    }
+
+    pub(crate) fn take_streaming_physics_rebuild_request(&mut self) -> bool {
+        std::mem::take(&mut self.streaming_physics_rebuild_requested)
+    }
+
+    pub fn authored_cells_in_chunk(&self, chunk_coord: ChunkCoord) -> Vec<(WorldCoord, Cell)> {
+        self.cells.iter()
+            .filter(|(coord, _)| ChunkCoord::from_world_coord(**coord) == chunk_coord)
+            .map(|(coord, cell)| (*coord, cell.clone()))
+            .collect()
+    }
+
+    pub(crate) fn authored_chunk_coords(&self) -> HashSet<ChunkCoord> {
+        self.cells
+            .keys()
+            .map(|coord| ChunkCoord::from_world_coord(*coord))
+            .collect()
+    }
+
+    pub fn is_authored_chunk_dirty(&self, chunk_coord: ChunkCoord) -> bool {
+        self.dirty_authored_chunks.contains(&chunk_coord)
+    }
+
+    pub(crate) fn mark_authored_chunk_clean(&mut self, chunk_coord: ChunkCoord) {
+        self.dirty_authored_chunks.remove(&chunk_coord);
+    }
+
+    pub fn resident_authored_cell_count(&self) -> usize {
+        self.cells.len()
     }
 
     /// Finds a cell's current coordinate by its unique ID.
@@ -673,6 +767,19 @@ impl World {
         coords.into_iter().collect()
     }
 
+    /// Resident-only effective coordinates without allocating a temporary
+    /// whole-world vector. Runtime coordinates follow authored coordinates.
+    pub fn iter_active_effective_coords(&self) -> impl Iterator<Item = WorldCoord> + '_ {
+        self.cells.iter().filter_map(|(coord, cell)| {
+            (!self.runtime_state.get(&cell.id).is_some_and(|state| state.is_deleted))
+                .then_some(*coord)
+        }).chain(self.runtime_id_to_coord.values().copied())
+    }
+
+    pub fn iter_audio_emitter_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.audio_emitter_ids.iter().copied()
+    }
+
     pub fn create_runtime_cell(&mut self, cell_type: CellType) -> u64 {
         self.bump_render_revision();
         let mut cell = match cell_type {
@@ -689,6 +796,10 @@ impl World {
 
         let id = self.generate_runtime_unique_id();
         cell.id = id;
+
+        if cell.cell_type == CellType::AudioEmitter {
+            self.audio_emitter_ids.insert(id);
+        }
 
         self.runtime_cells.insert(id, cell);
         self.mark_physics_dirty(id);
@@ -731,6 +842,7 @@ impl World {
             }
             self.runtime_cells.remove(&id);
             self.runtime_state.remove(&id);
+            self.audio_emitter_ids.remove(&id);
         } else if self.id_to_coord.contains_key(&id) {
             self.runtime_state.entry(id).or_default().is_deleted = true;
             self.mark_physics_dirty(id);
@@ -811,17 +923,21 @@ impl World {
         self.runtime_cells.clear();
         self.runtime_id_to_coord.clear();
         self.coord_to_runtime_id.clear();
+        self.rebuild_audio_emitter_index();
         self.rebuild_spatial_index();
     }
 
     pub fn set_cell(&mut self, coord: WorldCoord, cell_type: CellType) -> u64 {
         self.bump_render_revision();
         self.mark_render_dirty(coord, DirtyReason::Geometry);
+        self.dirty_authored_chunks
+            .insert(ChunkCoord::from_world_coord(coord));
         let id = if cell_type == CellType::Empty {
             if let Some(cell) = self.cells.remove(&coord) {
                 self.id_to_coord.remove(&cell.id);
                 self.mark_physics_dirty(cell.id);
                 self.runtime_state.remove(&cell.id);
+                self.audio_emitter_ids.remove(&cell.id);
                 cell.id
             } else {
                 0
@@ -844,6 +960,9 @@ impl World {
             let id = cell.id;
             self.id_to_coord.insert(id, coord);
             self.mark_physics_dirty(id);
+            if cell_type == CellType::AudioEmitter {
+                self.audio_emitter_ids.insert(id);
+            }
             self.cells.insert(coord, cell);
             id
         };
@@ -874,6 +993,19 @@ impl World {
             self.id_to_coord.insert(cell.id, *coord);
         }
         self.rebuild_spatial_index();
+        self.rebuild_audio_emitter_index();
+        self.dirty_authored_chunks = self.cells.keys()
+            .map(|coord| ChunkCoord::from_world_coord(*coord))
+            .collect();
+    }
+
+    fn rebuild_audio_emitter_index(&mut self) {
+        self.audio_emitter_ids.clear();
+        self.audio_emitter_ids.extend(
+            self.cells.values().chain(self.runtime_cells.values())
+                .filter(|cell| cell.cell_type == CellType::AudioEmitter)
+                .map(|cell| cell.id),
+        );
     }
 
     pub(crate) fn generate_unique_id(

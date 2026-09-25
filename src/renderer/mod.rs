@@ -542,6 +542,17 @@ impl Renderer {
                 mode,
             );
 
+        // A streamed chunk can become empty when it is evicted. Remove its
+        // previous GPU mesh instead of leaving stale geometry visible.
+        if cpu_data.main_texture_vertices.is_empty()
+            && cpu_data.shadow_positions.is_empty()
+        {
+            if let Some(mut old_mesh) = cache.remove(&chunk_coord) {
+                old_mesh.free_gl_resources();
+            }
+            return;
+        }
+
         let mut main_vao = 0;
         let mut main_vbo = 0;
         let mut main_texture_batches = Vec::new();
@@ -816,9 +827,6 @@ impl Renderer {
                     editor.camera.target,
                 )
             };
-
-        let active_blocks =
-            world.active_effective_blocks();
 
         let ppp =
             editor.viewport_ppp.max(1.0);
@@ -1399,12 +1407,10 @@ impl Renderer {
             let mut point_lights =
                 Vec::new();
 
-            for coord
-                in &active_blocks
-            {
+            for coord in world.iter_active_effective_coords() {
                 let Some(cell) =
                     world.get_effective_cell(
-                        *coord,
+                        coord,
                     )
                 else {
                     continue;
@@ -1413,11 +1419,11 @@ impl Renderer {
                 if cell.cell_type
                     == CellType::Light
                     && world.is_light_enabled(
-                        *coord,
+                        coord,
                     )
                 {
                     point_lights.push(
-                        (*coord, cell),
+                        (coord, cell),
                     );
 
                     if point_lights.len()
@@ -1558,12 +1564,10 @@ impl Renderer {
                     view.col(2).y,
                 );
 
-            for coord
-                in &active_blocks
-            {
+            for coord in world.iter_active_effective_coords() {
                 let Some(cell) =
                     world.get_effective_cell(
-                        *coord,
+                        coord,
                     )
                 else {
                     continue;
@@ -2378,12 +2382,10 @@ impl Renderer {
                     self.block_vao,
                 );
 
-                for coord
-                    in &active_blocks
-                {
+                for coord in world.iter_active_effective_coords() {
                     let Some(cell) =
                         world.get_effective_cell(
-                            *coord,
+                            coord,
                         )
                     else {
                         continue;
@@ -2398,7 +2400,7 @@ impl Renderer {
                     }
 
                     if world.is_cell_visible(
-                        *coord,
+                        coord,
                     ) {
                         continue;
                     }
@@ -2406,7 +2408,7 @@ impl Renderer {
                     let mask =
                         self::mesh::compute_exposed_faces_main(
                             world,
-                            *coord,
+                            coord,
                             editor.mode,
                         );
 
@@ -2424,7 +2426,7 @@ impl Renderer {
 
                     let color =
                         world.get_effective_color(
-                            *coord,
+                            coord,
                         );
 
                     gl::Uniform3f(
@@ -2442,7 +2444,7 @@ impl Renderer {
                                 coord.z as f32,
                             ) + world
                                 .get_visual_offset(
-                                    *coord,
+                                    coord,
                                 ),
                         );
 

@@ -16,7 +16,7 @@ use crate::scripting::api::HostContext;
 use crate::scripting::host::ScriptHostBridge;
 use crate::scripting::scene::ScriptScene;
 use crate::scripting::value::{HandleKind, Value};
-use crate::world::{CellType, World};
+use crate::world::{CellType, World, WorldCoord, WorldStreamer};
 
 use super::{EditorMode, View, physics};
 
@@ -58,6 +58,8 @@ pub struct App {
     pub renderer: Renderer,
     pub editor: Editor,
     pub world: World,
+    /// Disk-backed cache for authored chunks in format-2 projects.
+    pub world_streamer: Option<WorldStreamer>,
     pub project_manager: ProjectManager,
 
     pub last_frame_instant: Instant,
@@ -148,6 +150,7 @@ impl App {
             renderer: Renderer::new(width, height),
             editor: Editor::new(),
             world: World::new(),
+            world_streamer: None,
             project_manager: ProjectManager::new(),
 
             splash_started: Instant::now(),
@@ -1190,6 +1193,26 @@ impl App {
 
         self.last_frame_instant = now;
 
+        // The editor camera is the streaming focus while authoring. During
+        // Play, gameplay systems still query the same bounded resident cache.
+        if let Some(streamer) = &mut self.world_streamer {
+            let max_distance = if self.editor.mode == EditorMode::Play {
+                self.editor.play_max_distance_chunks
+            } else {
+                self.editor.editor_max_distance_chunks
+            };
+            streamer.set_max_distance(max_distance);
+            let focus_position = if self.editor.mode == EditorMode::Play {
+                self.gameplay_camera.current_position
+            } else {
+                self.editor.camera.target
+            };
+            let focus = WorldCoord::from_vec3(focus_position);
+            if let Err(error) = streamer.update(&mut self.world, focus) {
+                eprintln!("Failed to stream world chunks: {}", error);
+            }
+        }
+
         if self.view == View::Editor {
             if self.editor.mode == EditorMode::Play && self.last_mode == EditorMode::Editor {
                 let has_dirty_scripts = self
@@ -1212,7 +1235,12 @@ impl App {
                     .set_mode_from_name(&self.world.selected_camera);
 
                 self.physics_world.register_from_world(&self.world);
-
+                // The full registration above already incorporates any chunks
+                // promoted before Play began; do not replay that bulk load via
+                // the incremental dirty-cell sync path next frame.
+                self.world.take_streaming_physics_rebuild_request();
+                self.world.physics_dirty_cells.clear();
+                self.world.physics_dirty_cells.clear();
                 let spawned_id = self
                     .character_system
                     .spawn_player(&self.world, self.project_manager.current_project.as_deref());
@@ -1763,6 +1791,11 @@ impl App {
 
                 self.renderer.clear_chunk_cache();
 
+                if let Some(streamer) = &mut self.world_streamer {
+                    if let Err(error) = streamer.delete_all_chunks() {
+                        eprintln!("Failed to clear stored world chunks: {}", error);
+                    }
+                }
                 self.world = World::new();
                 self.editor.clear_clipboard();
                 self.editor.needs_clear_world = false;
@@ -3373,6 +3406,7 @@ impl App {
 
     pub fn load_project(&mut self) {
         if let Some(project_path) = &self.project_manager.current_project {
+            self.world_streamer = None;
             self.renderer.clear_chunk_cache();
 
             self.editor
@@ -3381,9 +3415,25 @@ impl App {
 
             let world_path = project_path.join("world.dat");
 
-            if let Err(error) = crate::world::persistence::load_world(&mut self.world, &world_path)
+            if let Err(error) =
+                crate::world::persistence::load_world_metadata(&mut self.world, &world_path)
             {
                 eprintln!("Failed to load world: {}", error);
+            }
+
+            // A non-empty in-memory world here means a legacy project was
+            // loaded for migration; keep its traditional full-world save path.
+            if self.world.resident_authored_cell_count() == 0 {
+                match WorldStreamer::new(project_path) {
+                    Ok(mut streamer) => {
+                        let focus = WorldCoord::from_vec3(self.editor.camera.target);
+                        if let Err(error) = streamer.update(&mut self.world, focus) {
+                            eprintln!("Failed to load initial world chunks: {}", error);
+                        }
+                        self.world_streamer = Some(streamer);
+                    }
+                    Err(error) => eprintln!("Failed to create world streamer: {}", error),
+                }
             }
 
             let camera_path = project_path.join("camera.dat");
@@ -3419,7 +3469,18 @@ impl App {
         if let Some(project_path) = &self.project_manager.current_project {
             let world_path = project_path.join("world.dat");
 
-            if let Err(error) = crate::world::persistence::save_world(&self.world, &world_path) {
+            if let Some(streamer) = &self.world_streamer {
+                if let Err(error) = streamer.flush_all(&mut self.world) {
+                    eprintln!("Failed to flush world chunks: {}", error);
+                }
+            }
+
+            let result = if self.world_streamer.is_some() {
+                crate::world::persistence::save_world_metadata(&self.world, &world_path)
+            } else {
+                crate::world::persistence::save_world(&self.world, &world_path)
+            };
+            if let Err(error) = result {
                 eprintln!("Failed to save world: {}", error);
             }
 

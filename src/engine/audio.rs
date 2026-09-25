@@ -1,5 +1,5 @@
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -42,25 +42,12 @@ impl AudioSystem {
     }
 
     pub fn update(&mut self, world: &World, project_path: &Option<PathBuf>) {
-        let mut active_cell_ids = Vec::new();
+        let active_cell_ids: HashSet<u64> = world.iter_audio_emitter_ids().collect();
 
-        for coord in world.active_effective_blocks() {
-            if let Some(cell) = world.get_effective_cell(coord) {
+        for id in active_cell_ids.iter().copied() {
+            if let Some(cell) = world.get_effective_cell_by_id(id) {
                 if cell.cell_type == CellType::AudioEmitter {
-                    let id = cell.id;
-                    active_cell_ids.push(id);
-
                     let playing = world.is_audio_playing(id);
-                    println!(
-                        "[AUDIO] emitter={} playing={} authored={} path={}",
-                        id,
-                        playing,
-                        world
-                            .get_effective_cell_by_id(id)
-                            .map(|c| c.playing)
-                            .unwrap_or(false),
-                        world.get_audio_path(id),
-                    );
                     let paused = world.is_audio_paused(id);
                     let looped = world.is_audio_looped(id);
                     let volume = world.get_audio_volume(id);

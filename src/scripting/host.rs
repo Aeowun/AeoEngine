@@ -306,7 +306,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
     fn get_all_cells_of_class(&self, class_name: &str) -> Vec<u64> {
         let mut results = Vec::new();
 
-        for coord in self.world.active_effective_blocks() {
+        for coord in self.world.iter_active_effective_coords() {
             if let Some(cell) = self.world.get_effective_cell(coord) {
                 let matches = match class_name {
                     "Light" => cell.cell_type == CellType::Light,
@@ -336,7 +336,7 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         }
 
         // Search authored/runtime cells by their script-facing identity.
-        for coord in self.world.active_effective_blocks() {
+        for coord in self.world.iter_active_effective_coords() {
             if let Some(cell) = self.world.get_effective_cell(coord) {
                 if let Some(identity) = &cell.entity_identity {
                     if identity == query {
