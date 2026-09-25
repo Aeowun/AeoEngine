@@ -2,174 +2,204 @@
 
 AeoEngine uses a runtime physics system separate from authored World data.
 
-Physics simulation runs at a fixed timestep and maintains runtime bodies for moving objects while using authored World Cells for static collision geometry.
+`PhysicsWorld` owns runtime physical state while the authored World remains the source of static scene data.
 
 ---
 
-# 1. Fixed Timestep
+# 1. PhysicsWorld
 
-Physics simulation uses a fixed timestep of 60 Hz.
-
-The physics clock accumulates elapsed frame time and advances the simulation in fixed-size steps.
-
-This keeps physics behavior independent of render-frame variability.
-
----
-
-# 2. PhysicsWorld
-
-`PhysicsWorld` owns runtime physics state.
-
-It manages:
+`PhysicsWorld` owns:
 
 * Dynamic PhysicsBodies.
 * Static collision representation.
+* Physics IDs.
 * Collision detection.
-* Penetration resolution.
-* Support tracking.
-* Sleeping and waking.
+* Collision resolution.
+* Support state.
+* Sleeping state.
+* Physics stepping state.
 
-The runtime PhysicsWorld does not become the authoritative source for authored Cell position or properties.
-
----
-
-# 3. Static Collision
-
-Anchored, solid authored Cells provide static collision geometry.
-
-Light Cells are not treated as solid physics geometry simply because they exist in the World.
-
-Static collision state is derived from authored World data plus supported runtime overrides.
+PhysicsWorld does not own persistent World Cell data.
 
 ---
 
-# 4. Dynamic Bodies
+# 2. Fixed-Step Simulation
 
-Non-anchored physical Cells can become dynamic PhysicsBodies.
+Physics uses fixed-step simulation timing.
 
-A dynamic body maintains runtime values such as:
+The physics clock accumulates frame time and advances physics in fixed-size steps.
+
+This keeps physics behavior independent from variable render-frame timing.
+
+The application coordinates the fixed-step execution.
+
+---
+
+# 3. World-to-Physics Conversion
+
+At runtime initialization, authored World data is converted into the physics representation.
+
+```text
+Authored World
+      ↓
+PhysicsWorld registration
+      ↓
+Static collision
+      ↓
+Runtime simulation
+```
+
+Static collision is therefore derived from the current effective World state.
+
+---
+
+# 4. Static Collision
+
+Solid World geometry provides static collision.
+
+Anchored, solid Cells can contribute to static collision geometry.
+
+Cell type alone does not automatically determine collision behavior; effective Cell properties such as `solid` and `anchored` are relevant.
+
+Light and other non-solid Cells do not become collision geometry merely because they exist in the World.
+
+---
+
+# 5. Dynamic PhysicsBodies
+
+Dynamic physical objects maintain runtime state such as:
 
 * Position.
 * Velocity.
-* Support state.
-* Sleeping state.
+* Support.
+* Sleeping.
+* Collision state.
 
-Its movement does not rewrite the authored World coordinate every physics step.
+Their runtime movement is independent of their authored World grid position.
 
----
-
-# 5. Runtime Property Snapshots
-
-Runtime physics bodies retain the properties required for correct simulation and rendering.
-
-This prevents moving bodies from needing to query authored World data as their sole source of runtime visual state.
+The authored World remains unchanged while the body is simulated.
 
 ---
 
-# 6. Change-Driven Static Synchronization
+# 6. Runtime Property Overrides
+
+Physics consumes effective runtime values.
+
+For example, changing a Cell's `solid` or `anchored` property during Play can affect runtime collision behavior without changing the authored baseline.
+
+The World tracks physics-relevant changes so PhysicsWorld can reconcile the affected state.
+
+---
+
+# 7. Change-Driven Static Synchronization
 
 Static collision synchronization is change-driven.
 
-The World tracks physics-relevant Cell changes using a dirty-cell set.
+The World tracks affected Cell IDs and marks physics-relevant changes as dirty.
 
-A Cell ID to coordinate index allows affected Cells to be located efficiently.
-
-~~~text
-Runtime property change
-        ↓
-Mark Cell ID dirty
-        ↓
+```text
+World change
+      ↓
+Physics-dirty Cell ID
+      ↓
 PhysicsWorld::sync_with_world
-        ↓
-Reconcile only changed static colliders
-~~~
+      ↓
+Affected collision state reconciled
+```
 
-The system does not rebuild the entire static collider collection every physics frame when nothing has changed.
-
-Idle scenes therefore avoid unnecessary full-scene static collision reconciliation.
-
----
-
-# 7. Dirty-State Sources
-
-Physics-relevant runtime changes can mark a Cell dirty, including changes to properties such as:
-
-* Solidity.
-* Anchored state.
-* Visual offset where it affects effective collision position.
-
-Authored World operations also maintain the Cell-ID to coordinate index used during synchronization.
+An unchanged scene does not require the entire static collision representation to be rebuilt every physics frame.
 
 ---
 
 # 8. Dynamic Collision
 
-Dynamic bodies are checked for collisions during physics updates.
+Dynamic collision currently uses a simple candidate-generation approach with pairwise checks.
 
-The current broad-phase behavior is intentionally simple and currently performs pairwise dynamic-body candidate checks.
+This is intentionally separate from the collision resolution logic.
 
-Future broad-phase optimization can be introduced without rewriting the narrow-phase collision logic.
-
-Possible future approaches include:
+Possible future broad-phase approaches include:
 
 * Spatial grids.
 * Spatial hashing.
 * Sweep-and-prune.
-* BVH-style broad phases.
+* BVH-style structures.
+
+A future broad phase can therefore be introduced without requiring a complete rewrite of the narrow-phase collision system.
 
 ---
 
 # 9. Support and Sleeping
 
-Physics tracks when dynamic bodies are supported by other bodies or static collision geometry.
+Physics tracks whether bodies are supported by static or dynamic collision geometry.
 
-Supported bodies can enter a sleeping state.
+Supported bodies can enter a sleeping state when continued simulation is unnecessary.
 
-When support is lost or relevant physical conditions change, sleeping bodies can be awakened.
+Relevant changes can wake sleeping bodies.
 
-The goal is stable resting behavior without continuously integrating unnecessary motion.
+Sleeping exists primarily to avoid unnecessary work while preserving stable resting behavior.
 
 ---
 
 # 10. Gravity
 
-World gravity is authored scene data and is supplied to runtime physics.
+World gravity is authored scene data.
 
-The default gravity is:
+The current default is:
 
-~~~text
+```text
 (0, -9.81, 0)
-~~~
+```
 
-Runtime physics integrates gravity into dynamic-body motion.
+Physics applies the World gravity vector to dynamic runtime bodies.
+
+Changing World gravity changes the runtime simulation without making PhysicsWorld the owner of the setting.
 
 ---
 
 # 11. Discrete Collision
 
-The current physics system uses discrete collision testing.
+The current collision system uses discrete collision testing.
 
-High-speed tunneling is therefore a known architectural boundary rather than a hidden guarantee.
+Continuous collision detection is therefore not currently guaranteed for high-speed objects.
 
-Continuous collision detection can be introduced later where profiling and gameplay demonstrate a need for it.
+If tunneling becomes a demonstrated gameplay problem, selective continuous collision detection can be introduced where needed.
 
 ---
 
-# 12. Runtime Boundary
+# 12. Character Interaction
 
-Physics is a runtime system.
+Characters are simulated by `CharacterSystem`, but interact with the same World collision environment.
 
-~~~text
+The relationship is:
+
+```text
+World collision
+      ↓
+Physics / Character collision
+      ↓
+Runtime character state
+```
+
+Character-specific movement and collision response remain owned by CharacterSystem.
+
+---
+
+# 13. Runtime Boundary
+
+Physics is a runtime subsystem.
+
+```text
 Authored Cell
       ↓
 Physics initialization
       ↓
-Runtime PhysicsBody
+Runtime PhysicsBody / collision state
       ↓
 Simulation
       ↓
 Temporary runtime state
-~~~
+```
 
-When Play mode stops, the runtime physics state is discarded and the authored World remains unchanged.
+When Play mode stops, runtime physics state is discarded.
 
+The authored World remains unchanged.

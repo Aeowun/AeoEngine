@@ -1,52 +1,134 @@
-﻿# AeoScript Editor Workflow
+﻿# AeoScript Editor
 
-The AeoScript workflow is split between the integrated script editor and the object-level script binding controls in the AeoEngine editor.
+The AeoScript editor is the integrated source-authoring environment for `.aeo` files.
 
-Scripts are authored as `.aeo` files and attached to specific authored World Cells through persistent Cell-ID bindings.
+Script source editing and script binding are separate concepts:
+
+```text
+Script Editor
+→ edits .aeo source
+
+World Properties
+→ attaches a script to an authored Cell
+```
 
 ---
 
-# 1. Attaching Scripts
+# 1. Script Files
 
-Scripts are attached to authored World Cells through the **PROPERTIES** panel.
-
-### 1. Select a Cell
-
-Select a Cell from the 3D World or the World hierarchy.
-
-The selected Cell's authored properties and script binding information appear in the Properties panel.
-
-### 2. Set the Cell Identity
-
-Assign a human-readable authored identity such as:
+Project scripts are stored under:
 
 ```text
-Door
-Ghost
-FencePost
+<project>/scripts/
 ```
 
-The identity is a **name**, not the unique identity of the Cell.
+The Script Editor discovers `.aeo` files from the project script directory.
 
-Multiple Cells may share the same identity.
+---
 
-### 3. Attach a Script
+# 2. Script Documents
 
-Use the script controls in the Properties panel to attach an `.aeo` script to the selected Cell.
+The editor tracks the state of an open script document.
 
-The binding is stored against the Cell's persistent numeric `id`.
+Relevant document state includes:
 
-This means the binding belongs to that specific authored Cell instance even if:
+* Source text.
+* Original source.
+* Dirty state.
+* Parse/diagnostic state.
+* Parsed program.
+* Source mapping information.
 
-* The Cell is renamed.
-* Another Cell is given the same name.
-* Multiple Cells share the same identity.
+The editor uses this state to determine whether a file has unsaved changes and to display source diagnostics.
 
-### 4. Entity Declaration Matching
+---
 
-The script contains an `entity` declaration describing the scripted object.
+# 3. Script Workspace
 
-For example:
+The integrated script workspace provides:
+
+* Script file discovery.
+* Opening scripts.
+* Editing.
+* Saving.
+* Creating new scripts.
+* Search.
+* Diagnostics.
+* Script output.
+
+AeoScript source is edited through the integrated editor interface.
+
+---
+
+# 4. Syntax and Diagnostics
+
+The script editor can present syntax and parsing diagnostics associated with source locations.
+
+The language pipeline is:
+
+```text
+Source
+ ↓
+Lexer
+ ↓
+Parser
+ ↓
+AST
+ ↓
+Diagnostics
+```
+
+Runtime errors use the runtime diagnostic system instead and may appear in the script output/terminal area.
+
+---
+
+# 5. Saving Scripts
+
+Saving a script writes its `.aeo` source file to the project.
+
+Script source persistence and World persistence are separate:
+
+```text
+AeoScript source
+→ scripts/*.aeo
+
+World authored data
+→ world.dat / chunks/
+```
+
+Saving a script does not automatically modify the authored World.
+
+---
+
+# 6. Script Bindings
+
+A script is attached to an authored Cell through the Properties panel.
+
+The workflow is:
+
+```text
+Select authored Cell
+      ↓
+Properties
+      ↓
+Script binding
+      ↓
+Persistent Cell ID
+      ↓
+.aeo script path
+```
+
+The binding targets the Cell's persistent numeric ID.
+
+The Cell's human-readable identity/name is not the persistent binding key.
+
+---
+
+# 7. Entity Declarations
+
+A bound script can contain an `entity` declaration.
+
+Example:
 
 ```aeoscript
 entity Door {
@@ -58,197 +140,141 @@ entity Door {
 }
 ```
 
-The binding identifies **which Cell instance** receives the script.
+The entity declaration defines the script-side object state and functions.
 
-The Cell's authored identity/name is used for the script's object-facing identity, while the persistent Cell ID is used to identify the specific bound instance.
-
----
-
-# 2. Removing a Script
-
-A script binding can be removed from the selected Cell through the Properties panel.
-
-Removing a binding:
-
-* Removes the relationship between the Cell and the script.
-* Does not delete the `.aeo` script file.
-* Marks the authored World as modified so the binding change can be saved.
-
-Removing a binding from one Cell does not affect other Cells that use the same script or share the same name.
+The binding determines which authored Cell instance receives that script.
 
 ---
 
-# 3. Script Workspace
+# 8. Binding Identity
 
-The AeoScript workspace provides an integrated environment for authoring `.aeo` files.
+The editor and runtime distinguish:
 
-### File Explorer
+```text
+Cell ID
+→ specific authored instance
 
-The script workspace provides access to project script files stored in the project's `scripts/` directory.
+entity_identity
+→ human-readable name
+```
 
-### Monaco Editor
+Multiple Cells can have the same identity/name.
 
-AeoScript is edited through the integrated Monaco-based editor.
-
-The editor provides:
-
-* Syntax highlighting
-* Source editing
-* Script file management
-* Syntax and parsing diagnostics where available
-
-### Saving
-
-Saving a script writes the `.aeo` source to the project.
-
-Runtime behavior should be understood in terms of the currently loaded script state; saving the source does not change the authored World or script bindings themselves.
+The script binding remains independent because it targets the Cell ID.
 
 ---
 
-# 4. Diagnostics and Output
+# 9. Removing a Binding
 
-AeoScript diagnostics are presented through the editor and AeoEngine's script output system.
+Removing a script binding:
 
-### Editor Diagnostics
+* Removes the Cell-to-script relationship.
+* Marks authored World state as modified.
+* Can be saved with the World.
+* Does not delete the `.aeo` source file.
 
-Syntax and parsing problems can be reported directly by the script editor.
+Other Cells using the same source script remain unaffected.
 
-These diagnostics are associated with the relevant source location when available.
+---
 
-### PRINT OUTPUT
+# 10. Binding Diagnostics
 
-The **PRINT OUTPUT** panel displays script and runtime diagnostics.
+The editor can report binding problems such as stale targets.
 
-It can contain:
+A stale binding means the stored target Cell ID is no longer present in the current authored World.
 
-* `print()` output where supported.
+The editor must not silently substitute another Cell with the same human-readable name.
+
+Legacy name-based binding migration may occur only when the old name resolves unambiguously to one Cell.
+
+---
+
+# 11. Runtime Output
+
+The editor/runtime script output can contain:
+
 * `debug.log(...)` messages.
 * Script runtime errors.
 * Script warnings.
-* Binding and engine diagnostics.
+* Binding diagnostics.
+* Other structured script diagnostics.
 
-Runtime diagnostic messages include available context such as the script path, entity, function, and execution location.
+Runtime diagnostics should be treated separately from source-editing diagnostics.
 
 ---
 
-# 5. Identity and Binding
+# 12. Play Mode
 
-AeoScript uses two different concepts for authored objects:
+The Script Editor and runtime operate on different states.
 
-### Cell ID
+Editing and saving `.aeo` files changes source data.
 
-The Cell's persistent numeric `id` identifies the specific authored instance.
+Play mode executes the loaded script runtime.
 
-It is used for script bindings.
+Runtime state may include:
 
-### Identity / Name
+* Script fibers.
+* Persistent script-instance fields.
+* Runtime callbacks.
+* Runtime Cell overrides.
+* Other gameplay state.
 
-The Cell's authored `entity_identity` is the human-readable game-logic name.
+Stopping Play clears temporary runtime state according to ScriptScene ownership.
 
-Names are not required to be unique.
+---
 
-For example:
+# 13. Recommended Editor Workflow
+
+A normal script-authoring workflow is:
 
 ```text
-Block
-  ID: 12048371
-  Identity: FencePost
-
-Block
-  ID: 90421763
-  Identity: FencePost
+Open project
+      ↓
+Open Script Editor
+      ↓
+Create or edit .aeo
+      ↓
+Save script
+      ↓
+Select authored Cell
+      ↓
+Attach script binding
+      ↓
+Save World
+      ↓
+Enter Play
+      ↓
+Inspect runtime output / behavior
 ```
 
-These are two distinct Cells.
+The Script Editor is a source-authoring tool.
 
-Their script bindings remain independent because each binding targets a different Cell ID.
-
----
-
-# 6. Finding Objects by Identity
-
-Because identities are names rather than unique IDs, `find()` can return multiple objects.
-
-```aeoscript
-const posts = find("FencePost")
-```
-
-The result is a `basket` containing all matching handles.
-
-This makes identity useful for gameplay queries while Cell IDs remain responsible for stable instance-specific bindings.
+It does not own World persistence, runtime simulation, or renderer state.
 
 ---
 
-# 7. Binding Diagnostics
+# 14. Separation of Responsibilities
 
-The editor can display the current script binding for the selected Cell.
-
-The binding workflow distinguishes between:
-
-* A valid binding whose Cell ID exists.
-* A stale binding whose target Cell ID no longer exists.
-* The friendly authored identity/name displayed to the user.
-* The persistent numeric ID used internally for binding.
-
-A stale binding does not cause another Cell with the same name to be selected automatically.
-
-Legacy name-based bindings may be migrated when the name resolves to exactly one authored Cell.
-
-Ambiguous legacy bindings must not guess which Cell was intended.
-
----
-
-# 8. Recommended Workflow
-
-A typical AeoScript workflow is:
+The editor architecture is:
 
 ```text
-Create or select a World Cell
-        ↓
-Assign an authored Identity/Name
-        ↓
-Create or open an .aeo script
-        ↓
-Declare the matching entity
-        ↓
-Attach the script in Properties
-        ↓
-Save the World and script
-        ↓
-Run in Play mode
-        ↓
-Use PRINT OUTPUT for runtime diagnostics
+Script Editor
+→ source files and source diagnostics
+
+Properties
+→ authored script bindings
+
+ScriptScene
+→ runtime script instances and lifecycle
+
+ScriptRuntime
+→ fibers and scheduler
+
+Interpreter
+→ language execution
+
+EngineHost
+→ engine integration
 ```
 
-For instance-specific script behavior, rely on the Cell's persistent ID rather than assuming that the authored name is unique.
-
----
-
-# 9. Important Separation
-
-The editor manages several different kinds of data:
-
-```text
-Authored World
-    ├── Cell type
-    ├── Cell position
-    ├── Cell ID
-    ├── Cell identity/name
-    └── Script binding
-
-AeoScript Source
-    └── .aeo files
-
-Runtime
-    ├── Script fibers
-    ├── Script fields
-    ├── Runtime Cell overrides
-    ├── Physics state
-    └── Character state
-```
-
-Changing a script's runtime state does not rewrite the authored World.
-
-Changing a script binding changes authored World metadata and must therefore be saved with the World.
-
-The persistent Cell ID is the key link between the authored Cell and its script binding.
+Keeping these responsibilities separate prevents source-editing state from being confused with runtime script state.

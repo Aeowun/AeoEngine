@@ -1,94 +1,200 @@
 ﻿# Asset Architecture
 
-AeoEngine uses project-owned assets so authored Worlds can refer to resources belonging to the project rather than relying on arbitrary external filesystem paths.
+AeoEngine uses project-owned assets so authored Worlds can reference resources belonging to the project.
 
-The current asset workflow is most developed around project-owned textures.
+The current asset system includes texture and audio assets used by the renderer and runtime systems.
 
 ---
 
 # 1. Project Asset Ownership
 
-Project resources live inside the project directory.
+Project assets live inside the project directory.
 
-Texture assets are stored under:
+Current asset areas include:
 
-~~~text
+```text
+.assets/
+├── textures/
+├── audio/
+└── skybox/
+```
+
+The exact contents may grow as additional asset types are introduced.
+
+The important rule is that authored project data references project-owned resources rather than arbitrary external runtime paths.
+
+---
+
+# 2. Texture Assets
+
+Project textures are stored under:
+
+```text
 .assets/textures/
-~~~
+```
 
-This keeps imported project resources alongside the World and other project data.
+The editor can import supported PNG textures into the project.
 
----
+The asset workflow:
 
-# 2. Texture Import
-
-The editor can import PNG textures through the asset workflow.
-
-The importer:
-
-1. Ensures the project texture directory exists.
-2. Copies the selected texture into `.assets/textures`.
-3. Assigns a project texture identifier.
-4. Allows authored Cells to reference the imported asset.
-
----
-
-# 3. Texture Identifiers
-
-Authored texture references use project asset identifiers rather than depending on the original external file location.
-
-This allows the project to own the resource and continue using it after import.
-
----
-
-# 4. Renderer Integration
-
-The renderer resolves project texture identifiers when loading visual resources.
-
-Loaded textures are cached so repeated use does not require recreating the same GPU texture resource for every reference.
-
-A fallback texture is used when a referenced asset cannot be loaded.
-
----
-
-# 5. Editor Integration
-
-The Properties and Build workflows can expose texture selection for supported Cell types.
-
-The asset importer filters the texture workflow to supported PNG files.
-
----
-
-# 6. Runtime Boundary
-
-Asset references are authored project data.
-
-The renderer's loaded GPU texture objects are runtime resources.
-
-~~~text
-Project asset
+```text
+External texture
+      ↓
+Editor import
+      ↓
+.assets/textures/
       ↓
 Authored asset reference
       ↓
-Renderer resource loading
-      ↓
-GPU texture
-~~~
-
-Stopping Play mode does not remove the project asset or its authored reference.
+Renderer
+```
 
 ---
 
-# 7. Current Scope
+# 3. Texture References
 
-The current asset system is centered on project-owned textures.
+Authored Cells reference project texture resources through project-owned identifiers or paths.
 
-Future asset types can use the same principle:
+The original external source location is not the runtime dependency.
 
-* Project-owned resource.
-* Stable project reference.
-* Runtime resource loading.
-* Explicit fallback/error behavior.
+This allows a project to continue using an imported texture after the source file has been moved or is no longer part of the project workflow.
 
-The asset system should grow only as concrete engine features require additional resource types.
+---
 
+# 4. Texture Loading
+
+The renderer resolves project texture references when resources are needed.
+
+Loaded GPU textures are cached so repeated references can share runtime resources instead of creating duplicate GPU textures unnecessarily.
+
+A fallback texture is used when a required texture cannot be loaded.
+
+The fallback is a renderer resource; it does not modify the authored Cell's texture reference.
+
+---
+
+# 5. Skybox Assets
+
+World sky environments use project-owned skybox assets.
+
+Current skybox resources are stored under:
+
+```text
+.assets/skybox/
+```
+
+The renderer supports single-texture horizontal-cross cubemap layouts.
+
+The World stores the authored sky configuration and renderer resources are derived from that reference.
+
+---
+
+# 6. Audio Assets
+
+Audio assets are project-owned resources used by AudioEmitter Cells.
+
+Current audio assets are stored under:
+
+```text
+.assets/audio/
+```
+
+The editor supports audio asset browsing/import workflows and runtime audio playback through the audio system.
+
+The authored Cell stores the audio reference and playback-related authored properties.
+
+Runtime playback state remains temporary.
+
+---
+
+# 7. Asset and Runtime Boundaries
+
+Asset references are persistent project data.
+
+Loaded renderer/audio/GPU resources are runtime resources.
+
+```text
+Project Asset
+      ↓
+Authored Reference
+      ↓
+Runtime Resource Loading
+      ↓
+GPU / Audio Runtime
+```
+
+Stopping Play mode does not delete the project asset or its authored reference.
+
+---
+
+# 8. Editor Integration
+
+The editor uses asset workflows for supported resource types.
+
+Current editor responsibilities include:
+
+* Importing supported assets.
+* Browsing project assets.
+* Selecting asset references.
+* Showing asset-related properties.
+* Providing project paths to runtime systems.
+
+The editor does not own the runtime GPU or audio resource itself.
+
+---
+
+# 9. Missing Assets
+
+A missing asset should produce a safe runtime result.
+
+For textures, the renderer uses a fallback resource when appropriate.
+
+For other resources, the owning subsystem should report a useful diagnostic rather than silently creating unrelated project state.
+
+---
+
+# 10. Runtime Resource Ownership
+
+Different systems own the resources they load:
+
+```text
+Renderer
+→ GPU texture / mesh resources
+
+AudioSystem
+→ Runtime audio resources
+
+Editor
+→ Asset selection/import state
+
+World
+→ Authored asset references
+```
+
+The persistent asset reference remains part of project data.
+
+---
+
+# 11. Current Scope
+
+The asset architecture is intentionally centered on concrete engine needs.
+
+Current project-owned resource categories include:
+
+* Textures.
+* Skybox resources.
+* Audio assets.
+
+Additional asset types should follow the same general model:
+
+```text
+Project-owned resource
+      ↓
+Stable authored reference
+      ↓
+Owning runtime subsystem
+      ↓
+Runtime resource
+```
+
+Asset-system growth should follow actual engine requirements rather than introducing a general asset abstraction without a demonstrated need.

@@ -1,14 +1,14 @@
 ﻿# Runtime Architecture
 
-AeoEngine separates authored scene data from the runtime simulation used during Play mode.
+AeoEngine separates persistent authored World data from the temporary runtime state used during Play mode.
 
-This boundary is fundamental to the engine's behavior.
+The runtime is the simulation layer. It derives state from the authored World and is discarded or rebuilt when Play mode ends.
 
 ---
 
 # 1. Authored State
 
-Authored state is created and edited by the developer.
+Authored state is persistent project data.
 
 Examples include:
 
@@ -16,177 +16,282 @@ Examples include:
 * Cell types.
 * Cell positions.
 * Persistent Cell IDs.
-* Cell identities/names.
-* Authored Cell properties.
+* Cell identities.
+* Cell properties.
+* Cell attributes.
 * World gravity.
 * World lighting.
+* Sky settings.
 * Script bindings.
 * Project asset references.
+* Selected character/controller/camera configuration.
 
-Authored state is persistent project data.
+The editor is the primary system that modifies authored state.
 
 ---
 
 # 2. Runtime State
 
-Runtime state exists while Play mode is running.
+Runtime state exists while the game is being simulated.
 
 Examples include:
 
 * PhysicsBodies.
-* Dynamic body positions and velocities.
-* Sleeping and support state.
-* Character state.
-* Runtime Entity objects.
+* Dynamic positions and velocities.
+* Support and sleeping state.
+* Runtime Characters.
+* Runtime Entities.
 * Script fibers.
 * Script execution state.
-* Script lifecycle fields.
 * Runtime Cell overrides.
+* Runtime-created Cells.
 * Gameplay camera state.
+* Runtime UI.
+* Audio playback state.
 
-Runtime state is not automatically written back into the authored World.
-
----
-
-# 3. Play Mode Initialization
-
-Entering Play constructs runtime representations from authored World state.
-
-~~~text
-World
-  ↓
-Physics registration
-  ↓
-Character initialization
-  ↓
-Script loading
-  ↓
-Runtime simulation
-~~~
-
-The Editor camera state is kept separate from the GameplayCamera.
+Runtime state is not automatically written back into authored World data.
 
 ---
 
-# 4. Runtime Simulation
+# 3. Runtime Conversion
 
-During Play the major systems cooperate:
+Entering Play converts or derives runtime representations from the authored World.
 
-~~~text
-ScriptScene
-     ↓
-PhysicsWorld
-     ↓
-CharacterSystem
-     ↓
-GameplayCamera
-     ↓
-Renderer
-~~~
+```text
+Authored World
+      ↓
+Runtime initialization
+      ├── PhysicsWorld
+      ├── CharacterSystem
+      ├── ScriptScene
+      ├── EntityManager
+      └── GameplayCamera
+```
 
-The systems have distinct responsibilities.
-
-Scripts implement gameplay logic.
-
-Physics simulates physical bodies and collision.
-
-CharacterSystem manages character movement and animation state.
-
-The GameplayCamera follows the runtime character when appropriate.
-
-The Renderer displays the resulting state.
+The renderer consumes authored and runtime-effective state separately from these simulation systems.
 
 ---
 
-# 5. Runtime Cell Overrides
+# 4. Play Mode Initialization
 
-Scripts can modify supported Cell properties during Play.
+Play mode initializes the systems required to simulate the current project.
 
-~~~aeoscript
-cell.visible = false
-cell.solid = false
-cell.anchored = true
-cell.color = [1, 0, 0]
-cell.offset = [0, 2, 0]
-~~~
+Typical initialization includes:
 
-These are runtime overrides, not authored edits.
+* Registering World collision with PhysicsWorld.
+* Creating the runtime character.
+* Initializing runtime Entities.
+* Loading script bindings.
+* Creating ScriptInstances.
+* Starting lifecycle execution.
+* Activating the gameplay camera.
+* Preparing runtime rendering state.
+
+The editor camera remains separate from the gameplay camera.
 
 ---
 
-# 6. Runtime Physics State
+# 5. Runtime Update
+
+The application coordinates runtime systems each frame.
+
+The exact implementation order can evolve, but ownership remains distinct.
+
+Conceptually:
+
+```text
+Frame
+ ↓
+Script runtime
+ ↓
+Physics synchronization
+ ↓
+Fixed-step simulation
+ ↓
+Character simulation
+ ↓
+Gameplay camera
+ ↓
+Rendering
+```
+
+Scripts own gameplay logic.
+
+Physics owns physical simulation.
+
+CharacterSystem owns character simulation.
+
+ScriptScene owns script execution.
+
+Renderer owns graphics representation.
+
+---
+
+# 6. Runtime World State
+
+The World maintains temporary runtime state for supported runtime mutations.
+
+For example:
+
+```text
+Authored Cell
+      ↓
+Runtime override
+      ↓
+Effective Cell value
+```
+
+Runtime values can include:
+
+* Visibility.
+* Solidity.
+* Anchored state.
+* Color.
+* Offset.
+* Light enabled state.
+* Audio playback state.
+* Attribute overrides.
+* Temporary deletion state.
+
+The authored value remains available as the baseline.
+
+---
+
+# 7. Runtime Physics
 
 Physics uses runtime state separate from authored World coordinates.
 
-Dynamic bodies can move continuously during simulation without moving the authored Cell in the World grid.
+A dynamic body can move continuously:
 
-The runtime can therefore simulate falling, collision, support, and sleeping without changing the saved authored position.
+```text
+Authored coordinate
+      ↓
+PhysicsBody
+      ↓
+Continuous runtime position
+```
+
+The body's movement does not rewrite the authored Cell position on every physics step.
 
 ---
 
-# 7. Runtime Character State
+# 8. Runtime Characters
 
-Characters are simulated by `CharacterSystem` and maintain runtime state for:
+Characters are owned by `CharacterSystem`.
+
+Character runtime state includes:
 
 * Position.
 * Movement.
+* Gravity.
 * Collision.
 * Grounded state.
 * Jumping.
 * Orientation.
 * Animation.
+* Runtime appearance state.
 
-The authored World provides the scene from which the runtime character is initialized.
-
----
-
-# 8. Runtime Script State
-
-`ScriptScene` manages script instances and execution fibers.
-
-A lifecycle fiber contains active execution state such as:
-
-* Call stack.
-* Local scopes.
-* Instruction position.
-* Loop state.
-* Wait state.
-
-Persistent script fields are synchronized back to the owning `ScriptEntity` as lifecycle tasks advance so state survives across frames.
+Character simulation interacts with World collision while remaining separate from authored Cell data.
 
 ---
 
-# 9. Leaving Play Mode
+# 9. Runtime Scripting
 
-When Play mode stops, temporary runtime state is discarded.
+`ScriptScene` connects authored script bindings to runtime script instances.
+
+A typical relationship is:
+
+```text
+Authored binding
+      ↓
+ScriptInstance
+      ↓
+ScriptFiber
+      ↓
+ScriptScheduler
+      ↓
+Engine host
+      ↓
+World / Runtime systems
+```
+
+Persistent script fields belong to the running script instance.
+
+Temporary execution state belongs to the active fiber.
+
+---
+
+# 10. Runtime Entities
+
+`EntityManager` owns live runtime Entities.
+
+Entities are runtime objects and may represent:
+
+* Players.
+* NPCs.
+* Other gameplay-managed objects.
+
+AeoScript `Entity` handles reference these runtime objects.
+
+The runtime Entity system does not replace the authored World Cell representation.
+
+---
+
+# 11. Runtime Rendering
+
+The renderer consumes current effective state and builds a graphics representation.
+
+```text
+Authored World
+      ↓
+Effective state
+      ↓
+Render representation
+      ↓
+GPU
+```
+
+Static voxel geometry uses chunk-based rendering.
+
+Dynamic runtime objects are represented separately from persistent authored World geometry.
+
+---
+
+# 12. Leaving Play Mode
+
+When Play mode stops, temporary runtime systems are cleared or stopped.
 
 This includes:
 
+* Runtime script fibers.
 * Runtime physics bodies.
 * Runtime character state.
-* Script fibers.
+* Runtime-created Cells.
 * Runtime Cell overrides.
 * Gameplay camera state.
+* Runtime UI.
+* Other simulation-derived state.
+
+The editor camera is restored.
 
 The authored World remains available for continued editing.
 
 ---
 
-# 10. Authoritative State Boundary
+# 13. Authority Boundary
 
-The runtime must not silently promote derived simulation state into authored state.
+The runtime must not silently promote derived state into authored state.
 
-~~~text
+```text
 Authored World
       ↓
 Runtime initialization
       ↓
-Temporary simulation state
+Temporary simulation
       ↓
 Play stops
       ↓
-Temporary state discarded
-~~~
+Runtime state discarded
+```
 
-This separation allows the editor and runtime to evolve independently.
-
+This separation allows Play mode to be started repeatedly without replacing persistent project data with temporary simulation state.

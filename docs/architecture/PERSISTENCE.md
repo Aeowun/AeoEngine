@@ -1,171 +1,314 @@
 ﻿# Persistence Architecture
 
-AeoEngine persistence stores authored project state separately from temporary runtime simulation state.
+AeoEngine persistence stores authored project data separately from temporary runtime simulation state.
 
-The persistence layer is responsible for restoring authored Worlds and project metadata without serializing transient gameplay simulation.
+The persistence layer restores authored World state and project metadata. It does not serialize transient gameplay simulation.
 
 ---
 
 # 1. Persistence Boundary
 
-Persistent data includes authored scene and project information.
+The fundamental boundary is:
 
-Temporary runtime information is not part of the persistent World representation.
-
-~~~text
+```text
 Authored state
       ↓
 Persistence
       ↓
 Project files
+```
 
+Runtime simulation follows a separate path:
+
+```text
 Runtime state
       ↓
-Play mode only
+Play mode
       ↓
-Discarded when Play stops
-~~~
+Discarded when runtime ends
+```
+
+Persistence must not silently serialize temporary physics, character, script, camera, or UI state as authored World data.
 
 ---
 
-# 2. World Persistence
+# 2. World Format
 
-`world.dat` (format 2) stores global world metadata. Authored cells live in
-individual `chunks/<x>_<y>_<z>.chunk` files, which lets the runtime load and
-evict bounded areas without reconstructing the entire world.
+The current World format contains:
 
-World persistence stores authored World data including Cells and their relevant authored properties.
+```text
+world.dat
+chunks/
+```
 
-Depending on the Cell type, persisted information can include:
+`world.dat` stores World-wide metadata and project-level World configuration.
+
+Authored Cell data is stored in individual chunk files under:
+
+```text
+chunks/
+```
+
+Chunk files use the coordinate form:
+
+```text
+<x>_<y>_<z>.chunk
+```
+
+---
+
+# 3. World Metadata
+
+`world.dat` currently stores data such as:
+
+* World format version.
+* Next authored Cell ID.
+* Gravity.
+* Global lighting settings.
+* Sky settings.
+* Mouse settings.
+* Script bindings.
+* Disabled scripts.
+* Selected character.
+* Selected controller.
+* Selected camera.
+
+The exact serialized format is implementation detail and may evolve through explicit format versions.
+
+---
+
+# 4. Chunk Storage
+
+Authored Cells are grouped by 16×16×16 `ChunkCoord`.
+
+Each stored chunk contains:
+
+* Storage version.
+* Chunk coordinate.
+* Stored Cell records.
+
+Each stored Cell contains the persistent authored information needed to reconstruct the runtime `Cell`.
+
+This includes data such as:
 
 * Cell ID.
 * Cell type.
-* World coordinate.
-* Identity/name.
+* Local chunk coordinate.
 * Visibility.
 * Solidity.
-* Anchored state.
+* Anchoring.
+* Texture.
 * Color.
+* Audio properties.
+* Collision event state.
 * Light properties.
-* Cell attributes (game-defined data).
-* Other authored properties supported by that Cell type.
+* Entity identity.
+* Attributes.
+
+Runtime-only state is not stored in the chunk representation.
 
 ---
 
-# 3. Stable Cell IDs
+# 5. WorldStorage
 
-Cell IDs are persisted as part of authored World data.
+`WorldStorage` owns the filesystem relationship between a `ChunkCoord` and its chunk file.
 
-When a World is saved and loaded, the same Cell ID identifies the same authored instance.
+Its responsibilities include:
 
-This is important for script bindings and any future system that requires persistent instance identity.
+* Listing stored chunks.
+* Checking whether a chunk exists.
+* Loading a chunk.
+* Saving a chunk.
+* Deleting a chunk.
+* Constructing a stored chunk from authored Cells.
+
+It does not own:
+
+* Rendering.
+* Physics.
+* Characters.
+* Scripting.
+* Camera behavior.
+* Editor interaction.
 
 ---
 
-# 4. Script Binding Persistence
+# 6. Cell IDs
 
-Script bindings are persisted as authored World metadata.
+Persistent Cell IDs are saved as authored data.
+
+Loading restores the same ID for the same authored Cell.
+
+The World rebuilds its ID lookup indexes after loading.
+
+The persistent ID is therefore stable across:
+
+```text
+Editor session
+      ↓
+Save
+      ↓
+Load
+```
+
+provided the authored Cell remains the same instance.
+
+---
+
+# 7. Script Binding Persistence
+
+Script bindings are authored World metadata.
 
 The current binding model is:
 
-~~~text
-Cell ID → script path
-~~~
+```text
+Cell ID → script path + enabled state
+```
 
-During loading, bindings are resolved against the current authored World.
+The Cell's human-readable identity/name is not the persistent binding key.
 
-If the target Cell ID no longer exists, the binding can be reported as stale.
+Legacy name-based bindings may be migrated when they resolve to exactly one authored Cell.
 
-Legacy name-based bindings may be migrated when the name resolves to exactly one authored Cell.
-
-If multiple Cells share the old name, migration must not guess which instance was intended.
+Ambiguous legacy bindings must not guess which Cell was intended.
 
 ---
 
-# 5. Project Assets
+# 8. Attributes
 
-Project-owned assets such as imported textures live in the project asset directories.
+Cell attributes are authored Cell data and are stored with the Cell.
 
-The authored World stores references to those project assets rather than embedding the runtime GPU objects themselves.
+Current attribute types are:
+
+* Number.
+* Bool.
+* String.
+
+Attributes therefore survive:
+
+```text
+Save
+ ↓
+Chunk storage
+ ↓
+Load
+```
+
+Runtime attribute overrides are not persisted.
 
 ---
 
-# 6. Runtime State Is Not Authored Persistence
+# 9. Runtime State
 
-The following examples are runtime state and are not intended to overwrite authored World data when Play stops:
+The following are examples of runtime state and are not written back into authored World persistence automatically:
 
 * Dynamic PhysicsBody position.
-* Physics velocity.
+* Velocity.
 * Sleeping state.
 * Runtime character position.
-* Runtime character state.
-* Script fiber instruction position.
-* Script local variables.
+* Runtime Character state.
+* Script fiber position.
+* Script local scopes.
 * Runtime Cell overrides.
+* Runtime-created Cells.
 * Gameplay camera state.
+* Runtime UI state.
+* Audio playback state.
 
-Persistent script fields are a special case within the running ScriptScene: they are script runtime state that survives across lifecycle executions while the runtime scene is alive. They are not automatically written into the authored World unless an explicit authored API performs such a change.
-
----
-
-# 7. Load Flow
-
-A simplified World/script load flow is:
-
-~~~text
-Project files
-    ↓
-World metadata loader
-    ↓
-WorldStreamer loads nearby chunks on demand
-    ↓
-Cell IDs restored
-    ↓
-Script bindings resolved
-    ↓
-Runtime systems initialized
-~~~
+Persistent script fields belong to the running ScriptScene and are not automatically authored World data.
 
 ---
 
-# 8. Save Flow
+# 10. Save Flow
 
-A simplified authored save flow is:
+The authored save path is conceptually:
 
-~~~text
-Editor-authored state
-       ↓
-Persistence layer
-       ↓
-World/project files
-~~~
+```text
+World
+  ↓
+Collect authored metadata
+  ↓
+world.dat
 
-Runtime simulation state should not silently enter this path.
+World
+  ↓
+Group authored Cells by ChunkCoord
+  ↓
+WorldStorage
+  ↓
+chunks/*.chunk
+```
 
----
-
-# 9. Legacy Data
-
-Persistence code may retain compatibility paths for older World formats.
-
-Examples include legacy Cell type names and older script-binding representations.
-
-Compatibility logic should migrate old data deliberately rather than silently inventing ambiguous object associations.
+Empty obsolete chunk files are removed during a complete World save.
 
 ---
 
-# 10. Authoritative Data Rule
+# 11. Load Flow
 
-Persistence reinforces the same architectural rule used throughout AeoEngine:
+The load path is conceptually:
 
-~~~text
+```text
+world.dat
+    ↓
+World metadata
+    ↓
+WorldStorage
+    ↓
+Stored chunks
+    ↓
+Authored Cells
+    ↓
+World indexes
+```
+
+Older World formats can be handled through explicit compatibility and migration logic.
+
+---
+
+# 12. Safe Chunk Writes
+
+Chunk saves use a temporary file before replacing the destination chunk.
+
+This reduces the risk of leaving a partially written chunk after a failed serialization or filesystem write.
+
+---
+
+# 13. Compatibility
+
+Persistence changes should be versioned deliberately.
+
+The loader must not silently reinterpret older data as a different meaning.
+
+When ambiguity exists, the loader should prefer:
+
+* Explicit migration.
+* Tolerant loading where safe.
+* Diagnostics for stale or ambiguous data.
+* Preserving existing authored data.
+
+---
+
+# 14. Authority
+
+Persistence is responsible for storing authored data.
+
+It is not the authority for runtime simulation.
+
+```text
+Editor
+  ↓
 Authored World
-      ↓
-authoritative persistent data
+  ↓
+Persistence
+```
 
-Runtime state
-      ↓
-temporary derived/simulated data
-~~~
+and separately:
 
-Saving should preserve that boundary.
+```text
+Authored World
+  ↓
+Runtime conversion
+  ↓
+Temporary simulation
+```
+
+This preserves the authored/runtime boundary across save and load operations.

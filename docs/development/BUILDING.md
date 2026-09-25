@@ -1,6 +1,8 @@
 ﻿# Building AeoEngine
 
-This document describes the development build workflow for AeoEngine itself.
+This document describes how AeoEngine is built, tested, and verified during engine development.
+
+The goal is not only to produce a working executable, but to verify that changes remain compatible with the engine's automated tests, integration tests, performance-sensitive systems, and manual runtime behavior.
 
 ---
 
@@ -19,306 +21,472 @@ The engine is developed and tested using the Rust stable toolchain.
 
 Run development commands from the AeoEngine repository root.
 
-~~~text
+Example:
+
+```text
 C:\Dev\AeoEngine
-~~~
+```
 
-The exact local path may differ.
+The exact local path may differ. It is dependent on wherever you put the repository.
 
 ---
 
-# 3. Check the Project
+# 3. Rust and Cargo
 
-Use Cargo to verify that the project compiles:
+AeoEngine uses Cargo for building, testing, dependency management, and development verification.
 
-~~~text
+The primary commands are:
+
+```text
 cargo check
-~~~
-
-`cargo check` is the fast compile-oriented verification step and does not produce the final executable.
-
----
-
-# 4. Build and Run
-
-Run the engine with:
-
-~~~text
-cargo run
-~~~
-
-This is the normal development path for manually exercising the engine and editor.
-
----
-
-# 5. Tests
-
-Run the full Rust test suite with:
-
-~~~text
 cargo test
-~~~
+cargo run
+```
 
-The full suite should be run before committing substantial runtime changes.
+Additional verification commands may be used during development:
+
+```text
+cargo fmt --check
+cargo clippy
+```
+
+These commands serve different purposes and should not be treated as interchangeable.
 
 ---
 
-# 6. Development Loop
+# 4. Compile Verification
 
-A practical engine development loop is:
+Use:
 
-~~~text
+```text
+cargo check
+```
+
+`cargo check` verifies that the Rust project compiles without performing the complete final build.
+
+It is the fast first verification step after a source change.
+
+A typical development cycle should use `cargo check` before spending time on the complete test suite or manual runtime verification.
+
+---
+
+# 5. Development Build
+
+Use:
+
+```text
+cargo run
+```
+
+This builds and launches the engine for manual development testing.
+
+It is used to exercise systems that depend on the actual application, graphics context, project loading, editor interaction, Play mode, runtime simulation, and other behavior that may not be fully represented by automated tests.
+
+---
+
+# 6. Automated Tests
+
+Run the Rust test suite with:
+
+```text
+cargo test
+```
+
+The test suite should be run after changes that affect engine behavior, persistence, scripting, physics, rendering, or other shared systems.
+
+Automated tests are especially important for changes where regressions may not be immediately visible during manual testing.
+
+Tests should verify behavior at the smallest practical scope before broader integration testing is performed.
+
+---
+
+# 7. AeoScript Integration Tests
+
+AeoEngine contains an in-game AeoScript integration test suite.
+
+The integration suite exercises the scripting system through the running engine and covers areas such as:
+
+* Language features.
+* Control flow.
+* Arrays and maps.
+* Strings.
+* Functions.
+* Closures.
+* Wait behavior.
+* Cells.
+* Attributes.
+* Entities.
+* Lights.
+* World behavior.
+* Handles.
+* Callbacks.
+* Math.
+
+The integration suite is intended to verify the complete relationship between AeoScript and the engine runtime.
+
+It complements Rust unit and integration tests rather than replacing them.
+
+A change to scripting behavior should therefore be evaluated at the appropriate levels:
+
+```text
+Rust tests
+    ↓
+AeoScript integration tests
+    ↓
+Manual runtime verification
+```
+
+---
+
+# 8. Renderer Performance Benchmarks
+
+The renderer contains dedicated performance benchmarks for large World workloads.
+
+These benchmarks are used to detect rendering performance regressions that ordinary correctness tests may not reveal.
+
+Current benchmark workloads include:
+
+* Large 3D cubes.
+* Large 2D planes.
+* Large 1D line distributions.
+
+The benchmark distinguishes full render construction from selective rebuild behavior.
+
+A successful benchmark run currently reports:
+
+```text
+test_benchmark_large_world_performance_cliff ... ok
+1 passed, 0 failed
+```
+
+Representative results are documented in:
+
+```text
+docs/architecture/RENDERING.md
+```
+
+Performance changes should be evaluated against representative workloads rather than a single small test World.
+
+The 1D line workload contains a known pathological case at larger sizes and should not be treated as representative of normal voxel World construction.
+
+---
+
+# 9. Formatting and Static Checks
+
+Before committing substantial Rust changes, formatting and lint checks should also be considered.
+
+Run:
+
+```text
+cargo fmt --check
+```
+
+to verify Rust formatting.
+
+Run:
+
+```text
+cargo clippy
+```
+
+to identify common Rust correctness and maintainability issues.
+
+These checks complement compilation and tests.
+
+A clean development verification sequence is:
+
+```text
+cargo fmt --check
+      ↓
+cargo check
+      ↓
+cargo clippy
+      ↓
+cargo test
+```
+
+Not every small edit requires every command immediately, but substantial changes should receive the full verification pass.
+
+---
+
+# 10. Development Verification Loop
+
+A typical engine development workflow is:
+
+```text
 Change
   ↓
 cargo check
   ↓
 Focused tests
   ↓
-Full cargo test
+cargo test
   ↓
-Manual AeoEngine run
+Performance benchmark when relevant
   ↓
-Inspect behavior
+cargo run
   ↓
-Repeat
-~~~
+Manual runtime verification
+```
 
-Manual Play-mode behavior is especially important for editor, rendering, physics, character, and scripting integration.
+The appropriate steps depend on the system being changed.
+
+For example:
+
+```text
+Persistence change
+  → persistence tests
+  → cargo test
+```
+
+```text
+AeoScript change
+  → scripting tests
+  → AeoScript integration tests
+  → manual runtime verification
+```
+
+```text
+Renderer change
+  → cargo test
+  → renderer benchmark
+  → manual editor / Play verification
+```
+
+```text
+Editor interaction change
+  → cargo test where applicable
+  → cargo run
+  → manual editor verification
+```
+
+The purpose of the workflow is to match the verification method to the type of system being changed.
 
 ---
 
-# 7. Generated and Local Files
+# 11. Manual Runtime Verification
 
-Development may produce generated artifacts, imported assets, temporary project state, and local configuration files.
+Some engine behavior cannot be adequately verified through compile checks and isolated tests alone.
 
-Before committing, inspect:
+Manual runtime verification is important for systems such as:
 
-~~~text
-git status
-~~~
+* Editor interaction.
+* Viewport input.
+* World building and erasing.
+* Selection.
+* Camera behavior.
+* Play mode transitions.
+* Physics behavior.
+* Character movement.
+* Rendering.
+* Lighting.
+* Runtime UI.
+* Scripted gameplay.
 
-Do not assume every untracked file belongs in the commit.
+Manual testing should use representative project Worlds rather than relying only on minimal test scenes.
 
-Generated artifacts and unrelated local files should remain outside feature commits unless they are intentionally part of the change.
-
----
-
-# 8. Preserving the Working Tree
-
-AeoEngine development frequently contains multiple related changes at once.
-
-Do not use destructive commands to clean up unrelated work.
-
-Avoid commands such as:
-
-~~~text
-git reset --hard
-git restore .
-~~~
-
-unless there is an explicit decision to discard the affected work.
-
-When an unrelated change is present, preserve it and stage only the intended files.
+When a change affects both editor and runtime behavior, verify both modes separately.
 
 ---
 
-# 9. Inspecting Changes
+# 12. Third-Party Development and Debugging Tools
 
-Use Git to understand what actually changed.
+AeoEngine development may use external tools when Rust tests and normal runtime inspection are not sufficient.
 
-~~~text
-git status --short
-git --no-pager diff
-git --no-pager diff --cached
-~~~
+Examples include:
 
-`git --no-pager diff` is useful in environments where the default Git pager makes the command appear to stop responding.
+* Git for source and change tracking.
+* RenderDoc for graphics debugging and frame inspection.
+* Visual Studio or another native debugger for low-level debugging when required.
+* GPU or system profiling tools when investigating performance problems.
+
+These tools are development aids. They do not replace AeoEngine's automated tests.
+
+Detailed debugging procedures are documented separately in:
+
+```text
+docs/development/DEBUGGING.md
+```
+
+This document only establishes their role in the development workflow.
 
 ---
 
-# 10. Build Verification Principle
+# 13. Testing Before a Commit
 
-A successful build is necessary but not sufficient.
+Before committing a substantial engine change, verify the affected system and then run the broader project checks.
 
-For runtime work, the expected verification sequence is:
-
-~~~text
-Compiles
-  +
-Tests pass
-  +
-Manual behavior works
-  =
-Verified change
-~~~
-
-The last step is obviously important for editor and gameplay behavior that is difficult to express entirely through unit tests.
-
-# 11. AI Prompt example:
-
-~~~
-
-Implement the **Cell Attribute data model and persistence only**.
-
-Do not implement the editor Attributes panel, AeoScript attribute access, runtime attribute mutation, attribute schemas, or gameplay behavior.
-
-### `src/world/cell.rs`
-
-At `Cell` (`src/world/cell.rs:19-37`), add an authored attribute map directly to the `Cell`:
-
-```rust
-pub attributes: BTreeMap<String, AttributeValue>,
-```
-
-Add:
-
-```rust
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", content = "value")]
-pub enum AttributeValue {
-    Number(f64),
-    Bool(bool),
-    String(String),
-}
-```
-
-Add the required `BTreeMap` and `serde` imports at the top of the file.
-
-`AttributeValue` belongs in `src/world/cell.rs`.
-
-The attribute map is authored Cell data. It is not runtime state and must not be stored in `RuntimeCellState`.
-
-### `src/world/cell.rs` — constructors
-
-At `Cell::default` (`src/world/cell.rs:52-69`), initialize:
-
-```rust
-attributes: BTreeMap::new(),
-```
-
-At `Cell::new_light` (`src/world/cell.rs:84-100`), initialize:
-
-```rust
-attributes: BTreeMap::new(),
-```
-
-Do not add redundant initialization to `new_block` or `new_spawn_point`; they already use `..Default::default()`.
-
-Do not change any other Cell defaults.
-
-### `src/world/persistence.rs`
-
-Use the existing text world format in `src/world/persistence.rs:13-160`.
-
-After each Cell's existing record is written, write its authored attributes as one additional line **only when the attribute map is non-empty**:
+A typical pre-commit sequence is:
 
 ```text
-ATTRIBUTES <cell_id> <json>
-```
-
-The `<json>` value is the compact `serde_json` serialization of:
-
-```rust
-BTreeMap<String, AttributeValue>
-```
-
-Example:
-
-```text
-ATTRIBUTES 12345 {"coins":{"type":"Number","value":1000.0},"difficulty":{"type":"String","value":"easy"},"locked":{"type":"Bool","value":true}}
-```
-
-Place this write immediately after the existing `match cell.cell_type` block in `save_world`, while `cell` is still in scope.
-
-Use the existing `serde_json` dependency. Do not add a new dependency.
-
-Map serialization errors into the existing `std::io::Result` return type. Do not use `unwrap()` for persistence serialization.
-
-### `src/world/persistence.rs` — loading
-
-At `load_world` (`src/world/persistence.rs:174-347`), add handling for an `ATTRIBUTES` record immediately after the existing `SCRIPT_BINDING` handling and before the generic Cell-record parsing.
-
-Parse:
-
-```text
-ATTRIBUTES <cell_id> <json>
-```
-
-Resolve `<cell_id>` with the existing:
-
-```rust
-world.resolve_cell_id(...)
-```
-
-at `src/world/world.rs:72-75`.
-
-Assign the decoded `BTreeMap<String, AttributeValue>` directly to that Cell's `attributes`.
-
-Use the existing tolerant loading style: malformed attribute records must not panic or abort the entire world load.
-
-Old world files contain no `ATTRIBUTES` records. They must continue loading normally with each Cell's attribute map empty.
-
-Do not create another persistence system.
-
-Do not modify the existing Cell record format.
-
-### `src/world/persistence.rs` — tests
-
-Add the new tests inside the existing test module beginning at `src/world/persistence.rs:349`.
-
-Add:
-
-1. A default Cell has an empty attribute map.
-2. A Cell clone preserves its attributes.
-3. Number, Bool, and String attributes survive save/load.
-4. Multiple attributes on the same Cell survive save/load.
-5. A world using the old Cell text format with no `ATTRIBUTES` line loads successfully and produces an empty attribute map.
-6. An empty attribute map does not produce an `ATTRIBUTES` line in the saved world.
-
-Use the existing temporary-file pattern already used by the persistence tests and remove every temporary file created by the new tests.
-
-Do not add a separate test framework or new persistence helpers unless the existing file absolutely requires one.
-
-### Scope
-
-Only modify:
-
-```text
-src/world/cell.rs
-src/world/persistence.rs
-```
-
-and the relevant documentation file below.
-
-Do not modify:
-
-```text
-src/editor/
-src/scripting/
-src/character/
-src/engine/
-src/renderer/
-```
-
-Do not reorganize the world system or perform unrelated cleanup.
-
-### Final Verification
-
-Run:
-
-```powershell
+cargo fmt --check
 cargo check
+cargo clippy
 cargo test
 ```
 
-Then update:
+Then run the relevant runtime verification.
+
+For changes affecting rendering, also run the renderer benchmark.
+
+For changes affecting AeoScript, also run the in-game AeoScript integration suite.
+
+The exact verification set should be appropriate to the systems touched by the change.
+
+---
+
+# 14. Generated and Local Files
+
+Development may produce:
+
+* Build artifacts.
+* Generated assets.
+* Temporary project state.
+* Imported assets.
+* Local configuration files.
+* Debug output.
+* Other development-only files.
+
+Before committing, inspect:
 
 ```text
-docs/architecture/WORLD.md
+git status
 ```
 
-Only edit the relevant existing lines in **Section 3 — Cells (`docs/architecture/WORLD.md:32-49`)** to document that authored Cells now contain custom Attributes supporting Number, Bool, and String values.
+Do not assume every untracked file belongs in the change.
 
-Do **not** overwrite the documentation file. Do not rewrite unrelated sections.
+Generated artifacts and unrelated local files should remain outside feature commits unless they are intentionally part of the project change.
 
+---
 
+# 15. Inspecting Changes
+
+Use Git to verify what actually changed.
+
+Useful commands include:
+
+```text
+git status --short
+git --no-pager diff
+git --no-pager diff --cached
+```
+
+These help verify:
+
+* Which files changed.
+* Whether generated files were introduced.
+* Whether unrelated edits are present.
+* What will actually be committed.
+
+`git --no-pager diff` is useful in environments where Git's default pager makes output appear to stop responding.
+
+---
+
+# 16. Preserving the Working Tree
+
+AeoEngine development may involve multiple related changes at the same time.
+
+Do not use destructive Git commands to remove unrelated work.
+
+Avoid commands such as:
+
+```text
+git reset --hard
+git restore .
+```
+
+unless there is an explicit decision to discard the affected changes.
+
+When unrelated work is present, preserve it and stage only the files belonging to the intended change.
+
+---
+
+# 17. Testing Scope
+
+Tests should remain close to the system they verify.
+
+Examples include:
+
+```text
+Cell / World data
+        ↓
+Unit and persistence tests
+```
+
+```text
+AeoScript runtime
+        ↓
+Runtime tests
+        ↓
+In-game integration tests
+```
+
+```text
+Renderer
+        ↓
+Rendering correctness tests
+        ↓
+Performance benchmarks
+```
+
+```text
+Editor
+        ↓
+System tests where practical
+        ↓
+Manual application verification
+```
+
+The purpose of this structure is to catch regressions as early as possible while retaining integration coverage for systems that depend on the complete running engine.
+
+---
+
+# 18. Regression Verification
+
+When fixing a demonstrated bug, the verification should include a test or benchmark that would fail if the same regression returned.
+
+The preferred progression is:
+
+```text
+Reproduce problem
+      ↓
+Identify affected system
+      ↓
+Add or update automated verification
+      ↓
+Implement fix
+      ↓
+Run focused verification
+      ↓
+Run broader test suite
+      ↓
+Manually verify affected runtime behavior
+```
+
+Performance regressions should similarly have a representative benchmark rather than relying only on subjective frame-rate observations.
+
+---
+
+# 19. Build Verification Principle
+
+A successful build is necessary but not sufficient.
+
+For engine development, verification should combine the evidence appropriate to the change:
+
+```text
+Compiles
+   +
+Automated tests pass
+   +
+Relevant integration tests pass
+   +
+Relevant benchmarks pass
+   +
+Manual runtime behavior works
+   =
+Verified change
+```
+
+Not every change requires every category, but changes should be verified at the highest level appropriate to the systems they affect.
+
+The objective is to leave the engine in a state where the source compiles, automated coverage remains green, performance-sensitive systems remain within expected behavior, and the actual application still works as intended.

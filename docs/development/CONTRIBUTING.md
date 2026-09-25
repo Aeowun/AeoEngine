@@ -1,216 +1,344 @@
 ﻿# Contributing to AeoEngine
 
-AeoEngine development benefits from small, explicit changes and a strong emphasis on preserving architectural boundaries.
+AeoEngine development emphasizes clear subsystem ownership, focused changes, regression coverage, and verification against the actual engine.
+
+Contributions should preserve the separation between authored World data, editor state, runtime simulation, and derived rendering state.
 
 ---
 
-# 1. Start with the Desired Behavior
+# 1. Understand the Owning System
 
-Before changing code, define what the engine should do.
+Before changing code, identify which subsystem owns the behavior.
 
-A useful change description should state:
+The major ownership boundaries are:
 
-* Desired behavior.
-* Current behavior.
-* Relevant subsystem.
-* Important constraints.
-* Verification required.
+```text
+World
+→ Authored scene data
 
-This is especially important for changes that cross Editor, World, runtime, physics, and scripting boundaries.
+WorldStorage / Persistence
+→ Persistent project data
+
+Editor
+→ Authoring interaction and editor state
+
+PhysicsWorld
+→ Runtime physics
+
+CharacterSystem
+→ Runtime character gameplay
+
+ScriptScene / scripting runtime
+→ AeoScript execution
+
+EntityManager
+→ Runtime entities
+
+Renderer
+→ Graphics representation and GPU resources
+```
+
+Do not duplicate ownership simply because a second subsystem could technically perform the same operation.
 
 ---
 
-# 2. Preserve Existing Work
+# 2. Keep Changes Focused
 
-AeoEngine development may involve multiple active local changes.
+A feature may require changes in multiple subsystems.
+
+Each changed subsystem should have a clear architectural reason for being involved.
+
+Avoid unrelated cleanup, formatting changes, renames, and refactors inside a feature change unless they are required for correctness.
+
+Small diffs are easier to test and review.
+
+---
+
+# 3. Protect the Working Tree
+
+Development sessions may contain several unrelated changes.
 
 Do not overwrite unrelated work.
 
-Prefer:
+Avoid destructive commands such as:
 
-~~~text
-Inspect
- ↓
-Isolate
- ↓
-Change only the relevant subsystem
- ↓
-Verify
-~~~
+```text
+git reset --hard
+git restore .
+```
 
-Avoid destructive Git commands when their effect would include unrelated work.
+unless the affected changes are intentionally disposable.
 
----
+Use Git to inspect the current state:
 
-# 3. Architecture Before Implementation
+```text
+git status --short
+git --no-pager diff
+```
 
-For non-trivial changes, decide which system should own the new behavior before implementing it.
-
-Examples:
-
-* Authored scene data belongs to World.
-* Editing behavior belongs to Editor.
-* Physical simulation belongs to PhysicsWorld.
-* Character gameplay belongs to CharacterSystem.
-* Script execution belongs to ScriptScene/interpreter.
-* GPU resources belong to Renderer.
-
-Do not duplicate ownership merely because a second system could technically perform the same operation.
+Stage only the files belonging to the intended change.
 
 ---
 
-# 4. Prefer Focused Changes
+# 4. Tests
 
-A feature may touch multiple files when the architecture requires it, but each changed subsystem should have a clear reason for being included.
+Changes should include appropriate verification.
 
-Avoid opportunistic cleanup mixed into a feature unless it is required for correctness.
+Use:
+
+```text
+cargo check
+cargo test
+```
+
+and additional verification when relevant:
+
+```text
+cargo fmt --check
+cargo clippy
+```
+
+Subsystem-specific testing may include:
+
+* AeoScript integration tests.
+* Persistence tests.
+* Renderer benchmarks.
+* Manual editor testing.
+* Manual Play-mode testing.
+
+See:
+
+```text
+docs/development/TESTING.md
+docs/development/BUILDING.md
+```
 
 ---
 
 # 5. Regression Coverage
 
-A real bug fix should usually add regression coverage when practical.
+When fixing a real bug, add regression coverage when practical.
 
-The test should encode the behavior that was previously broken.
+A useful regression test should capture the behavior that previously failed.
 
-For runtime bugs, include both focused Rust tests and manual verification where appropriate.
+Prefer:
+
+```text
+Bug
+ ↓
+Reproduction
+ ↓
+Regression test
+ ↓
+Fix
+ ↓
+Test passes
+```
+
+over testing only the internal implementation detail used by the fix.
 
 ---
 
-# 6. AeoScript Development
+# 6. Architecture Changes
 
-When changing AeoScript, consider the full pipeline:
+Large architectural changes should establish ownership before implementation.
 
-~~~text
+A useful design sequence is:
+
+```text
+Desired behavior
+      ↓
+Owning subsystem
+      ↓
+State boundary
+      ↓
+Data flow
+      ↓
+Implementation
+      ↓
+Tests
+      ↓
+Documentation
+```
+
+Architectural documentation should describe the resulting system rather than become a design proposal disconnected from the code.
+
+---
+
+# 7. AeoScript Changes
+
+AeoScript changes may cross several layers.
+
+Typical language flow:
+
+```text
 Source
  ↓
 Lexer
  ↓
 Parser
  ↓
-AST / execution plan
+AST
  ↓
 Interpreter
  ↓
-Fiber
+Fiber / Scheduler
  ↓
 ScriptScene
  ↓
-Engine host
-~~~
+EngineHost
+ ↓
+Engine subsystem
+```
 
-A syntax feature is not complete until the runtime semantics and relevant diagnostics are defined.
+A language feature is complete only when its runtime behavior and relevant diagnostics are defined.
 
-Similarly, a runtime API is not complete simply because an internal Rust function exists; it should be represented correctly in AeoScript and documented.
+An engine API exposed to AeoScript should also be represented consistently in:
+
+* The host API.
+* The runtime implementation.
+* Tests.
+* Language documentation.
 
 ---
 
-# 7. AI Assistance
+# 8. Documentation
 
-AI tools may be used as part of the development workflow, particularly for small or repetitive work that has already been fully defined.
+Documentation should live at the appropriate layer.
 
-Appropriate examples include:
+```text
+Engine architecture
+→ docs/architecture/
 
-Writing repetitive tests from an established pattern.
-Updating several documentation files to an established format.
-Mechanical refactors.
-Implementing a clearly specified API across known files.
-Generating repetitive boilerplate.
+Development workflow
+→ docs/development/
 
-For AI-assisted work, provide explicit implementation direction. Do not only describe the desired outcome. State the expected behavior, implementation approach, constraints, relevant files or subsystems, and required verification.
+Language and API reference
+→ docs/language/
 
-For larger work, establish the architecture and constraints first. Define the expected files to be changed and the exact implementation direction before allowing the AI tool to proceed.
+Project-building guidance
+→ project documentation outside the architecture/reference layer
+```
 
-Always actively monitor the AI tool's changes and reasoning while it works.
+Document durable architectural rules and public behavior.
 
-Things to watch for include:
+Do not preserve stale implementation details merely because they once existed.
 
-Reasoning about work outside the current task.
-Incorrect or poorly supported math.
-Overly confident assertions with little or no observed evidence.
-Introducing architecture or behavior that was not requested.
-Expanding the scope of the task without justification.
+---
 
-Stop the AI and correct it when it begins moving in the wrong direction.
+# 9. AI-Assisted Development
 
-For small, trivial tasks, the tool may be allowed to finish, but its actions must still be reviewed and corrected as necessary. Keep track of every file changed during that task.
+AI tools may be used as development tools.
 
-# 8. Human Review of AI Work
+They are particularly useful for:
 
-AI-generated changes must still be reviewed like ordinary code, and in most cases should be reviewed more carefully.
+* Repetitive implementation.
+* Focused test additions.
+* Documentation updates.
+* Mechanical refactors.
+* Clearly bounded changes.
+
+The developer remains responsible for:
+
+* Architecture.
+* Scope.
+* Correctness.
+* Verification.
+* Reviewing generated changes.
+
+AI output should be verified through actual source changes, tests, command output, benchmarks, and runtime behavior.
+
+Do not treat an AI summary such as "fixed" or "tests passed" as evidence unless the repository output confirms it.
+
+---
+
+# 10. Manual Review of Generated Changes
+
+Review the actual diff after any substantial automated or AI-assisted change.
 
 Verify:
 
-The implementation matches the intended architecture.
-Existing behavior is preserved unless a change was explicitly requested.
-Tests actually exercise the changed behavior.
-No unrelated files were modified.
-No local user edits were overwritten.
-Manual behavior is correct where applicable.
-The reported result is supported by actual command output, test results, or observed behavior.
-The final diff contains only the changes that were intended.
+* Only intended files changed.
+* The implementation matches the architecture.
+* Existing behavior is preserved unless intentionally changed.
+* Tests exercise the changed behavior.
+* No unrelated cleanup was introduced.
+* No local work was overwritten.
+* Documentation matches the current implementation.
 
 ---
 
-# 9. Documentation
+# 11. Development Verification
 
-A durable architectural rule should be documented.
+For a substantial change:
 
-Use the appropriate documentation layer:
-
-~~~text
-User workflow
-→ guides/
-
-Language/API behavior
-→ language/
-
-Engine architecture
-→ architecture/
-
-Development process
-→ development/
-~~~
-
-Do not allow important architectural knowledge to exist only in implementation comments or chat history.
-
----
-
-# 10. Commit Discipline
-
-Before committing a substantial change:
-
-~~~text
-git status
- ↓
-git diff
- ↓
+```text
+cargo fmt --check
+      ↓
 cargo check
- ↓
+      ↓
+cargo clippy
+      ↓
 cargo test
- ↓
+      ↓
+Relevant integration tests
+      ↓
+Relevant benchmarks
+      ↓
 Manual verification
- ↓
+```
+
+Not every change needs every stage, but verification should match the systems affected.
+
+---
+
+# 12. Commit Discipline
+
+Before committing:
+
+```text
+git status
+      ↓
+git diff
+      ↓
+Run appropriate tests
+      ↓
 Review staged diff
- ↓
+      ↓
 Commit
-~~~
+```
 
-Stage only the files intended for the change.
-
-Generated artifacts, temporary files, screenshots, and unrelated local project state should not be swept into a commit accidentally.
+Generated artifacts, temporary files, screenshots, and unrelated local state should not be included accidentally.
 
 ---
 
-# 11. Commit Messages
+# 13. Commit Messages and Changelog
 
-Commit messages are going to be boring, they usually come after very long sessions. Don't expect a Horah. Check the Changelog. 
+Commit messages are primarily repository history.
+
+The user-facing development history belongs in:
+
+```text
+CHANGELOG.md
+```
+
+When a change materially affects engine behavior, release status, or public functionality, update the changelog as part of the normal development process.
+
+Commit messages do not need to reproduce the entire session or implementation history.
 
 ---
 
-# 12. Development Principle
+# 14. Contribution Principle
 
-The goal is not simply to make the code compile.
+The goal of a contribution is not merely to make the code compile.
 
-The goal is to make the engine easier to understand, safer to change, and more useful for building actual games.
+A good change should make the engine:
 
+* Correct.
+* Testable.
+* Understandable.
+* Architecturally consistent.
+* Easier to maintain.
+* Useful for building actual games.
+
+The source tree, tests, documentation, and runtime behavior should all agree about what the engine actually does.

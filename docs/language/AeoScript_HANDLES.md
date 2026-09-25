@@ -2,236 +2,336 @@
 
 AeoScript interacts with AeoEngine through opaque engine handles.
 
-Handles allow scripts to reference engine-managed objects without directly owning native engine memory.
+Handles identify engine-managed objects without transferring native object ownership to the script runtime.
 
 ---
 
-# 1. Why Handles Exist
+# 1. Handle Model
 
-A script should be able to hold a reference to a World Cell or runtime Entity without storing a raw pointer into engine memory.
+The basic relationship is:
 
-Instead, the script value identifies an engine-managed object.
-
-~~~text
-AeoScript handle
+```text
+AeoScript Handle
       ↓
 Engine lookup
       ↓
-Authoritative engine object
-~~~
+Engine-owned object
+```
 
-This keeps object ownership inside AeoEngine.
+The script stores an identifier and handle kind.
+
+The engine remains responsible for object lifetime.
 
 ---
 
 # 2. Cell Handles
 
-A `Cell` handle refers to an authored World Cell.
+A `Cell` handle can refer to an authored World Cell or a runtime-created Cell.
 
-Examples include Blocks and Lights.
+Cell handles expose supported properties through the script host.
 
-Cell handles expose supported runtime properties through the scripting host.
+Examples include:
+
+```text
+id
+name
+cellType
+visible
+solid
+anchored
+color
+offset
+position
+attributes
+```
 
 ---
 
-# 3. Cell ID
+# 3. Cell IDs
 
-Every authored Cell has a persistent numeric `id`.
+Every authored Cell has a persistent numeric ID.
 
-This identifies the specific Cell instance.
-
-~~~aeoscript
+```aeoscript
 const id = cell.id
-~~~
+```
 
-The ID is read-only from script.
+The ID is read-only from AeoScript.
 
-The ID is also the target used by persistent script bindings.
+The same ID is used for persistent script bindings.
 
 ---
 
-# 4. Cell Name
+# 4. Cell Names
 
-A Cell also exposes its human-readable name/identity.
+A Cell's human-readable identity/name is not required to be unique.
 
-~~~aeoscript
+```aeoscript
 const name = cell.name
-~~~
+```
 
-Names are not required to be unique.
+Two different Cells may therefore have:
 
-Two different Cells can therefore have the same `name` while having different IDs.
+```text
+ID: 1001   Name: Door
+ID: 1002   Name: Door
+```
+
+Use the ID for instance-specific identity.
+
+Use the name for discovery and gameplay-oriented queries.
 
 ---
 
 # 5. Cell Runtime Properties
 
-Supported Cell runtime properties include:
+Supported runtime Cell properties include:
 
 * `visible`
 * `solid`
 * `anchored`
 * `color`
 * `offset`
-* `position` as effective runtime position where supported
+* `position` where supported
+* `attributes`
 
 Example:
 
-~~~aeoscript
+```aeoscript
 cell.visible = false
 cell.solid = false
 cell.color = [1, 0, 0]
 cell.offset = [0, 2, 0]
-~~~
+```
 
-These are runtime changes and do not silently modify authored World values.
+During Play these are runtime changes.
 
 ---
 
-# 6. Dynamic Properties and Methods
+# 6. Cell Attributes
 
-Engine handles (both Cells and Entities) support dynamic property assignment. This allows scripts to attach custom data or logic to specific engine objects without needing to modify the engine itself.
+Cell handles expose authored/runtime attributes.
 
-~~~aeoscript
-const door = cell.get(10552341)
+```aeoscript
+cell.attributes["health"] = 100
+```
 
-// Store custom data
-door.isOpen = false
+Authored attributes form the persistent baseline.
 
-// Assign a custom method
+Runtime attribute changes are temporary overrides.
+
+---
+
+# 7. Dynamic Handle Properties
+
+Supported engine handles can expose dynamic script properties.
+
+```aeoscript
+const door = cell.get(1001)
+
+door.is_open = false
+
 door.toggle = fn() {
-    self.isOpen = !self.isOpen
-    self.visible = !self.isOpen
-    self.solid = !self.isOpen
+    self.is_open = !self.is_open
+    self.visible = !self.is_open
 }
+```
 
-// Call the custom method
-door:toggle()
-~~~
+The `self` value refers to the handle receiving the method-style call.
 
-### The `self` Keyword
-
-Inside a function called as a method using the colon syntax (`handle:method()`), the `self` variable automatically refers to the handle the method was called on.
+Dynamic properties are script/runtime state and are not automatically written into the authored World.
 
 ---
 
-# 7. Explicit Handle Lookup
+# 8. Explicit Cell Lookup
 
-While `find()` and `getAllCellsOfClass()` are useful for discovery, scripts can also target specific instances directly by their persistent ID.
+A specific Cell can be looked up by persistent ID:
 
-~~~aeoscript
-const trap = cell.get(882210)
-const player = entity.get(1)
-~~~
+```aeoscript
+const door = cell.get(1001)
+```
 
-These functions return `nil` if the specified object does not exist.
+The lookup returns `nil` when the ID is not present.
 
 ---
 
-# 8. Finding Cells
+# 9. Cell Discovery
 
-Scripts can discover Cells by name:
+Name-based discovery:
 
-~~~aeoscript
-const walls = find("Wall")
-~~~
+```aeoscript
+const doors = find("Door")
+```
 
-The result is a basket of handles.
+Class-based discovery:
 
-Because names can be duplicated, `find()` may return multiple Cells.
-
-Scripts can also query by class:
-
-~~~aeoscript
+```aeoscript
 const blocks = getAllCellsOfClass("Block")
-~~~
+```
+
+Name-based results can contain multiple handles.
 
 ---
 
-# 7. Entity Handles
+# 10. Entity Handles
 
 An `Entity` handle refers to a live runtime Entity such as a Player or NPC.
 
-Entity handles represent runtime objects rather than authored World Cells.
+Typical properties include:
 
-Supported properties include `.name` and `.position`. Supported methods include `is_valid()`, `name()`, `set_position(x, y, z)`, and `translate(dx, dy, dz)`.
+* `name`
+* `position`
 
----
-
-# 8. Sound Handles
-
-A `Sound` handle refers to an audio channel bound to an `AudioEmitter` cell or runtime sound object (`cell.sound`).
-
-Supported properties and methods:
-
-* `sound.playing`: `bool` (read/write)
-* `sound.looped`: `bool` (read/write)
-* `sound.volume`: `number` (read/write)
-* `sound.play()`: method
-* `sound.stop()`: method
-* `sound.pause()`: method
+Entity handles represent runtime state rather than authored Cell data.
 
 ---
 
-# 9. UI Handles
+# 11. Entity Lookup
 
-A `Ui` handle refers to a runtime UI element created with `ui.new("Panel" | "Text" | "Button")`.
+A specific runtime Entity can be resolved with:
 
-Supported properties:
+```aeoscript
+const player = entity.get(1)
+```
 
-* `position`: `[x, y]` pixel position
-* `size`: `[width, height]` pixel dimensions
-* `visible`: `bool`
-* `enabled`: `bool`
-* `color`: `[r, g, b, a]` color vector
-* `text`: `string` (Text and Button)
-* `on_click`: callback function assigned to Button handles (`btn.on_click = fn() { ... }`)
+and tested with:
 
----
+```aeoscript
+entity.exists(1)
+```
 
-# 10. Handle Lifetime
-
-A handle can outlive the engine object it originally referenced.
-
-The script runtime must resolve the handle against current engine state rather than assuming the underlying object still exists.
-
-Operations against invalid or stale handles produce runtime errors rather than silently affecting another object.
+A missing Entity returns `nil` from `entity.get()`.
 
 ---
 
-# 11. Handles and Runtime State
+# 12. Sound Handles
 
-Handles provide access to runtime state.
+A `Sound` handle represents runtime audio control.
 
-They do not transfer ownership of the underlying engine object into the script.
+Supported state includes:
 
-~~~text
+* `playing`
+* `looped`
+* `volume`
+
+Supported operations include:
+
+* `play()`
+* `stop()`
+* `pause()`
+
+Example:
+
+```aeoscript
+const speaker = find("DoorSound")[0]
+speaker.sound.play()
+```
+
+---
+
+# 13. UI Handles
+
+A `Ui` handle represents a runtime UI element.
+
+Supported UI properties include:
+
+* `position`
+* `size`
+* `visible`
+* `enabled`
+* `color`
+* `text`
+* `on_click`
+
+Button callbacks use function values and can capture lexical state.
+
+---
+
+# 14. Mouse Handles
+
+A mouse handle is retrieved through:
+
+```aeoscript
+const mouse = get.mouse()
+```
+
+Supported controls include:
+
+```text
+setCursorVisible
+setScreenLocked
+```
+
+---
+
+# 15. Handle Lifetime
+
+A handle can remain in script state after its underlying object has been destroyed.
+
+The engine must therefore resolve the handle against current runtime state.
+
+Operations against stale or invalid handles produce runtime errors or absence results according to the API being used.
+
+A stale handle must never silently redirect to another engine object.
+
+---
+
+# 16. Ownership
+
+Handles do not transfer ownership.
+
+```text
 Script
   │
   └── Handle
-          ↓
-     Engine-owned object
-~~~
+        ↓
+   Engine-owned object
+```
 
-The engine remains responsible for the object's lifetime.
+The engine owns:
+
+* Allocation.
+* Lifetime.
+* Destruction.
+* Native resources.
+* Runtime object storage.
+
+The scripting runtime owns only the script-side value representing the handle.
 
 ---
 
-# 12. Handles and Script Bindings
+# 17. Handles and Script Bindings
 
-A handle's Cell ID and a script binding's target ID describe the same authored instance identity.
+Script bindings use persistent authored Cell IDs.
 
-This is why bindings do not use the human-readable name as their unique target.
+For example:
 
-~~~text
+```text
 Authored Cell
 ├── id: 18374291
 └── name: Ghost
 
-Script Binding
+Script binding
 └── target ID: 18374291
-~~~
+```
 
-The name can change without changing which Cell the binding targets.
+Changing the human-readable name does not change the binding target.
 
+---
 
+# 18. Handles and Runtime State
+
+Handles expose effective runtime state, not a second authoritative World representation.
+
+The architectural relationship is:
+
+```text
+Authored World
+      ↓
+Runtime effective state
+      ↓
+Handle resolution
+      ↓
+AeoScript
+```
+
+The script runtime therefore interacts with engine-owned state without becoming the owner of that state.

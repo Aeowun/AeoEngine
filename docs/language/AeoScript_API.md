@@ -1,154 +1,122 @@
 ﻿# AeoScript API Reference
 
-This document provides a reference for the built-in functions, namespaces, engine handles, properties, and runtime behavior currently available in AeoScript.
+This document describes the currently exposed AeoScript functions, namespaces, engine handles, properties, and runtime-facing behavior.
 
-The API is intentionally integrated with AeoEngine's authored World and runtime systems. Runtime changes remain temporary and do not modify the authored World unless an engine API explicitly performs an authored edit.
+The API is implemented through the AeoEngine script host. Runtime changes are temporary unless an explicit authored-data operation changes persistent project state.
 
 ---
 
-# 1. Global Functions
+# 1. Global Functions and Properties
 
-### `debug.log(...)`
+## `debug.log(...)`
+
+Writes a structured message to the AeoEngine script output/diagnostic system.
 
 ```aeoscript
-debug.log("Hello")
 debug.log("Health:", health)
 ```
 
-Writes a structured script message to the AeoEngine output/diagnostic system.
-
 ---
 
-### `find(name)`
+## `find(name)`
+
+Searches active/effective World Cells by `entity_identity` and runtime Entities by their runtime name.
+
+Returns a `basket` of handles.
+
+Names are not required to be unique, so multiple results are possible.
 
 ```aeoscript
-const matches = find("Ghost")
+const doors = find("Door")
 ```
-
-Searches runtime Entities by runtime name and active/effective World Cells by authored `entity_identity`.
-
-Returns a `basket` of typed handles. An authored Cell match is a `Cell` or `Light` handle, not an `Entity` handle.
-
-Names are not required to be unique, so the result may contain multiple objects.
 
 ---
 
-### `getAllCellsOfClass(class_name)`
+## `getAllCellsOfClass(class_name)`
+
+Returns active/effective World Cells of the requested class.
 
 ```aeoscript
 const blocks = getAllCellsOfClass("Block")
 ```
 
-Returns a `basket` containing active/effective World Cells of the specified class.
-
-Examples include:
-
-```text
-"Block"
-"Light"
-```
-
 ---
 
-### `wait(seconds)`
+## `wait(seconds)`
+
+Suspends the current fiber for a finite positive duration of scheduler time.
+
+The fiber preserves its execution state and resumes at the suspension point.
 
 ```aeoscript
 wait(0.5)
 ```
 
-Suspends the current AeoScript fiber for a finite, positive duration of scheduler simulation time.
+---
 
-The fiber resumes after the wait while preserving its execution state, including:
+## `time.delta`
 
-* Current function
-* Nested function calls
-* Local variables
-* Call-stack state
-* Loop state
-* Instruction position
-
-A function called from another function may also yield:
+Returns the current frame delta time supplied to the script host.
 
 ```aeoscript
-fn delayed_action() {
-    wait(0.5)
-    score += 10
-}
-
-fn update(dt) {
-    delayed_action()
-}
+speed += acceleration * time.delta
 ```
-
-The suspended execution resumes inside `delayed_action()` rather than restarting the function.
 
 ---
 
-# 2. `math` Namespace
-
-Provides numeric, trigonometric, interpolation, conversion, and random-value utilities.
+# 2. `math`
 
 ### `math.abs(x)`
 
-Returns the absolute value of `x`.
+Absolute value.
 
 ### `math.min(a, b)`
 
-Returns the smaller of exactly two numeric arguments.
-
-```aeoscript
-const lowest = math.min(8, 3)
-```
+Smaller of two numeric values.
 
 ### `math.max(a, b)`
 
-Returns the larger of exactly two numeric arguments.
-
-```aeoscript
-const highest = math.max(8, 3)
-```
+Larger of two numeric values.
 
 ### `math.floor(x)`
 
-Returns the largest integer less than or equal to `x`.
+Largest integer less than or equal to `x`.
 
 ### `math.ceil(x)`
 
-Returns the smallest integer greater than or equal to `x`.
+Smallest integer greater than or equal to `x`.
 
 ### `math.round(x)`
 
-Rounds `x` to the nearest integer.
+Rounds to the nearest integer.
 
 ### `math.sqrt(x)`
 
-Returns the square root of `x`.
+Square root.
 
 ### `math.pow(base, exponent)`
 
-Returns `base` raised to `exponent`.
+Raises `base` to `exponent`.
 
 ### `math.sin(x)`
 
-Returns the sine of `x`, where `x` is in radians.
+Sine of radians.
 
 ### `math.cos(x)`
 
-Returns the cosine of `x`, where `x` is in radians.
+Cosine of radians.
 
 ### `math.tan(x)`
 
-Returns the tangent of `x`, where `x` is in radians.
+Tangent of radians.
 
 ### `math.clamp(value, min, max)`
 
-Restricts `value` to the inclusive range `[min, max]`.
-
-Produces a runtime error when `min > max`.
+Clamps `value` to `[min, max]`.
 
 ### `math.lerp(a, b, t)`
 
-Returns linear interpolation between `a` and `b`:
+Linear interpolation:
 
 ```text
 a + (b - a) * t
@@ -156,820 +124,607 @@ a + (b - a) * t
 
 ### `math.deg_to_rad(degrees)`
 
-Converts degrees to radians.
+Degrees to radians.
 
 ### `math.rad_to_deg(radians)`
 
-Converts radians to degrees.
+Radians to degrees.
 
-### `math.random([min, max])`
+### `math.random()`
 
-Generates a pseudo-random number.
+Returns a floating-point value in:
 
-*   When called without arguments, returns a float in the range `[0.0, 1.0)`.
-*   When called with two integer arguments `min` and `max`, returns an integer in the inclusive range `[min, max]`.
+```text
+[0.0, 1.0)
+```
 
-```aeoscript
-const chance = math.random()
-const roll = math.random(1, 20)
+### `math.random(min, max)`
+
+With integer arguments, returns an integer in the inclusive range:
+
+```text
+[min, max]
 ```
 
 ---
 
-# 3. `basket` Namespace
+# 3. `basket`
 
-A `basket` is a zero-indexed, reference-backed sequence.
+Baskets are zero-indexed reference-backed sequences.
 
-Namespace functions may be called directly:
+Namespace calls:
 
 ```aeoscript
 basket.insert(items, 0, "Sword")
 ```
 
-Supported basket methods may also be called through the basket:
+Method-style calls are also supported where implemented:
 
 ```aeoscript
 items.insert(0, "Sword")
 ```
 
-Aliases refer to the same underlying basket.
-
----
-
 ### `basket.create(count, [value])`
 
-Creates a new basket containing `count` elements.
-
-When `value` is omitted, elements are initialized to `nil`.
-
-```aeoscript
-const a = basket.create(3, 5)
-const b = basket.create(3)
-```
-
----
+Creates a basket with `count` elements.
 
 ### `basket.insert(b, [position], value)`
 
-Inserts `value` at the specified position.
-
-When the position is omitted, the value is appended.
-
-Basket indices are zero-based.
-
----
+Inserts a value.
 
 ### `basket.remove(b, [position])`
 
 Removes and returns an element.
 
-When the position is omitted, the final element is removed.
-
----
-
 ### `basket.clear(b)`
 
-Removes all elements from the basket.
-
-Because baskets are reference-backed, all aliases observe the cleared state.
-
----
+Removes all elements.
 
 ### `basket.find(b, value, [init])`
 
-Returns the zero-based index of the first matching value.
-
-`init` defaults to `0`.
-
-Returns `nil` when the value cannot be found.
-
----
+Returns the first matching index or `nil`.
 
 ### `basket.move(src, a, b, t, [dst])`
 
-Copies the inclusive source range `src[a..b]` into destination position `t`.
-
-When `dst` is omitted, the source basket is used as the destination.
+Moves/copies an inclusive source range.
 
 The operation is overlap-safe.
 
----
-
 ### `basket.concat(b, [separator], [i], [j])`
 
-Returns a string by joining the specified basket elements.
-
-`i` and `j` define an inclusive range.
-
-When the range is omitted, the entire basket is used.
-
----
+Joins basket elements into a string.
 
 ### `basket.clone(b)`
 
-Returns a new shallow copy of `b`.
-
-The outer basket is independent from the original, but referenced nested values remain shared.
-
----
+Creates a shallow outer copy.
 
 ### `basket.freeze(b)`
 
-Marks the basket as read-only.
-
-Any later mutation attempt produces a runtime error.
-
----
+Marks the basket read-only.
 
 ### `basket.sort(b)`
 
-Sorts numeric or string elements in ascending order.
+Sorts numeric or string values in ascending order.
 
 Custom comparator functions are not currently supported.
 
 ---
 
-# 4. `string` Namespace
+# 4. `string`
 
-String operations operate on Unicode scalar values rather than UTF-8 bytes.
+String operations use Unicode scalar values.
 
 ### `string.len(s)`
 
-Returns the number of Unicode scalar values in `s`.
-
-```aeoscript
-string.len("é")
-```
-
-returns `1`.
-
----
+Returns Unicode scalar-value length.
 
 ### `string.lower(s)`
 
-Returns a lowercase version of `s`.
-
----
+Lowercase conversion.
 
 ### `string.upper(s)`
 
-Returns an uppercase version of `s`.
-
----
+Uppercase conversion.
 
 ### `string.reverse(s)`
 
-Returns `s` with its Unicode scalar values in reverse order.
-
----
+Reverses Unicode scalar values.
 
 ### `string.split(s, [separator])`
 
-Returns a `basket` of strings.
+Returns a basket of strings.
 
-When a separator is supplied, the string is split using that separator.
-
-When the separator is omitted or empty, the string is split into individual Unicode scalar values.
+Without a separator, the string is split into individual Unicode scalar values.
 
 ---
 
 # 5. Maps
 
-Maps are reference-backed key/value collections.
-
-Maps are not positional sequences.
-
-Numeric and string keys are distinct:
+Maps use direct indexing and assignment.
 
 ```aeoscript
 const values = {}
 
+values["name"] = "Ghost"
 values[1] = "numeric"
-values["1"] = "string"
 ```
 
-Reading a missing key returns `nil`:
+Numeric and string keys are distinct.
 
-```aeoscript
-const missing = values["does_not_exist"]
-```
+Missing keys return `nil`.
 
-Assigning `nil` removes a key:
+Assigning `nil` removes a key.
 
-```aeoscript
-values["name"] = nil
-```
-
-Maps can contain baskets and nested maps, and those values retain reference semantics.
-
-There is currently no separate `map` namespace; map operations use indexing and assignment directly.
+There is no separate map namespace.
 
 ---
 
 # 6. Cell Handles
 
-A `Cell` handle refers to an authored World Cell such as a Block or Light.
+A `Cell` handle refers to an engine-managed authored or runtime Cell.
 
-Cell property changes made during Play mode are runtime overrides.
+## `.id`
 
-They do not modify the authored World.
-
-## Properties
-
-### `.id`
-
-Persistent numeric ID of the specific authored Cell.
+Persistent numeric ID.
 
 Read-only.
 
-The ID identifies the unique Cell instance and is used by script bindings.
+## `.name`
 
-Do not use the human-readable name as the unique object identifier.
+Human-readable identity/name.
 
----
+Read-only for authored Cells.
 
-### `.name`
+Names are not required to be unique.
 
-Human-readable authored identity/name.
+## `.cellType`
 
-Read-only.
-
-Names do not have to be unique.
-
-Multiple Cells may therefore return from:
-
-```aeoscript
-find("Wall")
-```
-
----
-
-### `.cellType`
-
-String representation of the Cell type.
+Cell type as a string.
 
 Read-only.
 
-Examples include:
+Examples:
 
 ```text
-"Block"
-"Light"
+Block
+Light
+SpawnPoint
+AudioEmitter
 ```
 
----
+## `.visible`
 
-### `.visible`
+Runtime visibility override.
 
-Controls whether the Cell is rendered.
+## `.solid`
 
-Read/write.
+Runtime collision override.
 
-Runtime override.
+## `.anchored`
 
----
+Runtime static/dynamic override.
 
-### `.solid`
+## `.color`
 
-Controls whether the Cell participates in collision.
-
-Read/write.
-
-Runtime override.
-
----
-
-### `.anchored`
-
-Controls whether the Cell remains static or behaves as a dynamic physical object.
-
-Read/write.
-
-Runtime override.
-
----
-
-### `.color`
-
-RGB color represented by a three-element basket:
+RGB color:
 
 ```aeoscript
 cell.color = [1, 0, 0]
 ```
 
-Read/write.
+## `.offset`
 
-Runtime override.
-
----
-
-### `.offset`
-
-Visual offset from the Cell's authored position:
+Runtime visual offset.
 
 ```aeoscript
 cell.offset = [0, 2, 0]
 ```
 
-Read/write.
+## `.position`
 
-Runtime override.
+Effective runtime position.
 
----
+Runtime-created Cells can move using this property.
 
-### `.position`
+## `.attributes`
 
-Effective runtime world position.
-
-For authored Cells, this is typically read-only. For runtime-created Cells, this is read/write and allows the Cell to be moved between grid coordinates.
-
----
-
-### `.attributes`
-
-A map-like interface to the Cell's authored and runtime attributes.
+Cell attribute access.
 
 ```aeoscript
-const coins = cell.attributes["coins"]
-cell.attributes["active"] = true
+cell.attributes["coins"] = 100
 ```
 
-Assigning `nil` to a runtime attribute removes the override and restores the authored value.
+Runtime attribute writes create temporary overrides.
 
----
+## Dynamic Properties
 
-### Dynamic Properties
-
-Cells support dynamic property assignment. You can store arbitrary data or functions directly on a handle.
+Supported engine handles can expose dynamic script properties and functions.
 
 ```aeoscript
-const c = cell.get(12345)
-c.myValue = 10
-c.on_touch = fn(other) { debug.log("Touched!") }
-```
+cell.myValue = 10
 
-All mutations made to Cell handles during Play mode are treated as **runtime overrides** or **temporary script state**. They never modify the authored World file.
+cell.toggle = fn() {
+    self.visible = !self.visible
+}
+```
 
 ---
 
-# 7. `cell` Namespace
+# 7. `cell`
 
-Provides utilities for dynamic Cell management during Play mode.
+## `cell.new(type_name)`
 
-### `cell.new(type_name)`
+Creates a runtime-only Cell.
 
-Creates a new runtime-only Cell. Supported types are `Block`, `FxBlock`, `Player`, `NPC`, `Light`, and `SpawnPoint`.
+Supported types include:
 
-Returns a `Cell` or `Light` handle.
+```text
+Block
+FxBlock
+Player
+NPC
+Light
+SpawnPoint
+```
 
-Runtime Cells exist only during the current Play session and are not persisted to the World file.
+Returns a Cell or Light handle as appropriate.
 
-### `cell.delete(handle)`
+## `cell.delete(handle)`
 
-Removes a Cell from the active world.
+Removes the target from the active runtime world.
 
-*   If the target is a runtime-created Cell, it is destroyed.
-*   If the target is an authored Cell, it is temporarily removed from the Play session but remains unchanged in the authored World.
+Authored Cells are temporarily removed for the Play session.
 
-### `cell.get(id)`
+Runtime-created Cells are destroyed.
 
-Returns a `Cell` handle for the authored or runtime Cell with the specified persistent ID.
+## `cell.get(id)`
 
-Returns `nil` if no Cell with that ID exists.
+Returns the Cell with the specified ID or `nil`.
 
-### `cell.exists(id)`
+## `cell.exists(id)`
 
-Returns `true` if a Cell with the specified ID exists in the current session.
+Returns whether the specified Cell exists in the current runtime world.
 
 ---
 
 # 8. Entity Handles
 
-An `Entity` handle refers to a live runtime object such as a Player or NPC.
+An `Entity` handle refers to a live runtime Entity.
 
-Entity handles are runtime references rather than authored World Cells.
+## `.name`
 
-### `.name`
+Runtime Entity name.
 
-Entity name.
-
-Read-only.
-
----
-
-### `.position`
+## `.position`
 
 Current runtime world position.
 
-Read-only.
+## Dynamic Properties
+
+Runtime Entities can expose dynamic script properties.
 
 ---
 
-### Dynamic Properties
+# 9. `entity`
 
-Entities support dynamic property assignment, similar to Cells.
+## `entity.get(id)`
 
-```aeoscript
-const e = entity.get(1)
-e.state = "idle"
-```
+Returns a live Entity handle or `nil`.
 
----
+## `entity.exists(id)`
 
-# 9. `entity` Namespace
-
-### `entity.get(id)`
-
-Returns an `Entity` handle for the live runtime Entity with the specified ID.
-
-Returns `nil` if not found.
-
-### `entity.exists(id)`
-
-Returns `true` if an Entity with the specified ID exists.
+Returns whether a runtime Entity exists.
 
 ---
 
-# 10. Anonymous Functions
+# 10. Function Values and `self`
 
-AeoScript supports first-class functions (both named function declarations and anonymous closures). Function values support lexical capture (for anonymous closures) and can be assigned to variables, returned, passed as arguments, or stored as dynamic properties on engine handles.
+Functions are first-class values.
 
 ```aeoscript
 const callback = fn(x) {
     return x * 2
 }
-
-const result = callback(10) // 20
 ```
 
-### The `self` Keyword
-
-Inside a function called as a method (e.g., `obj:method()`), the `self` keyword refers to the object it was called on.
+A function may be called:
 
 ```aeoscript
-const c = cell.get(101)
-c.toggle = fn() {
-    self.visible = !self.visible
-}
-
-c:toggle()
+callback(10)
 ```
 
----
+When a function is called using method syntax:
 
-# 11. Object References and Validity
+```aeoscript
+object:method()
+```
 
-Engine handles refer to engine-managed objects.
-
-A handle may become invalid when the referenced runtime object is destroyed or otherwise removed.
-
-Entity methods validate EntityManager handles. Cell lookup can use `cell.get()` and `cell.exists()`; property and method behavior depends on the exposed host operation.
-
-Scripts should therefore treat long-lived runtime references as potentially stale after destruction or lifecycle changes.
+`self` refers to the handle on which the method was invoked.
 
 ---
 
-# 9. Runtime Overrides
+# 11. Runtime State
 
-Cell runtime properties are temporary.
-
-For example:
+Cell changes made during Play affect runtime state.
 
 ```aeoscript
 cell.visible = false
 cell.solid = false
-cell.anchored = true
 cell.color = [1, 0, 0]
-cell.offset = [0, 2, 0]
 ```
 
-These modify the running game state.
+These do not rewrite authored World values.
 
-They do not rewrite the authored World.
-
-When Play mode ends, the authored values remain authoritative.
-
-Conceptually:
-
-```text
-Authored World
-      ↓
-Runtime
-      ↓
-Runtime overrides
-      ↓
-Play stops
-      ↓
-Authored World remains unchanged
-```
+When Play stops, runtime overrides are discarded.
 
 ---
 
-# 10. Script Lifecycle
-
-AeoScript scripts attached to authored objects can participate in lifecycle execution.
+# 12. Script Lifecycle
 
 Common lifecycle functions include:
 
 ```aeoscript
-entity BoundCell {
-    fn on_spawn() { }
-    fn on_ready() { }
-    fn update(dt) { }
-    fn on_destroy() { }
-}
+fn on_spawn() { }
+fn on_ready() { }
+fn update(dt) { }
+fn on_destroy() { }
 ```
 
-`update(dt)` receives the elapsed frame time.
-
-Fields modified by lifecycle code persist between lifecycle executions.
-
-For example:
+Collision lifecycle events include:
 
 ```aeoscript
-entity Counter {
-    ticks: number = 0
-
-    fn update(dt) {
-        ticks += 1
-    }
-}
+fn on_touch(cell) { }
+fn on_overlap(overlapping, cell) { }
 ```
 
-`ticks` remains part of the persistent script instance across update executions.
+Persistent entity fields survive between lifecycle executions.
 
 ---
 
-# 11. Script Bindings
+# 13. Script Bindings
 
-Script bindings attach an `.aeo` script to a specific authored Cell.
-
-Bindings target the Cell's persistent numeric ID.
-
-They do not target the human-readable `.name`.
-
-This permits multiple Cells with the same name to have independent bindings:
+Bindings identify a specific authored Cell by persistent Cell ID.
 
 ```text
-Block ID 1001 → scripts/door.aeo
-Block ID 1002 → scripts/button.aeo
-Block ID 1003 → scripts/door.aeo
+Cell ID → script path
 ```
 
-Legacy name-based bindings may be migrated when the name resolves to exactly one authored Cell.
-
-Ambiguous legacy bindings must not arbitrarily select one matching Cell.
+The Cell's human-readable name is not the binding key.
 
 ---
 
-# 12. Time
+# 14. Mouse and Input
 
-### `time.delta`
+## `get.mouse()`
 
-Returns the elapsed simulation time since the previous frame in seconds.
+Returns the runtime mouse handle.
 
-This is useful for frame-based gameplay logic:
+### Mouse properties
+
+```text
+setCursorVisible
+setScreenLocked
+```
+
+Example:
 
 ```aeoscript
-position_x += speed * time.delta
+const mouse = get.mouse()
+
+mouse.setCursorVisible = false
+mouse.setScreenLocked = true
 ```
 
----
+## `input.get_move_vector()`
 
-# 13. Lifecycle and Fiber State
+Returns the current movement vector.
 
-AeoScript uses fibers to preserve execution state across yielded operations.
+## `input.is_jump_pressed()`
 
-When a lifecycle function or nested function executes `wait()`, the active fiber retains:
+Returns whether jump input is currently pressed.
 
-* Current instruction position
-* Function call stack
-* Local variables
-* Loop state
-* Entity script fields
-* Pending wait state
+## `input.get_orbit_delta()`
 
-The fiber resumes from the suspension point rather than starting the function again.
-
-Persistent entity fields are synchronized from the active lifecycle fiber so mutations survive across frames.
+Returns the mouse-orbit delta.
 
 ---
 
-# 14. Errors
+# 15. Camera
 
-AeoScript reports descriptive runtime errors for invalid operations including:
+## `camera.get_horizontal_basis()`
 
-* Basket indexing out of bounds
-* Mutating a frozen basket
-* Invalid argument counts or types
-* Accessing properties on `nil`
-* Accessing invalid engine handles
-* Invalid map/basket operations
-* Invalid `math` arguments
-* Unsupported basket comparator sorting
+Returns `[forward, right]` horizontal basis vectors.
 
-Runtime errors include available context such as script path, active function, entity context, and source location when that information is available.
+## `camera.set_position(...)`
 
-Errors are reported through the AeoEngine script diagnostics/output system.
+Sets gameplay camera position.
 
----
+## `camera.set_target(...)`
 
-# 15. Current API Boundaries
+Sets gameplay camera target.
 
-The API is intentionally growing with the engine.
+## `camera.set_orientation(yaw, pitch)`
 
-Examples of functionality that remain future API work include:
-
-* Custom comparator functions for basket sorting
-* Advanced string pattern operations
-* Arbitrary entity/mesh instantiation at runtime beyond currently supported `cell.new()` types and `ui.new()` elements
-* Expanded physics spatial query APIs beyond `physics.resolve_camera_collision()`
-
-New APIs preserve AeoScript's type system, reference semantics, runtime-state model, and engine-owned object model.
+Sets gameplay camera orientation.
 
 ---
 
-# 16. Input & Mouse APIs
+# 16. Physics Query
 
-### `get.mouse()`
+## `physics.resolve_camera_collision(target, desired)`
 
-Returns a handle (`HandleKind::Mouse`) to the global mouse hardware input interface.
+Resolves a camera position against collision geometry.
 
-### `mouse.setCursorVisible`
-
-Property (`bool`) controlling OS cursor visibility during Play mode.
+Returns the resolved position.
 
 ```aeoscript
-const m = get.mouse()
-m.setCursorVisible = false
-```
-
-### `mouse.setScreenLocked`
-
-Property (`bool`) locking or unlocking the cursor to the screen center for camera look.
-
-```aeoscript
-const m = get.mouse()
-m.setScreenLocked = true
-```
-
-### `input.get_move_vector()`
-
-Returns normalized 2D movement vector `[x, z]` from player WASD or stick input.
-
-```aeoscript
-const move = input.get_move_vector()
-```
-
-### `input.is_jump_pressed()`
-
-Returns `bool` indicating whether the jump action key/button is currently pressed.
-
-### `input.get_orbit_delta()`
-
-Returns 2D camera mouse look / orbit delta `[dx, dy]`.
-
----
-
-# 17. Camera & Physics Query APIs
-
-### `camera.get_horizontal_basis()`
-
-Returns 3D basis vectors `[forward, right]` aligned to the horizontal plane.
-
-```aeoscript
-const basis = camera.get_horizontal_basis()
-const forward = basis[0]
-const right = basis[1]
-```
-
-### `camera.set_position(x, y, z)`
-
-Sets 3D world position of the active gameplay camera. Accepts 3 numbers or a 3-element basket.
-
-### `camera.set_target(x, y, z)`
-
-Sets 3D look-at target position of the active gameplay camera. Accepts 3 numbers or a 3-element basket.
-
-### `camera.set_orientation(yaw, pitch)`
-
-Sets camera yaw and pitch rotation angles in radians.
-
-### `physics.resolve_camera_collision(target, desired)`
-
-Ray-casts collision check from `target` to `desired` position to prevent camera wall clipping. Returns resolved 3D position array `[x, y, z]`.
-
-```aeoscript
-const actual_pos = physics.resolve_camera_collision(target, desired_pos)
+const actual = physics.resolve_camera_collision(target, desired)
 ```
 
 ---
 
-# 18. Player Character Locomotion APIs
+# 17. Player
 
-### `player.set_horizontal_velocity(vx, vz)`
+## `player.set_horizontal_velocity(vx, vz)`
 
-Sets player character horizontal velocity vector on the X/Z plane.
+Sets runtime player horizontal velocity.
 
-```aeoscript
-player.set_horizontal_velocity(dir_x * speed, dir_z * speed)
-```
+## `player.set_facing_direction(dx, dz)`
 
-### `player.set_facing_direction(dx, dz)`
+Sets runtime player facing direction.
 
-Sets player character facing direction vector on the X/Z plane.
+## `player.select_animation(name)`
 
-### `player.select_animation(name)`
+Selects a runtime character animation.
 
-Triggers animation clip on player character (e.g., `"Walk"`, `"Idle"`).
+## `player.is_grounded()`
 
-### `player.is_grounded()`
+Returns whether the active player is grounded.
 
-Returns `bool` indicating whether player character is resting on solid ground.
+## `player.apply_vertical_impulse(impulse)`
 
-### `player.apply_vertical_impulse(impulse)`
+Applies a vertical impulse.
 
-Applies vertical jump force impulse to player character.
+## `player.position`
 
-### `player.position`
-
-Property returning active player character's 3D position `[x, y, z]`.
+Returns the active player's runtime position.
 
 ---
 
-# 19. Runtime UI APIs
+# 18. Runtime UI
 
-### `ui.new(element_type)`
+## `ui.new(element_type)`
 
-Spawns a runtime UI element of type `"Panel"`, `"Text"`, or `"Button"`. Returns a `Ui` handle.
+Creates a runtime UI element.
 
-```aeoscript
-const panel = ui.new("Panel")
-const text = ui.new("Text")
-const btn = ui.new("Button")
+Supported types:
+
+```text
+Panel
+Text
+Button
 ```
 
-### `ui.delete(handle)`
+## `ui.delete(handle)`
 
-Removes runtime UI element by handle.
+Removes a runtime UI element.
 
-### `ui.get_viewport_size()`
+## `ui.get_viewport_size()`
 
-Returns current viewport dimensions array `[width, height]`.
+Returns:
 
-### UI Element Properties
+```text
+[width, height]
+```
 
-* `position`: `[x, y]` array in viewport pixels
-* `size`: `[width, height]` array in viewport pixels
-* `visible`: `bool`
-* `enabled`: `bool`
-* `color`: `[r, g, b, a]` color array
-* `text`: `string` (valid on `Text` and `Button`)
-* `on_click`: assignable callback closure on `Button` handles (`btn.on_click = fn() { ... }`)
+## UI properties
+
+Supported properties include:
+
+* `position`
+* `size`
+* `visible`
+* `enabled`
+* `color`
+* `text`
+* `on_click`
+
+Button `on_click` accepts a function value.
 
 ---
 
-# 20. Audio Emitter APIs
+# 19. Audio
 
-### `cell.sound`
-
-Returns the `Sound` handle bound to an Audio Emitter cell.
+AudioEmitter Cells expose a sound handle.
 
 ```aeoscript
-const emitter = find("DoorSound")[0]
-emitter.sound.play()
+const speaker = find("DoorSound")[0]
+
+speaker.sound.play()
 ```
 
-### Sound Properties & Methods
+Supported sound properties:
 
-* `sound.playing`: `bool` (read/write)
-* `sound.looped`: `bool` (read/write)
-* `sound.volume`: `number` (read/write)
-* `sound.play()`: Method to start audio playback
-* `sound.stop()`: Method to stop audio playback
-* `sound.pause()`: Method to pause audio playback
+* `playing`
+* `looped`
+* `volume`
+
+Supported methods:
+
+* `play()`
+* `stop()`
+* `pause()`
 
 ---
 
-# 21. Script Control & Automated Test APIs
+# 20. Script Control
 
-### `script.enable(path)` / `script.disable(path)` / `script.is_enabled(path)`
+## `script.enable(path)`
 
-Enables, disables, or queries active status of a script by file path.
+Enables script execution for a script path.
 
-```aeoscript
-script.disable("scripts/traps.aeo")
-```
+## `script.disable(path)`
 
-### `test.complete(name, passed)` / `test.is_completed(name)` / `test.passed(name)` / `test.summary()`
+Disables script execution for a script path and cancels active fibers associated with that script.
 
-In-game automated unit testing framework. `test.summary()` returns `[passed_count, failed_count, total_count]`.
+## `script.is_enabled(path)`
+
+Returns the current enabled state.
+
+This is runtime script execution control, not deletion of the underlying source file or authored script binding.
 
 ---
 
-# 22. Hierarchy & Navigation API Stubs
+# 21. Events
 
-* `object:get_children()`: Currently returns `[]` (empty basket placeholder).
-* `object:get_parent()`: Currently returns `nil` (placeholder).
-* `cell:getObject()`: Looks up bound runtime Entity or Audio handle associated with an authored Cell ID. Returns `Entity` handle or `nil`.
+## `event.fire(name, ...)`
 
+Dispatches an engine/script event with the supplied arguments.
+
+Event handlers can respond through `on` declarations.
+
+---
+
+# 22. Automated Test API
+
+## `test.complete(name, passed)`
+
+Completes a named in-game test.
+
+## `test.is_completed(name)`
+
+Returns whether the named test has completed.
+
+## `test.passed(name)`
+
+Returns whether the named test passed.
+
+## `test.summary()`
+
+Returns:
+
+```text
+[passed_count, failed_count, total_count]
+```
+
+---
+
+# 23. Current API Boundary
+
+The API intentionally does not expose arbitrary access to internal Rust state.
+
+Not every engine subsystem is exposed directly to AeoScript.
+
+The preferred direction is:
+
+```text
+AeoScript intent
+      ↓
+Small host API
+      ↓
+Owning engine subsystem
+```
+
+New APIs should be added when a concrete gameplay workflow requires them.
+
+The language should avoid exposing implementation-only architecture through script syntax.

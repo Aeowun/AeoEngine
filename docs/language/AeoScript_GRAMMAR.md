@@ -1,42 +1,57 @@
 ﻿# AeoScript Grammar
 
+This document describes the syntax currently accepted by the AeoScript parser.
+
+Grammar acceptance does not automatically imply that the referenced runtime API exists. Runtime names, properties, methods, and engine handles are resolved separately.
+
 ---
 
 # 1. Source Structure
 
-An AeoScript source file is a sequence of top-level declarations.
+An AeoScript source file contains top-level declarations and executable statements.
 
 ```text
 program:
-    declaration*
+    top_level_item*
 
-declaration:
-      entity_declaration
-    | function_declaration
-    | import_declaration
-    | event_declaration
+top_level_item:
+      declaration
+    | statement
 ```
 
-### Entity Declaration
+Declarations include:
+
+```text
+entity
+fn
+on
+import
+```
+
+---
+
+# 2. Entity Declarations
 
 ```text
 entity_declaration:
     "entity" identifier "{" entity_member* "}"
 ```
 
-An entity contains authored fields and functions.
+Example:
 
 ```aeoscript
 entity Door {
     open: bool = false
 
-    fn update(dt: number) {
+    fn update(dt) {
         ...
     }
 }
 ```
 
-### Entity Members
+---
+
+# 3. Entity Members
 
 ```text
 entity_member:
@@ -44,14 +59,16 @@ entity_member:
     | function_declaration
 ```
 
-### Field Declaration
+---
+
+# 4. Fields
+
+Fields may include a type annotation, initializer, or both.
 
 ```text
 field_declaration:
     identifier type_annotation? initializer?
 ```
-
-A field must provide either a type annotation, an initializer, or both.
 
 Examples:
 
@@ -61,48 +78,20 @@ name: string
 enabled = true
 ```
 
-### Function Declaration
+---
 
-Functions may exist at the top level or inside an entity.
+# 5. Functions
 
 ```text
 function_declaration:
     "fn" identifier "(" parameter_list? ")" return_type? block
 ```
 
-Examples:
+Functions may exist at the top level or inside an entity.
 
-```aeoscript
-fn double(value: number): number {
-    return value * 2
-}
-```
+---
 
-and:
-
-```aeoscript
-entity Player {
-    fn move_to_origin() {
-        ...
-    }
-}
-```
-
-### Import Declaration
-
-```text
-import_declaration:
-    "import" identifier ("." identifier)*
-```
-
-Example:
-
-```aeoscript
-import game
-import game.physics
-```
-
-### Event Declaration
+# 6. Events
 
 ```text
 event_declaration:
@@ -112,16 +101,27 @@ event_declaration:
 Example:
 
 ```aeoscript
-on PlayerSpawned(player: Entity) {
-    ...
+on PlayerSpawned(player) {
+    debug.log(player)
 }
 ```
 
 ---
 
-# 2. Parameters and Return Types
+# 7. Imports
 
-### Parameter List
+The parser supports import declarations.
+
+```text
+import_declaration:
+    "import" identifier ("." identifier)*
+```
+
+Import/runtime availability depends on the current language/runtime implementation.
+
+---
+
+# 8. Parameters
 
 ```text
 parameter_list:
@@ -135,11 +135,12 @@ Example:
 
 ```aeoscript
 fn move(speed: number, grounded: bool) {
-    ...
 }
 ```
 
-### Return Type
+---
+
+# 9. Return Types
 
 ```text
 return_type:
@@ -154,11 +155,11 @@ fn add(a: number, b: number): number {
 }
 ```
 
-Functions may omit a return type.
-
 ---
 
-# 3. Statements
+# 10. Statements
+
+Supported statement forms include:
 
 ```text
 statement:
@@ -171,15 +172,15 @@ statement:
     | expression_statement
 ```
 
-### Variable Declaration
+---
+
+# 11. Variables
 
 ```text
 variable_declaration:
       "const" identifier type_annotation? initializer
     | identifier type_annotation? initializer?
 ```
-
-A variable must provide either a type annotation or an initializer.
 
 Examples:
 
@@ -189,14 +190,11 @@ value: number = 5
 name = "Ghost"
 ```
 
-### Assignment
+---
 
-```text
-assignment_statement:
-    expression assignment_operator expression
-```
+# 12. Assignment
 
-Supported assignment operators:
+Supported assignment operators include:
 
 ```text
 =
@@ -214,18 +212,11 @@ health += 5
 velocity *= 0.5
 ```
 
-Assignment targets may be variables, members, or indexed collection values where supported by the runtime.
+Assignment targets may include variables, properties, and indexed collection values where supported.
 
-Examples:
+---
 
-```aeoscript
-health = 100
-cell.visible = false
-items[0] = "Sword"
-values["name"] = "Door"
-```
-
-### `if`
+# 13. `if`
 
 ```text
 if_statement:
@@ -234,51 +225,29 @@ if_statement:
     ("else" block)?
 ```
 
-Example:
+---
 
-```aeoscript
-if health <= 0 {
-    dead = true
-} else if health < 25 {
-    warning = true
-} else {
-    warning = false
-}
-```
-
-### `while`
+# 14. `while`
 
 ```text
 while_statement:
     "while" expression block
 ```
 
-Example:
+---
 
-```aeoscript
-while active {
-    update_logic()
-}
-```
-
-### `for`
+# 15. `for`
 
 ```text
 for_statement:
     "for" identifier "in" expression block
 ```
 
-Example:
+Baskets are the primary sequence collection used by the current runtime.
 
-```aeoscript
-for block in blocks {
-    block.visible = true
-}
-```
+---
 
-The iterable expression is evaluated by the runtime. Baskets are the primary sequence collection used by the current language.
-
-### `return`
+# 16. `return`
 
 ```text
 return_statement:
@@ -295,25 +264,31 @@ return
 return health
 ```
 
-### Expression Statement
-
-```text
-expression_statement:
-    expression
-```
-
-Expressions may be used as standalone statements for function calls, method calls, and other side effects.
-
 ---
 
-# 4. Expressions
+# 17. Expressions
 
 ```text
 expression:
     logical_or_expression
 ```
 
-### Primary Expressions
+Expressions support:
+
+* Literals.
+* Variables.
+* Function calls.
+* Member access.
+* Method calls.
+* Indexing.
+* Unary operators.
+* Binary operators.
+* Anonymous functions.
+* Parenthesized expressions.
+
+---
+
+# 18. Primary Expressions
 
 ```text
 primary:
@@ -326,13 +301,30 @@ primary:
     | map_literal
     | anonymous_function
     | "(" expression ")"
+```
 
+---
+
+# 19. Anonymous Functions
+
+```text
 anonymous_function:
     "fn" "(" parameter_list? ")" return_type? block
 ```
+
+Example:
+
+```aeoscript
+const callback = fn(value) {
+    return value * 2
+}
 ```
 
-### Basket Literals
+Anonymous functions can become closures by capturing surrounding lexical state.
+
+---
+
+# 20. Basket Literals
 
 ```text
 basket_literal:
@@ -349,13 +341,9 @@ Examples:
 [1, 2, 3]
 ```
 
-```aeoscript
-["red", "green", "blue"]
-```
+---
 
-Baskets are zero-indexed collections.
-
-### Map Literals
+# 21. Map Literals
 
 ```text
 map_literal:
@@ -372,42 +360,16 @@ map_key:
     | identifier
 ```
 
-Examples:
-
-```aeoscript
-{}
-```
-
-```aeoscript
-{
-    name: "Ghost",
-    health: 100
-}
-```
-
-```aeoscript
-{
-    1: "numeric key",
-    "1": "string key"
-}
-```
-
 Identifier map keys are treated as string keys.
 
 ---
 
-# 5. Postfix Expressions
-
-Postfix operations may be chained.
+# 22. Postfix Expressions
 
 ```text
 postfix_expression:
     primary postfix*
-```
 
-Supported postfix operations:
-
-```text
 postfix:
       call
     | member_access
@@ -415,7 +377,9 @@ postfix:
     | index
 ```
 
-### Function Call
+---
+
+# 23. Function Calls
 
 ```text
 call:
@@ -428,7 +392,9 @@ Example:
 move_player(10)
 ```
 
-### Member Access
+---
+
+# 24. Member Access
 
 ```text
 member_access:
@@ -441,7 +407,9 @@ Example:
 cell.visible
 ```
 
-### Method Call
+---
+
+# 25. Method Calls
 
 ```text
 method_call:
@@ -451,10 +419,14 @@ method_call:
 Example:
 
 ```aeoscript
-entity:set_position(0, 1, 0)
+items.insert(0, value)
 ```
 
-### Indexing
+Method-style calls may be routed through engine-supported runtime methods.
+
+---
+
+# 26. Indexing
 
 ```text
 index:
@@ -469,44 +441,18 @@ values["name"]
 values[id]
 ```
 
-### Chaining
-
-Postfix operations can be combined:
-
-```aeoscript
-items[0].name
-```
-
-```aeoscript
-blocks.find(target)
-```
-
-```aeoscript
-objects[0]:translate(1, 0, 0)
-```
-
 ---
 
-# 6. Arguments
+# 27. Arguments
 
 ```text
 argument_list:
     expression ("," expression)*
 ```
 
-Examples:
-
-```aeoscript
-math.max(a, b)
-```
-
-```aeoscript
-basket.insert(items, 0, value)
-```
-
 ---
 
-# 7. Unary Operators
+# 28. Unary Operators
 
 ```text
 unary_expression:
@@ -515,23 +461,18 @@ unary_expression:
     | postfix_expression
 ```
 
-### Logical NOT
+Supported unary operators:
 
-```aeoscript
-!enabled
-```
-
-### Numeric Negation
-
-```aeoscript
--speed
+```text
+!
+-
 ```
 
 ---
 
-# 8. Binary Operators
+# 29. Binary Operators
 
-### Multiplicative
+Multiplicative:
 
 ```text
 *
@@ -539,16 +480,14 @@ unary_expression:
 %
 ```
 
-### Additive
+Additive:
 
 ```text
 +
 -
 ```
 
-`+` supports numeric addition and string concatenation where the runtime types are compatible.
-
-### Relational
+Relational:
 
 ```text
 <
@@ -557,14 +496,14 @@ unary_expression:
 >=
 ```
 
-### Equality
+Equality:
 
 ```text
 ==
 !=
 ```
 
-### Logical
+Logical:
 
 ```text
 &&
@@ -573,19 +512,19 @@ unary_expression:
 
 ---
 
-# 9. Operator Precedence
+# 30. Operator Precedence
 
-Operators are evaluated from highest precedence to lowest precedence:
+From highest to lowest:
 
 ```text
-1. Call, Member, Method, Index
-2. Unary (!, -)
-3. Multiplicative (*, /, %)
-4. Additive (+, -)
-5. Relational (<, >, <=, >=)
-6. Equality (==, !=)
-7. Logical AND (&&)
-8. Logical OR (||)
+1. Call / Member / Method / Index
+2. Unary
+3. Multiplicative
+4. Additive
+5. Relational
+6. Equality
+7. Logical AND
+8. Logical OR
 ```
 
 Example:
@@ -594,32 +533,20 @@ Example:
 const result = a + b * c
 ```
 
-is evaluated as:
+is equivalent to:
 
 ```text
 a + (b * c)
 ```
 
-Parentheses can be used to explicitly control grouping:
-
-```aeoscript
-const result = (a + b) * c
-```
-
 ---
 
-# 10. Types
-
-Type annotations use a colon:
+# 31. Types
 
 ```text
 type_annotation:
     ":" type
-```
 
-The parser accepts named types and optional forms:
-
-```text
 type:
     identifier
     | identifier "?"
@@ -629,180 +556,121 @@ Examples:
 
 ```aeoscript
 health: number
-name: string
 target: Entity
-cell: Cell
 value: number?
 ```
 
-The language's current runtime vocabulary includes:
+The parser accepts named types as syntax.
 
-```text
-number
-bool
-string
-nil
-basket
-map
-Cell
-Entity
-```
-
-Engine and runtime types may expand as AeoScript gains additional capabilities.
+The runtime determines whether the referenced type is actually supported.
 
 ---
 
-# 11. Optional Types
+# 32. Literals
 
-A type may be marked optional using `?`.
-
-```aeoscript
-target: Entity?
-```
-
-This expresses that the value may be absent (`nil`) as well as containing the specified type.
-
----
-
-# 12. Literals
-
-### Number
-
-Numbers are represented as 64-bit floating-point values.
-
-Examples:
+Number:
 
 ```aeoscript
-0
 42
 3.14
--10
 ```
 
-### String
-
-Strings are UTF-8 Unicode text.
-
-Examples:
+String:
 
 ```aeoscript
 "Hello"
-"Ghost"
-"é"
 ```
 
-### Boolean
+Boolean:
 
 ```aeoscript
 true
 false
 ```
 
-### Nil
+Nil:
 
 ```aeoscript
 nil
 ```
 
-### Basket
+Basket:
 
 ```aeoscript
 [1, 2, 3]
 ```
 
-### Map
+Map:
 
 ```aeoscript
 {
-    name: "Ghost",
-    health: 100
+    name: "Ghost"
 }
 ```
 
 ---
 
-# 13. Line Termination
+# 33. Statement Termination
 
-AeoScript uses newlines to terminate statements.
+AeoScript uses newline and block structure for statement termination.
 
-Example:
-
-```aeoscript
-health = 100
-visible = true
-```
-
-Statements inside blocks are separated by line termination and block boundaries.
-
-The current grammar does not require semicolons.
+Semicolons are not required by the current syntax.
 
 ---
 
-# 14. Comments
+# 34. Comments
 
-Comments are ignored by the parser and may be placed alongside source statements where supported by the lexer.
-
-Example:
+Line comments use:
 
 ```aeoscript
-// Update the player's health
-health -= damage
+// comment
 ```
+
+Comments are ignored by the parser.
 
 ---
 
-# 15. Scope and Execution
+# 35. Scope and Execution
 
-Variables declared inside functions belong to the current function execution.
+Function locals belong to the current execution scope.
 
-Entity fields belong to the persistent script instance.
+Entity fields belong to the script instance.
 
-AeoScript fibers preserve active execution state across `wait()` operations, including:
+Fiber execution state preserves:
 
-* Function call stack
-* Local variables
-* Loop state
-* Instruction position
-* Pending wait state
+* Call frames.
+* Local scopes.
+* Loop state.
+* Instruction position.
+* Wait state.
 
-This allows code such as:
-
-```aeoscript
-fn delayed_damage(amount: number) {
-    const delay = 0.5
-
-    wait(delay)
-
-    health -= amount
-}
-```
-
-to resume inside the same function with its local state intact.
+This is what allows nested functions and loops to continue after `wait()`.
 
 ---
 
-# 16. Current Grammar Boundaries
+# 36. Syntax vs Runtime
 
-The grammar describes syntax accepted by the parser. Runtime availability of a type, namespace member, property, or method is determined separately by the interpreter and engine API.
+A parsed construct still has to resolve at runtime.
 
-In particular:
-
-* Syntax for a named type does not automatically create a runtime type.
-* A parsed function call must still resolve to a valid runtime function.
-* A parsed member access must still resolve to a valid runtime property.
-* A parsed method call must still resolve to a valid runtime method.
-* Collection indexing must obey the runtime's basket and map semantics.
-
-The language therefore has a distinction between:
+The overall path is:
 
 ```text
-Syntax
-  ↓
+Source
+ ↓
+Lexer
+ ↓
 Parser
-  ↓
+ ↓
 AST
-  ↓
+ ↓
 Runtime resolution
 ```
 
-A construct being grammatically valid does not by itself guarantee that the referenced runtime API exists.
+Therefore:
+
+* A syntactically valid property may not be a supported engine property.
+* A syntactically valid method may not exist.
+* A named type may not be backed by a runtime value.
+* A parsed function call may still produce a runtime error.
+
+The grammar defines syntax. The API and runtime define behavior.

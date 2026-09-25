@@ -1,14 +1,14 @@
 ﻿# AeoScript Examples
 
-This document contains small examples built from the currently implemented AeoScript language and engine API.
+These examples demonstrate currently supported AeoScript language and engine APIs.
 
-The examples focus on patterns already supported by the runtime rather than future APIs.
+They are intended as small reference examples rather than a complete gameplay tutorial.
 
 ---
 
-# 1. Simple State
+# 1. Persistent Script State
 
-~~~aeoscript
+```aeoscript
 entity Counter {
     count: number = 0
 
@@ -16,69 +16,86 @@ entity Counter {
         count += 1
     }
 }
-~~~
+```
 
 The `count` field persists across update executions.
 
 ---
 
-# 2. Runtime Cell Visibility
+# 2. Find by Identity
 
-~~~aeoscript
-entity Controller {
+```aeoscript
+entity Hider {
     fn update(dt) {
-        const blocks = find("Target")
+        const targets = find("Target")
 
-        for block in blocks {
-            block.visible = false
+        for target in targets {
+            target.visible = false
         }
     }
 }
-~~~
+```
 
-The visibility change is a runtime override. It does not rewrite the authored World value.
+Names are not unique, so `find()` may return multiple objects.
 
 ---
 
-# 3. Changing Block Color
+# 3. Cell IDs
 
-~~~aeoscript
-entity ColorController {
+```aeoscript
+entity Inspector {
     fn update(dt) {
-        const blocks = find("RedTarget")
+        const targets = find("Target")
 
-        for block in blocks {
-            block.color = [1, 0, 0]
+        for target in targets {
+            debug.log("ID:", target.id)
+            debug.log("Name:", target.name)
         }
     }
 }
-~~~
+```
+
+The ID identifies one specific Cell instance.
 
 ---
 
-# 4. Working with IDs
+# 4. Cell Attributes
 
-~~~aeoscript
-entity Inspect {
+```aeoscript
+entity Door {
+    open: bool = false
+
     fn update(dt) {
-        const blocks = find("Target")
-
-        for block in blocks {
-            debug.log("Cell ID:", block.id)
-            debug.log("Name:", block.name)
+        if open {
+            self_cell.attributes["state"] = "open"
         }
     }
 }
-~~~
+```
 
-The ID identifies the specific Cell instance. The name is human-readable and may not be unique.
+Runtime attribute writes are temporary overrides.
 
 ---
 
-# 5. Basket Aliasing
+# 5. Baskets
 
-~~~aeoscript
-fn example() {
+```aeoscript
+fn inventory() {
+    const items = ["Sword", "Potion", "Key"]
+
+    items.insert(0, "Map")
+    items.sort()
+
+    debug.log(items)
+}
+```
+
+---
+
+# 6. Basket Aliasing
+
+```aeoscript
+fn aliasing() {
     const items = [1, 2, 3]
     const alias = items
 
@@ -86,16 +103,16 @@ fn example() {
 
     debug.log(items[0])
 }
-~~~
+```
 
-Both variables refer to the same basket.
+The two variables reference the same basket.
 
 ---
 
-# 6. Basket Cloning
+# 7. Basket Cloning
 
-~~~aeoscript
-fn example() {
+```aeoscript
+fn cloning() {
     const original = [1, 2, 3]
     const copy = basket.clone(original)
 
@@ -104,96 +121,60 @@ fn example() {
     debug.log(original[0])
     debug.log(copy[0])
 }
-~~~
+```
 
-The outer baskets are distinct.
-
----
-
-# 7. Basket Utilities
-
-~~~aeoscript
-fn inventory() {
-    items: basket = ["Sword", "Potion", "Key"]
-
-    items.sort()
-    items.insert(0, "Map")
-
-    const index = items.find("Potion")
-
-    debug.log("Potion index:", index)
-}
-~~~
+The outer baskets are separate.
 
 ---
 
 # 8. Maps
 
-~~~aeoscript
-fn stats_example() {
-    const stats = {}
+```aeoscript
+fn stats() {
+    const values = {}
 
-    stats["health"] = 100
-    stats["score"] = 250
-    stats[1] = "numeric key"
+    values["health"] = 100
+    values["score"] = 250
+    values[1] = "numeric"
 
-    debug.log(stats["health"])
-    debug.log(stats[1])
+    debug.log(values["health"])
+    debug.log(values[1])
 }
-~~~
-
-Map keys are not positional indexes.
+```
 
 ---
 
-# 9. Missing Map Key
+# 9. Missing Map Values
 
-~~~aeoscript
-fn lookup_example() {
+```aeoscript
+fn lookup() {
     const values = {}
 
     if values["missing"] == nil {
-        debug.log("No value exists")
+        debug.log("No value")
     }
 }
-~~~
-
-Reading a missing key produces `nil`.
+```
 
 ---
 
-# 10. Map Key Deletion
+# 10. Math
 
-~~~aeoscript
-fn remove_example() {
-    const values = {}
-
-    values["name"] = "Ghost"
-    values["name"] = nil
-}
-~~~
-
-Assigning `nil` removes the map entry.
-
----
-
-# 11. Math
-
-~~~aeoscript
-fn math_example(value: number): number {
+```aeoscript
+fn calculate(value: number): number {
     const clamped = math.clamp(value, 0, 100)
     const radians = math.deg_to_rad(90)
 
     return math.sin(radians) * clamped
 }
-~~~
+```
 
 ---
 
-# 12. Unicode Strings
+# 11. Unicode Strings
 
-~~~aeoscript
-fn string_example() {
+```aeoscript
+fn text_example() {
     const text = "é"
 
     debug.log(string.len(text))
@@ -201,15 +182,31 @@ fn string_example() {
     const characters = string.split(text)
     debug.log(characters[0])
 }
-~~~
+```
 
-String operations use Unicode scalar values rather than treating each UTF-8 byte as a character.
+String functions operate on Unicode scalar values.
+
+---
+
+# 12. Runtime Color
+
+```aeoscript
+entity ColorController {
+    fn update(dt) {
+        const targets = find("RedTarget")
+
+        for target in targets {
+            target.color = [1, 0, 0]
+        }
+    }
+}
+```
 
 ---
 
 # 13. Runtime Offset
 
-~~~aeoscript
+```aeoscript
 entity PlatformController {
     fn update(dt) {
         const platforms = find("Platform")
@@ -219,37 +216,35 @@ entity PlatformController {
         }
     }
 }
-~~~
-
-The visual offset is a runtime override.
+```
 
 ---
 
-# 14. Delayed Action
+# 14. Waiting
 
-~~~aeoscript
+```aeoscript
 entity DelayedAction {
     triggered: bool = false
 
     fn update(dt) {
         if triggered == false {
             triggered = true
+
             wait(1.0)
+
             debug.log("One second elapsed")
         }
     }
 }
-~~~
+```
 
-The script field prevents another delayed action from starting every frame.
-
-The fiber itself remains suspended during the wait.
+The same fiber resumes after the wait.
 
 ---
 
-# 15. Nested Wait
+# 15. Nested Waiting
 
-~~~aeoscript
+```aeoscript
 entity NestedExample {
     finished: bool = false
 
@@ -268,15 +263,15 @@ entity NestedExample {
         }
     }
 }
-~~~
+```
 
-The local `step` survives the wait because it belongs to the active fiber call frame.
+The nested call frame survives the wait.
 
 ---
 
-# 16. Loop with Wait
+# 16. Loop with `wait()`
 
-~~~aeoscript
+```aeoscript
 entity Sequence {
     running: bool = false
     total: number = 0
@@ -293,15 +288,13 @@ entity Sequence {
         running = false
     }
 }
-~~~
-
-The loop resumes from the correct iteration after each wait.
+```
 
 ---
 
-# 17. Finding All Blocks
+# 17. Query by Class
 
-~~~aeoscript
+```aeoscript
 entity BlockInspector {
     fn update(dt) {
         const blocks = getAllCellsOfClass("Block")
@@ -309,150 +302,92 @@ entity BlockInspector {
         debug.log("Block count:", blocks.len())
     }
 }
-~~~
+```
 
 ---
 
-# 18. Runtime Property Restoration Pattern
+# 18. Runtime Cell Creation
 
-Runtime overrides normally disappear when Play mode stops. During a running game, a script can still preserve the original runtime values when it needs temporary behavior:
-
-~~~aeoscript
-entity TemporaryVisibility {
-    active: bool = false
-
-    fn hide_target() {
-        const matches = find("Target")
-
-        for target in matches {
-            target.visible = false
-        }
-
-        wait(1.0)
-
-        for target in matches {
-            target.visible = true
-        }
-    }
-}
-~~~
-
-For persistent authored changes, use the editor rather than relying on runtime overrides.
-
----
-
-# 19. Debugging with `debug.log`
-
-Structured script output can make gameplay debugging easier:
-
-~~~aeoscript
-debug.log("Started")
-debug.log("Health:", health)
-debug.log("Target ID:", target.id)
-~~~
-
-Runtime diagnostics are shown through the engine's script output system.
-
----
-
-# 20. Example Design Principle
-
-The best current AeoScript pattern is to combine persistent entity fields with short runtime operations and explicit waits:
-
-~~~text
-Entity fields
-      ↓
-Gameplay decision
-      ↓
-Engine handle access
-      ↓
-Runtime modification
-      ↓
-wait()
-      ↓
-Same fiber resumes
-~~~
-
-This keeps gameplay logic readable while using the engine's runtime state model correctly.
-
----
-
-# 21. Contact Events
-
-Use `on_touch(cell)` to react when the player makes contact with an object.
-
-~~~aeoscript
-entity Lava {
-    fn on_touch(player_char) {
-        debug.log("Player touched lava!")
-    }
-}
-~~~
-
-The `cell` parameter provides a handle to the object being touched.
-
----
-
-# 22. Dynamic Spawning
-
-Use the `cell` namespace to manage objects at runtime.
-
-~~~aeoscript
+```aeoscript
 fn spawn_collectible(x, y, z) {
     const star = cell.new("Block")
+
     star.position = [x, y, z]
     star.color = [1, 1, 0]
     star.attributes["type"] = "collectible"
 }
-~~~
+```
+
+The Cell exists only during runtime.
 
 ---
 
-# 23. The "Manager" Pattern (The Roblox Way)
+# 19. Direct Cell Lookup
 
-Rather than attaching scripts to every individual object in the editor, you can use a single script to manage multiple objects by their IDs.
+```aeoscript
+const door = cell.get(1001)
 
-~~~aeoscript
-// Manager Script
-const door1 = cell.get(10552341)
-const door2 = cell.get(10552342)
-
-const onTouchDoor = fn(c) {
-    debug.log("Door touched by:", c.name)
-    self.visible = false
-    self.solid = false
-    wait(1)
-    self.visible = true
-    self.solid = true
+if door {
+    door.visible = false
 }
+```
 
-if door1 { door1.on_touch = onTouchDoor }
-if door2 { door2.on_touch = onTouchDoor }
-~~~
+The persistent ID identifies a specific authored or current runtime Cell.
 
 ---
 
-# 24. Runtime UI HUD and Closure Callbacks
+# 20. Contact Event
 
-~~~aeoscript
+```aeoscript
+entity Lava {
+    fn on_touch(other) {
+        debug.log("Contact:", other.name)
+    }
+}
+```
+
+The Cell's collision-event setting controls whether relevant contact events are dispatched.
+
+---
+
+# 21. Overlap Event
+
+```aeoscript
+entity Region {
+    fn on_overlap(overlapping, cell) {
+        if overlapping {
+            debug.log("Entered region")
+        } else {
+            debug.log("Left region")
+        }
+    }
+}
+```
+
+---
+
+# 22. Runtime UI
+
+```aeoscript
 const panel = ui.new("Panel")
 panel.size = [200, 60]
 
-const health_text = ui.new("Text")
-health_text.text = "HEALTH: 100"
+const health = ui.new("Text")
+health.text = "HEALTH: 100"
 
-const btn = ui.new("Button")
-btn.text = "Heal"
-btn.on_click = fn() {
-    event.fire("on_heal", 25)
+const button = ui.new("Button")
+button.text = "Heal"
+
+button.on_click = fn() {
+    debug.log("Heal clicked")
 }
-~~~
+```
 
 ---
 
-# 25. Input-Driven Locomotion and Animation
+# 23. Input and Player Movement
 
-~~~aeoscript
+```aeoscript
 const move = input.get_move_vector()
 const basis = camera.get_horizontal_basis()
 
@@ -464,37 +399,119 @@ const move_z = forward[2] * move[1] + right[2] * move[0]
 
 if math.sqrt(move_x * move_x + move_z * move_z) > 0.001 {
     player.set_horizontal_velocity(move_x * 5.0, move_z * 5.0)
+    player.set_facing_direction(move_x, move_z)
     player.select_animation("Walk")
 } else {
     player.set_horizontal_velocity(0.0, 0.0)
     player.select_animation("Idle")
 }
-~~~
+```
 
 ---
 
-# 26. Audio Emitter Control
+# 24. Camera Control
 
-~~~aeoscript
-const sound = find("DoorSound")[0]
+```aeoscript
+const basis = camera.get_horizontal_basis()
+const forward = basis[0]
 
-on door_open() {
-    sound.sound.play()
+const target = player.position
+
+camera.set_target(
+    target[0] + forward[0],
+    target[1],
+    target[2] + forward[2]
+)
+```
+
+---
+
+# 25. Audio
+
+```aeoscript
+const speaker = find("DoorSound")[0]
+
+speaker.sound.play()
+```
+
+Delayed audio can use the same fiber model:
+
+```aeoscript
+fn open_door_sound() {
+    speaker.sound.play()
+
     wait(1.0)
-    sound.sound.stop()
+
+    speaker.sound.stop()
 }
-~~~
+```
 
 ---
 
-# 27. Overlap Events and Test Completion
+# 26. Script Control
 
-~~~aeoscript
-on_overlap = fn(overlapping, cell) {
-    if overlapping {
-        debug.log("Character entered region!")
-        test.complete("region_entry_test", true)
+```aeoscript
+script.disable("scripts/traps.aeo")
+
+wait(2.0)
+
+script.enable("scripts/traps.aeo")
+```
+
+This controls runtime execution of the script.
+
+---
+
+# 27. Closure Callback
+
+```aeoscript
+const multiplier = 2
+
+const multiply = fn(value) {
+    return value * multiplier
+}
+
+debug.log(multiply(10))
+```
+
+The closure retains access to `multiplier`.
+
+---
+
+# 28. Runtime Test
+
+```aeoscript
+fn verify_cell() {
+    const blocks = getAllCellsOfClass("Block")
+
+    if blocks.len() > 0 {
+        test.complete("block_exists", true)
+    } else {
+        test.complete("block_exists", false)
     }
 }
-~~~
+```
 
+The `test` API is intended for the in-game AeoScript integration test suite.
+
+---
+
+# 29. Gameplay Pattern
+
+A common runtime pattern is:
+
+```text
+Persistent script field
+      ↓
+Gameplay decision
+      ↓
+Engine handle
+      ↓
+Runtime change
+      ↓
+wait()
+      ↓
+Same fiber resumes
+```
+
+This keeps gameplay state explicit while allowing long-running actions to suspend without losing their execution state.

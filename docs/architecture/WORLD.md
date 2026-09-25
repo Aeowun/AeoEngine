@@ -1,51 +1,96 @@
 ﻿# World Architecture
 
-The `World` is AeoEngine's authoritative query surface for authored scene data.
+The `World` is the authoritative representation of authored scene data used by the editor and runtime.
 
-It stores authored Cells on a 3D integer grid and also owns the temporary runtime overrides required while Play mode is running.
+It stores authored Cells on a 3D integer grid and maintains the temporary runtime state required while Play mode is active.
+
+The World owns scene data. It does not own rendering, physics simulation, or script execution.
 
 ---
 
-# 1. World Storage
+# 1. World Representation
 
-Authored Cells are stored on disk in 16³ chunks. `World.cells` is the bounded
-resident cache used by editor, renderer, physics, and gameplay queries.
+The World contains authored Cells keyed by `WorldCoord`.
+
+The resident in-memory representation is sparse:
 
 ~~~text
 World
-├── global metadata
-├── resident cells
+├── authored Cells
 │   └── WorldCoord → Cell
-└── WorldStreamer
-    └── chunks/ChunkCoord → chunk file
+├── runtime Cell state
+├── Cell-ID indexes
+├── spatial indexes
+└── World settings
 ~~~
 
-The resident cache is sparse. Empty coordinates do not need to be stored.
+Empty coordinates do not need to be stored as Cells.
 
-`WorldStreamer` uses a Chebyshev-distance policy centered on the editor or
-gameplay camera: chunks within 4 are resident, chunks within 5 are prefetched,
-and chunks beyond 7 are saved (when dirty) and evicted. Runtime-created cells
-are intentionally separate and are never persisted or evicted as authored data.
+Persistent storage divides authored Cells into 16×16×16 spatial chunks.
+
+```text
+WorldCoord
+    ↓
+ChunkCoord
+    ↓
+StoredChunk
+```
+
+The chunk representation is a persistence structure. It is separate from the renderer's chunk mesh representation.
 
 ---
 
 # 2. World Coordinates
 
-A `WorldCoord` identifies an authored grid position using integer coordinates:
+`WorldCoord` identifies an authored grid position using integer coordinates.
 
-~~~text
+```text
 (x, y, z)
-~~~
+```
 
-The coordinate is the authored placement of a Cell. Runtime physics can use continuous positions independently of this authored coordinate.
+The coordinate represents the authored placement of a Cell.
+
+Runtime systems may use continuous positions independently of the authored grid coordinate.
+
+For example, a dynamic PhysicsBody can move continuously while the authored Cell remains at its original World coordinate.
 
 ---
 
-# 3. Cells
+# 3. Chunk Coordinates
+
+A `ChunkCoord` identifies a 16×16×16 region of the World.
+
+```text
+CHUNK_SIZE = 16
+```
+
+Chunk coordinates are used by:
+
+* World spatial indexing.
+* Persistent chunk storage.
+* Render chunk construction.
+* Dirty-chunk tracking.
+* World queries that operate on spatial regions.
+
+The storage system owns the on-disk chunk representation.
+
+The renderer owns its own derived GPU chunk representation.
+
+---
+
+# 4. Cells
 
 A Cell is an authored object in the World.
 
-Current authored Cell types include Blocks, Lights, SpawnPoints, Players, and NPCs.
+Current Cell types include:
+
+* Block.
+* FxBlock.
+* Player.
+* NPC.
+* Light.
+* SpawnPoint.
+* AudioEmitter.
 
 Depending on the Cell type, authored data may include:
 
@@ -57,176 +102,277 @@ Depending on the Cell type, authored data may include:
 * Anchored state.
 * Color.
 * Texture.
-* Type-specific properties.
-* Custom attributes (Number, Bool, String) exposed to AeoScript via the `attributes` property.
+* Light properties.
+* Audio properties.
+* Collision event state.
+* Custom attributes.
+* Other type-specific properties.
 
 ---
 
-# 4. Persistent Cell IDs
+# 5. Persistent Cell IDs
 
 Every authored Cell has a persistent numeric `id`.
 
-The Cell ID identifies the specific authored instance.
+The ID identifies the specific authored instance.
 
-~~~text
+```text
 Cell
-├── id              → unique instance identity
-└── entity_identity → human-readable name
-~~~
+├── id
+└── entity_identity
+```
 
-The two concepts must not be conflated.
+The two concepts are different.
 
-A name may be shared by multiple Cells. A Cell ID is used when one specific authored instance must be targeted, including script bindings.
+`id` is the stable instance identity.
+
+`entity_identity` is the human-facing name.
+
+Multiple Cells may share the same `entity_identity`.
+
+Persistent Cell IDs are used by:
+
+* Script bindings.
+* Cell lookup.
+* World ID indexes.
+* Runtime references to authored Cells.
+* Persistence.
+
+The ID is not regenerated simply because a Cell moves.
 
 ---
 
-# 5. Identity / Name
+# 6. Cell Identity and Names
 
-`entity_identity` is the authored human-readable name of a Cell.
+`entity_identity` is a human-readable authored name.
 
 For example:
 
-~~~text
-Identity: Door
-~~~
+```text
+Door
+Ghost
+Wall
+SpawnPoint
+```
 
-Multiple Cells can share that identity.
+Names are not required to be unique.
 
-Name-based lookup is therefore a search operation, not a unique-object lookup.
+A query such as:
 
-~~~aeoscript
-const doors = find("Door")
-~~~
+```aeoscript
+find("Door")
+```
 
-The result can contain multiple handles.
+may therefore return multiple Cells.
+
+Name-based lookup is a search operation.
+
+Cell-ID lookup identifies one specific authored instance.
 
 ---
 
-# 6. Runtime Cell State
+# 7. Cell Attributes
 
-The World maintains runtime state separately from authored Cell data.
+Authored Cells may contain custom attributes.
 
-~~~text
+The current attribute value types are:
+
+* Number.
+* Bool.
+* String.
+
+Example:
+
+```aeoscript
+cell.attributes["health"] = 100
+cell.attributes["locked"] = true
+cell.attributes["difficulty"] = "hard"
+```
+
+Authored attributes are part of persistent Cell data.
+
+During Play, AeoScript can create runtime attribute overrides without modifying the authored value.
+
+---
+
+# 8. Runtime Cell State
+
+Runtime state is maintained separately from authored Cell data.
+
+Conceptually:
+
+```text
 World
 ├── Authored Cells
-└── Runtime Cell State
-        └── Cell ID → overrides
-~~~
+└── Runtime State
+      └── Cell ID → temporary overrides
+```
 
-Runtime overrides can affect supported properties such as:
+Runtime state may contain temporary values for properties such as:
 
 * Visibility.
-* Color.
 * Solidity.
 * Anchored state.
-* Visual offset.
-* Runtime light state.
+* Color.
+* Offset.
+* Light state.
+* Audio playback state.
+* Runtime attributes.
+* Runtime deletion state.
 
-When an override exists, runtime access uses the override. Otherwise the authored value remains the source.
-
----
-
-# 7. Runtime State Is Temporary
-
-Runtime overrides are cleared when Play mode stops.
-
-~~~text
-Runtime overrides
-      ↓
-Play mode stops
-      ↓
-Runtime state discarded
-      ↓
-Authored values remain
-~~~
-
-This allows scripts and gameplay systems to modify the running game without silently modifying the saved scene.
+When an effective runtime value exists, runtime systems use it instead of the authored baseline.
 
 ---
 
-# 8. World-Wide Settings
+# 9. Runtime-Created Cells
 
-The World also stores scene-wide authored settings.
+AeoScript can create runtime-only Cells with:
 
-### Gravity
+```aeoscript
+cell.new("Block")
+```
 
-The World stores a gravity vector used by runtime physics.
+Runtime-created Cells are stored separately from authored Cells.
 
-The default gravity is:
+They have their own runtime IDs and coordinate indexes.
 
-~~~text
-(0, -9.81, 0)
-~~~
+They are temporary.
 
-### Lighting
-
-The World stores authored lighting configuration including global lighting, direction, color, intensity, ambient intensity, and shadow-related state.
-
-### Sky Environment
-
-The World contains a `SKY` configuration that defines the environmental background.
-
-*   **Enabled State**: Controls whether the skybox is rendered.
-*   **Asset Path**: Path to a single horizontal cross cubemap asset (4:3 aspect ratio).
-*   **Presets**: Built-in environment profiles such as `Temperate`, `Tropical`, `Desert`, `Snowy`, and `Mars`.
+They are not written into authored World chunk storage and are discarded when Play mode ends or runtime state is cleared.
 
 ---
 
-# 9. Script Bindings
+# 10. World Settings
 
-The World stores authored script bindings.
+The World contains authored scene-wide settings.
 
-Each binding associates a persistent Cell ID with an `.aeo` script path.
+Current settings include:
 
-~~~text
-Cell ID → script path
-~~~
+* Gravity.
+* Global lighting.
+* Ambient lighting.
+* Sky environment.
+* Mouse settings.
+* Selected character.
+* Selected controller.
+* Selected camera.
+* Script bindings.
+* Disabled scripts.
 
-The binding does not use the human-readable identity as its persistent target.
+These values are persistent project data.
 
 ---
 
-# 10. World and Runtime Systems
+# 11. World Indexes
+
+The World maintains indexes needed for efficient engine queries.
+
+Important indexes include:
+
+* Cell ID → World coordinate.
+* Runtime Cell ID → runtime coordinate.
+* World coordinate → runtime Cell ID.
+* Authored spatial chunk index.
+* Point-light IDs.
+* Audio-emitter IDs.
+* Editor-marker IDs.
+* Dirty authored chunks.
+* Physics-dirty Cell IDs.
+
+Indexes are derived from World state and exist to make queries and synchronization efficient.
+
+The indexes do not become separate authorities for Cell data.
+
+---
+
+# 12. World Editing
+
+Editor operations modify authored World data.
+
+Examples include:
+
+* Build.
+* Erase.
+* Delete.
+* Move.
+* Paste.
+* Property editing.
+* Attribute editing.
+* Lighting edits.
+* Script binding changes.
+* Undo.
+* Redo.
+
+These operations update the World and its relevant indexes.
+
+Runtime simulation does not automatically become an authored edit.
+
+---
+
+# 13. World and Runtime Systems
 
 The authored World feeds multiple runtime systems:
 
-~~~text
+```text
 World
  ├── Renderer
  ├── PhysicsWorld
  ├── CharacterSystem
- └── ScriptScene
-~~~
+ ├── ScriptScene
+ └── EntityManager
+```
 
-Those systems may create their own runtime representations.
+Each system creates the runtime representation it owns.
 
 For example:
 
-* PhysicsWorld creates runtime PhysicsBodies.
-* CharacterSystem creates runtime Character state.
-* ScriptScene creates ScriptInstances and fibers.
-* Renderer creates GPU resources.
+* Renderer creates render chunks and GPU resources.
+* PhysicsWorld creates runtime collision state and PhysicsBodies.
+* CharacterSystem creates runtime character state.
+* ScriptScene creates runtime script instances and fibers.
+* EntityManager owns live runtime Entities.
 
-Those derived objects do not replace the authored World.
-
----
-
-# 11. World Editing
-
-Editor operations such as Build, Erase, Delete, property editing, Undo, and Redo operate on authored World data.
-
-Runtime simulation should not silently become an authored edit.
+These representations do not replace the authored World.
 
 ---
 
-# 12. World Authority
+# 14. Authority
 
-The fundamental rule is:
+The World is authoritative for persistent scene data.
 
-~~~text
-Authored World = persistent scene truth
+The architectural boundary is:
 
-Runtime systems = temporary simulation state
-~~~
+```text
+Authored World
+      ↓
+Runtime conversion
+      ↓
+Temporary runtime state
+```
 
-Future architecture changes should preserve that distinction.
+Runtime systems may derive, override, or transform World data for simulation and rendering, but they must not silently become the persistent source of truth.
+
+---
+
+# 15. World Persistence
+
+World persistence is handled by the World storage/persistence layer.
+
+The persistent project consists of:
+
+```text
+world.dat
+chunks/
+```
+
+`world.dat` stores World-wide metadata and project-level World configuration.
+
+Individual authored chunks store the Cells belonging to each `ChunkCoord`.
+
+The persistence architecture is documented separately in:
+
+```text
+docs/architecture/PERSISTENCE.md
+```
+
+The World architecture is concerned with what the data means; the persistence layer is concerned with how that data is stored and restored.

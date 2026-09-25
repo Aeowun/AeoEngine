@@ -8,6 +8,7 @@ The engine is designed around a clear separation between **authored data** and *
 
 AeoEngine is being developed as a general-purpose foundation for building small games and interactive voxel worlds rather than as a single fixed gameplay framework.
 
+Learn more at [AEOWUN](https://aeowun.com).
 ## Contents
 
 * [What is it?](#what-is-it)
@@ -124,30 +125,31 @@ Stopping Play discards runtime state and leaves the authored World unchanged.
 
 ## Current Features
 
-| Area              | Features                                                                                      |
-| ----------------- | --------------------------------------------------------------------------------------------- |
-| World Editing     | Voxel World editing, authored Block and Light Cells, World hierarchy, multi-selection         |
-| Build Tools       | Plane and Top-Block building modes, Build, Erase, Undo, Redo                                  |
-| Selection         | Cell selection, viewport multi-selection, persistent selection outlines, camera focus         |
-| Assets            | Project-owned texture assets, imported PNG textures, runtime texture loading and caching      |
-| Environment       | World sky environment and built-in sky presets                                                |
-| Physics           | Runtime physics simulation, dynamic `PhysicsBody` instances, static collision synchronization |
-| Characters        | Character spawning, movement, collision, gravity, jumping, animation                          |
-| Camera            | Third-person gameplay camera, orbit, follow behavior, pitch limits, camera collision          |
-| Lighting          | Directional and point lighting, authored Light Cells                                          |
-| Audio             | Authored Audio Emitter Cells, WAV audio asset browser, runtime `AudioSystem` playback          |
-| Scripting         | AeoScript gameplay scripting, top-level execution, lifecycle events, persistent script state  |
-| Script Runtime    | Cooperative fibers, `wait()`, nested function calls, closures, runtime diagnostics            |
-| Script Objects    | Cell and Entity handles, persistent Cell IDs, object discovery                                |
-| Runtime World     | Authored Cell attributes, runtime property overrides, runtime Cell creation and deletion      |
-| Runtime Input     | Movement input, jump input, mouse orbit input                                                 |
-| Mouse Control     | World-authored mouse settings (`cursor_visible`, `screen_locked`), runtime mouse cursor API  |
-| Scripted Gameplay | Script-defined controllers, script-defined cameras, generic player and camera APIs            |
-| Events            | `on_touch(cell)`, per-Cell collision event control                                            |
-| Script Control    | Runtime script enable/disable                                                                 |
-| Runtime UI        | Runtime `Panel`, `Text`, and `Button` elements, properties, handles, callbacks                |
-| Tooling           | AeoScript standard library, Script Editor, runtime terminal output                            |
-| Testing           | In-game AeoScript integration testing                                                         |
+| Area              | Features                                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| World Editing     | Voxel World editing, authored Block and Light Cells, World hierarchy, multi-selection                       |
+| Build Tools       | Plane and Top-Block building modes, Build, Erase, Undo, Redo                                                 |
+| Selection         | Cell selection, viewport multi-selection, persistent selection outlines, camera focus                        |
+| Assets            | Project-owned texture assets, imported PNG textures, runtime texture loading and caching                     |
+| Environment       | World sky environment and built-in sky presets                                                               |
+| Physics           | Runtime physics simulation, dynamic `PhysicsBody` instances, static collision synchronization                |
+| Characters        | Character spawning, movement, collision, gravity, jumping, animation                                         |
+| Camera            | Third-person gameplay camera, orbit, follow behavior, pitch limits, camera collision                         |
+| Lighting          | Directional and point lighting, authored Light Cells                                                         |
+| Audio             | Authored Audio Emitter Cells, WAV audio asset browser, runtime `AudioSystem` playback                        |
+| Rendering         | Chunk-based render construction, selective chunk rebuilds, runtime mesh generation, renderer benchmarks       |
+| Scripting         | AeoScript gameplay scripting, top-level execution, lifecycle events, persistent script state                 |
+| Script Runtime    | Cooperative fibers, `wait()`, nested function calls, closures, runtime diagnostics                            |
+| Script Objects    | Cell and Entity handles, persistent Cell IDs, object discovery                                               |
+| Runtime World     | Authored Cell attributes, runtime property overrides, runtime Cell creation and deletion                     |
+| Runtime Input     | Movement input, jump input, mouse orbit input                                                                |
+| Mouse Control     | World-authored mouse settings (`cursor_visible`, `screen_locked`), runtime mouse cursor API                  |
+| Scripted Gameplay | Script-defined controllers, script-defined cameras, generic player and camera APIs                          |
+| Events            | `on_touch(cell)`, per-Cell collision event control                                                            |
+| Script Control    | Runtime script enable/disable                                                                                  |
+| Runtime UI        | Runtime `Panel`, `Text`, and `Button` elements, properties, handles, callbacks                               |
+| Tooling           | AeoScript standard library, Script Editor, runtime terminal output                                            |
+| Testing           | In-game AeoScript integration testing, renderer performance benchmarks                                        |
 
 ---
 
@@ -204,7 +206,6 @@ The Starter World provides simple working examples of:
 
 > [!NOTE]
 > The Starter World is primarily a reference and learning project. Some examples are still under active development and may have rough edges.
-
 
 The Starter World is intended to be understandable and modifiable rather than treated as a black box.
 
@@ -623,11 +624,17 @@ If the change needs to persist between sessions, it belongs in authored World da
 
 ### The game is running slowly
 
-The current voxel renderer is not yet optimized for large dense worlds.
+The renderer now uses chunk-based construction and selective rebuilding rather than rebuilding all render geometry for every localized change.
 
-Very dense Worlds can therefore become expensive.
+Localized edits can therefore rebuild only affected render chunks instead of reconstructing the complete World representation.
 
-Start with a smaller test area and avoid unnecessarily filling large regions with blocks until the planned voxel rendering improvements are available.
+However, large or dense Worlds can still become expensive, and some geometry distributions remain significantly more expensive than others.
+
+Use representative test Worlds when evaluating performance.
+
+The current renderer benchmark includes 3D cube, 2D plane, and 1D line workloads. The 1D line case currently remains a pathological workload at larger sizes and should not be treated as representative of normal voxel World construction.
+
+See [Performance](#performance) for current benchmark results and rendering details.
 
 ---
 
@@ -696,50 +703,50 @@ For a new developer, start with the **Help** section above and then move into th
 
 ## Getting Started and Guides
 
-| Document                                            | Description                                      |
-| --------------------------------------------------- | ------------------------------------------------ |
-| [Getting Started](./docs/guides/GETTING_STARTED.md) | Initial engine setup and basic workflow          |
-| [World Building](./docs/guides/WORLD_BUILDING.md)   | Creating and editing authored voxel worlds       |
+| Document | Description |
+| --------------------------------------------------- | ---------------------------------------------- |
+| [Getting Started](./docs/guides/GETTING_STARTED.md) | Initial engine setup and basic workflow |
+| [World Building](./docs/guides/WORLD_BUILDING.md) | Creating and editing authored voxel worlds |
 | [Building a Game](./docs/guides/BUILDING_A_GAME.md) | Building a complete game workflow with AeoEngine |
 
 ## AeoScript
 
-| Document                                                          | Description                                  |
+| Document | Description |
 | ----------------------------------------------------------------- | -------------------------------------------- |
-| [AeoScript Overview](./docs/language/AeoScript.md)                | Language overview and core concepts          |
-| [AeoScript API](./docs/language/AeoScript_API.md)                 | Engine-facing scripting API                  |
-| [AeoScript Grammar](./docs/language/AeoScript_GRAMMAR.md)         | Language grammar and syntax                  |
-| [AeoScript Types](./docs/language/AeoScript_TYPES.md)             | AeoScript values and runtime types           |
-| [AeoScript Handles](./docs/language/AeoScript_HANDLES.md)         | Cell, Entity, and runtime handle behavior    |
+| [AeoScript Overview](./docs/language/AeoScript.md) | Language overview and core concepts |
+| [AeoScript API](./docs/language/AeoScript_API.md) | Engine-facing scripting API |
+| [AeoScript Grammar](./docs/language/AeoScript_GRAMMAR.md) | Language grammar and syntax |
+| [AeoScript Types](./docs/language/AeoScript_TYPES.md) | AeoScript values and runtime types |
+| [AeoScript Handles](./docs/language/AeoScript_HANDLES.md) | Cell, Entity, and runtime handle behavior |
 | [AeoScript Standard Library](./docs/language/AeoScript_STDLIB.md) | `math`, `basket`, `string`, and related APIs |
-| [AeoScript Lifecycle](./docs/language/AeoScript_LIFECYCLE.md)     | Script lifecycle and runtime execution       |
-| [AeoScript Examples](./docs/language/AeoScript_EXAMPLES.md)       | AeoScript usage examples                     |
-| [AeoScript VM](./docs/language/AeoScript_VM.md)                   | Script execution and virtual-machine model   |
-| [AeoScript Editor](./docs/language/AeoScript_EDITOR.md)           | Integrated Script Editor documentation       |
+| [AeoScript Lifecycle](./docs/language/AeoScript_LIFECYCLE.md) | Script lifecycle and runtime execution |
+| [AeoScript Examples](./docs/language/AeoScript_EXAMPLES.md) | AeoScript usage examples |
+| [AeoScript VM](./docs/language/AeoScript_VM.md) | Script execution and virtual-machine model |
+| [AeoScript Editor](./docs/language/AeoScript_EDITOR.md) | Integrated Script Editor documentation |
 
 ## Architecture
 
-| Document                                             | Description                                  |
-| ---------------------------------------------------- | -------------------------------------------- |
-| [Engine Architecture](./docs/architecture/ENGINE.md) | Overall engine structure                     |
-| [World](./docs/architecture/WORLD.md)                | World representation and authored scene data |
-| [Physics](./docs/architecture/PHYSICS.md)            | Physics runtime architecture                 |
-| [Characters](./docs/architecture/CHARACTERS.md)      | Character system architecture                |
-| [Rendering](./docs/architecture/RENDERING.md)        | Rendering architecture                       |
-| [Runtime](./docs/architecture/RUNTIME.md)            | Runtime systems and Play mode                |
-| [Editor](./docs/architecture/EDITOR.md)              | Editor architecture                          |
-| [Persistence](./docs/architecture/PERSISTENCE.md)    | Authored data persistence                    |
-| [Assets](./docs/architecture/ASSETS.md)              | Project asset architecture                   |
+| Document | Description |
+| ---------------------------------------------------- | ------------------------------------------ |
+| [Engine Architecture](./docs/architecture/ENGINE.md) | Overall engine structure |
+| [World](./docs/architecture/WORLD.md) | World representation and authored scene data |
+| [Physics](./docs/architecture/PHYSICS.md) | Physics runtime architecture |
+| [Characters](./docs/architecture/CHARACTERS.md) | Character system architecture |
+| [Rendering](./docs/architecture/RENDERING.md) | Rendering architecture |
+| [Runtime](./docs/architecture/RUNTIME.md) | Runtime systems and Play mode |
+| [Editor](./docs/architecture/EDITOR.md) | Editor architecture |
+| [Persistence](./docs/architecture/PERSISTENCE.md) | Authored data persistence |
+| [Assets](./docs/architecture/ASSETS.md) | Project asset architecture |
 
 ## Development
 
-| Document                                           | Description                       |
+| Document | Description |
 | -------------------------------------------------- | --------------------------------- |
-| [Building](./docs/development/BUILDING.md)         | Development build information     |
-| [Testing](./docs/development/TESTING.md)           | Automated and integration testing |
-| [Debugging](./docs/development/DEBUGGING.md)       | Development debugging workflows   |
-| [Project Map](./docs/development/MAP.md)           | Source tree and system map        |
-| [Contributing](./docs/development/CONTRIBUTING.md) | Contribution information          |
+| [Building](./docs/development/BUILDING.md) | Development build information |
+| [Testing](./docs/development/TESTING.md) | Automated and integration testing |
+| [Debugging](./docs/development/DEBUGGING.md) | Development debugging workflows |
+| [Project Map](./docs/development/MAP.md) | Source tree and system map |
+| [Contributing](./docs/development/CONTRIBUTING.md) | Contribution information |
 
 ## Changelog
 
@@ -770,6 +777,9 @@ Current 0.7.3 work includes:
 * Script Editor improvements
 * Syntax highlighting
 * Voxel rendering optimization
+* Chunk-based renderer improvements
+* Selective render-chunk rebuilding
+* Renderer performance benchmarking
 
 ---
 
@@ -777,31 +787,31 @@ Current 0.7.3 work includes:
 
 AeoScript currently supports:
 
-| Category         | Features                                                                               |
-| ---------------- | -------------------------------------------------------------------------------------- |
-| Core Values      | Variables and constants; Numbers, strings, booleans, and `nil`                         |
-| Functions        | Functions, return values, nested function calls                                        |
-| Control Flow     | Conditionals and loops                                                                 |
-| Events           | Events and lifecycle functions                                                         |
-| Execution        | Top-level executable statements, persistent script fibers, cooperative `wait(seconds)` |
-| Closures         | Lexical closures with captured script scope                                            |
-| Collections      | Maps and reference-backed baskets                                                      |
-| Standard Library | `math`, `basket`, and `string` namespaces                                              |
-| Strings          | Unicode-aware string operations                                                        |
-| Randomness       | `math.random()` and `math.random(min, max)`                                            |
-| World Objects    | Cell and Entity handles, persistent Cell IDs                                           |
-| Discovery        | `find()` and `getAllCellsOfClass()`                                                    |
-| Cell Data        | Authored Cell attributes and runtime Cell properties                                   |
-| Runtime Cells    | Runtime Cell creation, deletion, position changes, and property changes                |
-| Runtime State    | Runtime attribute overrides and authored/runtime state separation                      |
-| Input            | Movement, jump, and mouse-orbit access                                                 |
-| Gameplay         | Script-defined controllers and cameras                                                 |
+| Category | Features |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Core Values | Variables and constants; Numbers, strings, booleans, and `nil` |
+| Functions | Functions, return values, nested function calls |
+| Control Flow | Conditionals and loops |
+| Events | Events and lifecycle functions |
+| Execution | Top-level executable statements, persistent script fibers, cooperative `wait(seconds)` |
+| Closures | Lexical closures with captured script scope |
+| Collections | Maps and reference-backed baskets |
+| Standard Library | `math`, `basket`, and `string` namespaces |
+| Strings | Unicode-aware string operations |
+| Randomness | `math.random()` and `math.random(min, max)` |
+| World Objects | Cell and Entity handles, persistent Cell IDs |
+| Discovery | `find()` and `getAllCellsOfClass()` |
+| Cell Data | Authored Cell attributes and runtime Cell properties |
+| Runtime Cells | Runtime Cell creation, deletion, position changes, and property changes |
+| Runtime State | Runtime attribute overrides and authored/runtime state separation |
+| Input | Movement, jump, and mouse-orbit access |
+| Gameplay | Script-defined controllers and cameras |
 | Collision Events | `on_touch(cell)`, `on_overlap(overlapping, cell)`, and per-Cell collision event control |
-| Script Control   | Script enable/disable                                                                  |
-| Runtime UI       | Panels, text, buttons, properties, handles, and callbacks                              |
-| Audio Emitters   | `speaker.sound.play()`, `stop()`, `pause()`, `.playing`, `.looped`, `.volume` access    |
-| Diagnostics      | Structured runtime diagnostics and terminal output                                     |
-| Editor           | Script Editor integration                                                              |
+| Script Control | Script enable/disable |
+| Runtime UI | Panels, text, buttons, properties, handles, and callbacks |
+| Audio Emitters | `speaker.sound.play()`, `stop()`, `pause()`, `.playing`, `.looped`, `.volume` access |
+| Diagnostics | Structured runtime diagnostics and terminal output |
+| Editor | Script Editor integration |
 
 Script bindings target the unique persistent `Cell.id` of an authored World Cell.
 
@@ -848,32 +858,77 @@ Several systems currently have known scalability limits.
 <details>
 <summary><strong>World Rendering</strong></summary>
 
-The World currently stores authored Cells individually, and active Block collection requires traversing the stored Cells.
+The renderer uses spatial chunks to organize renderable World geometry.
 
-Planned rendering work includes:
+Localized World changes can mark affected chunks for rebuilding instead of reconstructing the complete render representation.
 
-* Spatially chunked World storage
-* Visible-chunk selection
-* Per-chunk render meshes
-* Hidden-face culling
-* Greedy meshing
-* Render batching
-
-A possible rendering path:
+The current rendering path is broadly:
 
 ```text
 World
   ↓
 Spatial Chunks
   ↓
-Visible Chunks
+Affected / Visible Chunks
   ↓
-Chunk Meshes
+Chunk Mesh Construction
   ↓
 GPU Rendering
 ```
 
-Chunk size and meshing strategy will be selected based on profiling and representative test worlds.
+The chunk-based renderer is designed to keep localized edits inexpensive while avoiding unnecessary reconstruction of unrelated World geometry.
+
+Current rendering work includes:
+
+* Spatially chunked render construction
+* Selective chunk rebuilding
+* Per-chunk render mesh generation
+* Renderer performance benchmarking
+
+Further rendering optimization may include:
+
+* Visible-chunk selection improvements
+* Hidden-face culling
+* Greedy meshing
+* Render batching
+* More persistent runtime mesh resources
+* Additional profiling-driven mesh construction optimizations
+
+Chunk size and meshing strategy should continue to be evaluated using profiling and representative test worlds.
+
+### Renderer Benchmark
+
+The renderer includes performance testing for several representative geometry workloads.
+
+Current benchmark results include:
+
+| Shape | Size | Full CPU Build | Selective Rebuild |
+| ----- | ----: | -------------: | ----------------: |
+| 3D cube | 50K | 230.6 ms | 17.46 ms |
+| 3D cube | 75K | 334.9 ms | 17.89 ms |
+| 3D cube | 100K | 436.8 ms | 17.51 ms |
+| 3D cube | 200K | 876.0 ms | 17.92 ms |
+| 2D plane | 50K | 458.6 ms | 2.37 ms |
+| 2D plane | 100K | 931.2 ms | 2.30 ms |
+| 2D plane | 200K | 1.85 s | 2.32 ms |
+
+These results demonstrate the intended behavior of selective rebuilding: the cost of a localized render update remains approximately stable as the total World size increases, while a full reconstruction continues to scale with the amount of geometry.
+
+The renderer benchmark currently contains one known pathological case for very large 1D line distributions:
+
+```text
+30K → approximately 2.19 s full build
+50K → benchmark cutoff
+```
+
+The 1D line case is not representative of normal voxel World construction and is currently treated as a pathological geometry-distribution workload.
+
+A renderer benchmark run should pass before rendering changes are considered complete:
+
+```text
+test_benchmark_large_world_performance_cliff ... ok
+1 passed, 0 failed
+```
 
 </details>
 
@@ -937,6 +992,8 @@ Possible future changes include:
 
 Performance changes should be based on profiling and representative test workloads.
 
+The current renderer work demonstrates that localized chunk rebuilds can remain approximately stable even as total World size increases. Future optimization should continue to target demonstrated bottlenecks rather than adding complexity without measured benefit.
+
 More complex acceleration structures should be added when measurements show that the current implementation is a bottleneck.
 
 > [!IMPORTANT]
@@ -972,12 +1029,12 @@ MAJOR.MINOR.PATCH
 
 Current development is in the `0.7.x` phase.
 
-| Version | Summary                                                                                                                                                                                                      |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Version | Summary |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0.6.x` | Established the advanced editor workflow and the first complete AeoScript runtime, including its standard library, handles, persistent Cell-ID bindings, fibers, nested yielding, and lifecycle persistence. |
-| `0.7.0` | Expanded AeoScript with authored Cell attributes, top-level executable statements, a dedicated scripting host boundary, and ordered top-level execution.                                                     |
-| `0.7.1` | Added runtime Cell creation, deletion, property mutation, runtime attribute overrides, and `math.random()` while preserving the separation between authored World data and temporary Play-mode state.        |
-| `0.7.2` | Added the World sky environment, completed scripting lifecycle and nested-return fixes, and established the master in-game AeoScript integration test suite.                                                 |
-| `0.7.3` | Current unreleased development cycle. Adds script-defined gameplay systems, runtime UI, direct runtime input, lexical closures, runtime script control, and related runtime/editor improvements.             |
+| `0.7.0` | Expanded AeoScript with authored Cell attributes, top-level executable statements, a dedicated scripting host boundary, and ordered top-level execution. |
+| `0.7.1` | Added runtime Cell creation, deletion, property mutation, runtime attribute overrides, and `math.random()` while preserving the separation between authored World data and temporary Play-mode state. |
+| `0.7.2` | Added the World sky environment, completed scripting lifecycle and nested-return fixes, and established the master in-game AeoScript integration test suite. |
+| `0.7.3` | Current unreleased development cycle. Adds script-defined gameplay systems, runtime UI, direct runtime input, lexical closures, runtime script control, renderer chunking and selective rebuild improvements, and related runtime/editor improvements. |
 
 See [CHANGELOG.md](./CHANGELOG.md) for the complete development history.

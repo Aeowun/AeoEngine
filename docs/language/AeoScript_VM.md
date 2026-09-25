@@ -1,16 +1,16 @@
 ﻿# AeoScript VM Execution Model
 
-The AeoScript runtime is a single-threaded interpreter integrated into AeoEngine's main simulation loop.
+AeoScript uses a single-threaded interpreter with resumable execution state integrated into AeoEngine's runtime loop.
 
-Source code is parsed into an AST. Functions and events are then converted into compact internal execution plans so their instruction position and control-flow state can be preserved across cooperative yields.
+It is not currently a native-code compiler or a conventional standalone bytecode virtual machine.
 
-AeoScript is therefore an **interpreter with resumable execution state**, rather than a separate native-code or bytecode virtual machine.
+The runtime parses source into an AST and builds internal execution plans that allow instruction position and control-flow state to survive cooperative yields.
 
 ---
 
-# 1. Runtime Architecture
+# 1. Execution Pipeline
 
-The runtime is divided into several cooperating parts:
+The broad execution path is:
 
 ```text
 AeoScript Source
@@ -23,69 +23,59 @@ AST / Program
       ↓
 Interpreter
       ↓
-Compiled Function / Event Execution Plan
+Execution Plan
       ↓
 ScriptFiber
       ↓
 ScriptScheduler
       ↓
-ScriptScene / Engine
+ScriptScene
+      ↓
+AeoEngine
 ```
-
-### Interpreter
-
-The interpreter:
-
-* Evaluates AeoScript expressions.
-* Executes statements.
-* Resolves user functions.
-* Executes engine-host functions and properties.
-* Creates and resumes script fibers.
-* Enforces execution limits.
-* Produces structured runtime diagnostics.
-
-### ScriptFiber
-
-A `ScriptFiber` represents one resumable script execution.
-
-A fiber owns:
-
-* The active `ScriptInstance`.
-* The current function/event call stack.
-* Instruction position for each active call frame.
-* Local scopes.
-* `for` loop state.
-* Completion state.
-* Return state.
-
-This state remains alive while a fiber is waiting or scheduled to resume.
-
-### ScriptRuntime
-
-`ScriptRuntime` owns the active fibers and connects them to the scheduler.
-
-It:
-
-* Creates fibers.
-* Stores fibers by task ID.
-* Advances scheduler time.
-* Resumes ready fibers.
-* Applies fiber results to the scheduler.
-* Removes completed or failed fibers.
-
-Each ready task receives at most one execution slice during a runtime tick.
 
 ---
 
-# 2. Threading and Execution Model
+# 2. Interpreter
 
-AeoScript execution is currently **single-threaded**.
+The interpreter is responsible for:
 
-Script execution runs synchronously with the engine's runtime update rather than on a separate scripting thread.
+* Evaluating expressions.
+* Executing statements.
+* Resolving functions.
+* Executing engine-host operations.
+* Creating/resuming execution state.
+* Enforcing execution limits.
+* Producing runtime diagnostics.
 
-The runtime does not block the engine while a script is waiting.
+The interpreter owns language semantics.
 
-Instead:
+It does not own the World, renderer, physics, or character systems.
+
+---
+
+# 3. ScriptFiber
+
+A `ScriptFiber` represents one resumable execution.
+
+A fiber contains the state required to continue execution, including:
+
+* Active script instance.
+* Call stack.
+* Instruction position.
+* Local scopes.
+* Loop state.
+* Return state.
+* Completion state.
+* Yield state.
+
+When a script calls `wait()`, the fiber remains alive.
+
+---
+
+# 4. Cooperative Yielding
+
+AeoScript yielding is cooperative.
 
 ```text
 Script execution
@@ -94,24 +84,32 @@ wait(seconds)
       ↓
 Fiber yields
       ↓
-Scheduler stores wake time
+Scheduler stores wake state
       ↓
 Engine continues
       ↓
 Wake time reached
       ↓
-Fiber resumes
+Same fiber resumes
 ```
 
-This makes `wait()` cooperative rather than thread-based.
+There is no scripting thread created for an individual `wait()`.
 
 ---
 
-# 3. Fibers and Cooperative Yielding
+# 5. Single-Threaded Execution
 
-AeoScript lifecycle functions such as `update()` execute inside persistent fibers managed by `ScriptRuntime`.
+The current scripting runtime executes on the engine's runtime thread.
 
-A fiber can produce several execution outcomes:
+Scripts do not execute concurrently on a separate scripting thread.
+
+This makes runtime state access straightforward while requiring execution to respect the configured operation limits.
+
+---
+
+# 6. Fiber Results
+
+A fiber can produce results such as:
 
 ```text
 Continue
@@ -120,49 +118,41 @@ Complete
 Failed
 ```
 
+### Continue
+
+The fiber remains runnable.
+
 ### Yield
 
-A `wait(seconds)` operation produces a wait yield.
-
-The scheduler records the time at which the fiber may resume.
-
-The fiber itself is not destroyed.
+The fiber waits for a future scheduler time.
 
 ### Complete
 
-The fiber has reached the end of its execution.
-
-The owning `ScriptScene` can then remove the completed task and transition the scripted entity to its next lifecycle state.
+Execution reached its end.
 
 ### Failed
 
-A runtime error terminates the fiber.
+A runtime error terminated execution.
 
-The runtime records structured diagnostic information and the owning script entity is stopped according to the lifecycle rules.
+The ScriptScene and scheduler use the result to update runtime state.
 
 ---
 
-# 4. `wait()` and Resumption
+# 7. Call Stack
 
-`wait(seconds)` suspends the current fiber.
+Each active function call has execution state associated with it.
 
-The suspended fiber retains the entire active execution state.
+A frame retains information such as:
+
+* Execution plan.
+* Instruction position.
+* Local scope.
+* Loop state.
+* Function context.
+
+Nested calls therefore remain valid across yields.
 
 Example:
-
-```aeoscript id="qz55w6"
-fn delayed_action() {
-    local_value: number = 10
-
-    wait(0.5)
-
-    local_value += 5
-}
-```
-
-The `local_value` variable remains available after the wait because its scope is stored inside the fiber.
-
-The same applies to nested function calls:
 
 ```text
 update()
@@ -174,64 +164,35 @@ helper_function()
 wait()
 ```
 
-The entire call chain remains represented by the fiber's call stack.
-
-When the scheduler wakes the fiber, execution resumes after the yielding instruction rather than starting the function again.
+After the wait, the runtime resumes inside `helper_function()`.
 
 ---
 
-# 5. Fiber Call Stack
+# 8. Execution Budget
 
-Each resumable fiber maintains its own stack of function call frames.
+The interpreter uses an operation budget for each execution slice.
 
-A call frame contains the execution state required to resume that function, including:
-
-* Compiled function instructions.
-* Program counter / instruction position.
-* Local scopes.
-* `for` loop state.
-* Function name used for diagnostics.
-
-When a user function calls another user function, a new call frame is pushed.
-
-When the nested function returns, its frame is removed and execution continues in the caller.
-
-This allows a nested function to yield without losing the caller's execution state.
-
----
-
-# 6. Execution Budget
-
-Each interpreter resume slice has a maximum operation budget.
-
-The default interpreter budget is currently:
+The current default is:
 
 ```text
 100,000 operations
 ```
 
-A custom budget can also be supplied by the runtime.
+A custom budget may be supplied by the runtime.
 
-Every interpreter operation consumes budget.
+If the budget is exhausted before execution yields or completes, the script fails with an execution-budget error.
 
-If the budget reaches zero before the fiber yields or completes, execution fails with an AeoScript execution-budget error.
+Budget exhaustion is not equivalent to `wait()`.
 
-Budget exhaustion is **not** treated as a normal cooperative yield.
-
-The purpose of the budget is to prevent an accidentally runaway script from monopolizing the engine thread.
-
-Infinite or extremely expensive loops should therefore either:
-
-* perform useful work within a bounded number of operations, or
-* explicitly yield using `wait()`.
+The budget exists to prevent runaway execution from monopolizing the engine runtime.
 
 ---
 
-# 7. Call Depth Protection
+# 9. Call Depth
 
-The interpreter also limits nested user-function call depth.
+The interpreter also limits nested user-function calls.
 
-The default maximum call depth is currently:
+The current default maximum depth is:
 
 ```text
 64
@@ -239,34 +200,35 @@ The default maximum call depth is currently:
 
 Exceeding the limit produces a runtime error.
 
-This protects the runtime from unbounded recursive or deeply nested function calls.
+This protects against unbounded recursion or pathological call chains.
 
 ---
 
-# 8. Script Instance State
+# 10. ScriptInstance
 
-A `ScriptInstance` represents the persistent state of one scripted entity.
+A `ScriptInstance` represents persistent script state for a scripted object.
 
-It contains:
+It contains information such as:
 
-* Script/entity ID.
-* Entity declaration name.
+* Script/entity identity.
 * Script path.
 * Persistent entity fields.
 
-For example:
+Example:
 
-```aeoscript id="xbrl7w"
+```aeoscript
 entity Counter {
     ticks: number = 0
 }
 ```
 
-`ticks` belongs to the persistent `ScriptInstance`.
+`ticks` belongs to the script instance.
 
-Local variables declared inside functions do not belong to the persistent instance. They belong to the active fiber's call-frame scopes.
+---
 
-This distinction is important:
+# 11. Fiber State vs Script State
+
+The distinction is:
 
 ```text
 ScriptInstance
@@ -279,47 +241,19 @@ ScriptInstance
     └── Instruction position
 ```
 
----
+Entity fields survive lifecycle executions.
 
-# 9. Lifecycle State Persistence
+Local variables belong to active execution frames.
 
-A lifecycle fiber starts from the entity's persistent `ScriptInstance`.
-
-During execution, the active fiber owns the mutable execution copy of that instance.
-
-Before a lifecycle result is discarded or processed by `ScriptScene`, the mutated instance state is synchronized back to the persistent `ScriptEntity`.
-
-This ensures that fields modified during:
-
-* `on_spawn`
-* `on_ready`
-* `update`
-
-survive across lifecycle executions.
-
-Example:
-
-```aeoscript id="z84xyu"
-entity Counter {
-    ticks: number = 0
-
-    fn update(dt) {
-        ticks += 1
-    }
-}
-```
-
-The value of `ticks` persists between update tasks.
-
-The fiber's local execution state is discarded only when the fiber itself is finished; persistent entity fields have already been synchronized back to the owning entity.
+A local can survive `wait()` without becoming a persistent field.
 
 ---
 
-# 10. Scheduler
+# 12. Scheduler
 
-The `ScriptScheduler` controls when fibers are eligible to execute.
+`ScriptScheduler` determines which fibers are runnable.
 
-A task can be in states such as:
+Typical task states include:
 
 ```text
 Ready
@@ -329,110 +263,67 @@ Complete
 Failed
 ```
 
-The scheduler maintains the current script time and moves waiting tasks back into the ready state once their wake time is reached.
-
-During a runtime tick:
+During a runtime tick the scheduler:
 
 ```text
-1. Advance script time.
-2. Wake tasks whose wait time has expired.
-3. Pop ready tasks.
-4. Resume each task for one execution slice.
-5. Apply its FiberResult to the scheduler.
+1. Advances script time.
+2. Wakes tasks whose wait time expired.
+3. Takes ready tasks.
+4. Executes each for one slice.
+5. Applies the resulting FiberResult.
 ```
 
-A task returning `Continue` is not immediately executed repeatedly within the same runtime tick. This prevents one script from consuming the entire tick simply because it remains runnable.
+This prevents a runnable script from repeatedly consuming the entire same runtime tick.
 
 ---
 
-# 11. Standard Library Dispatch
+# 13. Waiting
 
-AeoScript standard-library functionality is dispatched through the interpreter's native standard-library module.
+A waiting task stores a future wake time.
 
-Current namespaces include:
+The fiber itself remains intact.
+
+When the scheduler reaches the wake time:
 
 ```text
-math
-basket
-string
+Waiting
+   ↓
+Ready
+   ↓
+Resume same fiber
 ```
 
-Namespace-style calls are resolved internally:
-
-```aeoscript id="h5jq7n"
-math.sqrt(25)
-basket.create(3)
-string.upper("hello")
-```
-
-Basket methods are also routed through the basket namespace:
-
-```aeoscript id="76ct8v"
-items.len()
-items.insert(0, value)
-items.clear()
-```
-
-The runtime passes the basket object as the appropriate first argument to the namespace implementation.
-
-The standard library executes inside the interpreter and does not create a separate scripting runtime.
+The runtime does not start the lifecycle function over.
 
 ---
 
-# 12. Value and Collection Memory Model
+# 14. Closures
 
-AeoScript values are owned by the scripting runtime.
+Function values can capture lexical scope.
 
-The current value model includes:
+The captured state becomes part of the function value and remains available while the closure exists.
 
-```text
-number
-bool
-string
-nil
-basket
-map
-engine handle
-```
-
-### Baskets
-
-Baskets are reference-backed collections.
-
-Assigning or passing a basket copies the reference to the shared collection rather than copying all elements.
-
-Therefore:
-
-```aeoscript id="9ed7c4"
-const a = [1, 2, 3]
-const b = a
-
-b[0] = 99
-```
-
-also changes `a[0]`.
-
-`basket.clone()` creates a separate shallow outer basket.
-
-Frozen baskets carry read-only state and reject later mutation attempts.
-
-### Maps
-
-Maps are also reference-backed.
-
-Numeric and string map keys are distinct.
-
-Missing map keys return `nil`, and assigning `nil` removes an existing key.
-
-The scripting runtime is currently single-threaded, so these reference-backed collections are designed for controlled interpreter-side mutation rather than concurrent access.
+This is separate from the persistent script-instance model.
 
 ---
 
-# 13. Engine Handles
+# 15. Collections
 
-Engine objects are represented inside AeoScript as opaque handles.
+Baskets and maps are reference-backed runtime values.
 
-A handle contains an engine-managed object kind and numeric identifier rather than a raw native pointer.
+The scripting runtime stores references to their collection state.
+
+`basket.clone()` creates a distinct shallow outer collection.
+
+`basket.freeze()` prevents further mutation.
+
+The current runtime is single-threaded, so these collections are not designed for concurrent access.
+
+---
+
+# 16. Engine Handles
+
+Engine objects are represented as handles containing an engine-managed kind and identifier.
 
 Examples include:
 
@@ -440,187 +331,95 @@ Examples include:
 Cell
 Entity
 Light
+Sound
+Ui
+Mouse
 ```
 
-The scripting runtime does not own the underlying engine object.
+The interpreter does not own the underlying engine object.
 
-When a handle property or method is accessed, the host integration resolves the identifier against authoritative engine state.
-
-This allows script values to remain lightweight while preventing the scripting VM from directly owning engine objects.
+Property/method access is resolved through the host integration.
 
 ---
 
-# 14. Runtime Property Access
+# 17. Host Integration
 
-Engine properties are resolved through the host integration layer.
-
-For example:
-
-```aeoscript id="stj5pi"
-cell.visible = false
-cell.color = [1, 0, 0]
-```
-
-The interpreter evaluates the expression and delegates the actual engine property access to the host API.
-
-This keeps the interpreter independent from concrete rendering, physics, World, and entity implementations.
-
-Runtime Cell modifications are handled as runtime overrides rather than silently rewriting authored World data.
-
----
-
-# 15. Script Bindings
-
-Script bindings connect authored World Cells to `.aeo` scripts.
-
-The World stores the binding target as the Cell's persistent numeric ID.
-
-During loading:
+Engine interaction crosses a host boundary:
 
 ```text
-World binding
-      ↓
-Cell ID lookup
-      ↓
-Authored Cell
-      ↓
-Script entity instantiation
-      ↓
-Script fiber lifecycle
-```
-
-The binding identifies the specific Cell instance.
-
-The Cell's human-readable `entity_identity` remains a name and does not have to be unique.
-
-This allows multiple Cells with the same name to have independent bindings.
-
-Legacy name-based bindings may be migrated when they resolve unambiguously to exactly one authored Cell.
-
----
-
-# 16. Native Engine Integration
-
-The interpreter communicates with AeoEngine through the host API abstraction.
-
-The host layer provides access to engine-owned functionality without embedding renderer, physics, or World implementation details inside the language interpreter.
-
-Host integration can provide:
-
-* Cell property access.
-* Entity property access.
-* Object discovery.
-* Runtime object manipulation.
-* Script diagnostics.
-* Time information.
-* Engine-defined functions and methods.
-
-The interpreter therefore evaluates language semantics while the engine remains responsible for the actual game-world state.
-
-Conceptually:
-
-```text
-AeoScript
-    ↓
 Interpreter
-    ↓
-Host API
-    ↓
-AeoEngine
-├── World
-├── Physics
-├── Characters
-├── Entities
-└── Renderer
+      ↓
+EngineHost
+      ↓
+AeoEngine host implementation
+      ↓
+World / Physics / Character / Entity / Renderer
 ```
+
+This keeps the interpreter independent from concrete engine implementations.
 
 ---
 
-# 17. Runtime Diagnostics
+# 18. Runtime Diagnostics
 
-The interpreter maintains structured diagnostic context for the currently executing script.
+Runtime errors retain structured context where available.
 
-Diagnostic records can include:
+Diagnostics can include:
 
-* Severity.
 * Script path.
 * Entity name.
 * Entity ID.
-* Function/context name.
-* Runtime error or warning message.
+* Function context.
+* Source location.
+* Error severity.
+* Runtime message.
 
-This information is forwarded to AeoEngine's script output system.
-
-The goal is to make runtime failures actionable rather than exposing only generic interpreter errors.
-
----
-
-# 18. Execution Lifecycle
-
-A typical scripted entity follows this lifecycle:
-
-```text
-Authored Cell
-      ↓
-Script binding resolved
-      ↓
-ScriptInstance created
-      ↓
-on_spawn / on_ready
-      ↓
-update(dt)
-      ↓
-Fiber yields or completes
-      ↓
-Entity state synchronized
-      ↓
-Next lifecycle task
-```
-
-When `update()` calls `wait()`:
-
-```text
-update()
-   ↓
-user function
-   ↓
-wait()
-   ↓
-FiberResult::Yield
-   ↓
-Scheduler Waiting
-   ↓
-wake time reached
-   ↓
-same fiber resumes
-   ↓
-execution continues
-```
-
-When the lifecycle task completes, its persistent entity fields have already been synchronized back to the owning `ScriptEntity`.
+The diagnostic system forwards this information to AeoEngine's script output facilities.
 
 ---
 
-# 19. Current Runtime Boundaries
+# 19. Lifecycle Execution
 
-The current VM/runtime intentionally has several boundaries.
+A typical scripted object follows:
 
-It does not yet provide:
+```text
+Script binding
+      ↓
+ScriptInstance
+      ↓
+on_spawn
+      ↓
+on_ready
+      ↓
+update
+      ↓
+yield / complete
+      ↓
+ScriptScheduler
+```
 
-* A bytecode compiler.
-* Native machine-code compilation.
+Events such as `on_touch` and `on_overlap` enter the same runtime execution infrastructure.
+
+---
+
+# 20. Runtime Boundaries
+
+The current runtime does not provide:
+
+* Native-code compilation.
 * Multithreaded script execution.
-* Automatic budget-based continuation yielding.
-* Arbitrary coroutine creation from script.
-* A general-purpose module/package system.
+* A separate scripting thread.
+* Arbitrary script-created OS threads.
+* Automatic continuation after budget exhaustion.
+* A general module/package ecosystem.
 
-The current execution model is intentionally centered on:
+The current design is intentionally centered on:
 
 * Parsed AeoScript.
-* Resumable compiled execution plans.
-* Persistent fibers.
+* Internal execution plans.
+* Resumable fibers.
 * Cooperative yielding.
 * Engine-host integration.
 * Explicit runtime limits.
 
-The runtime can evolve toward a more formal bytecode VM later without requiring AeoScript's language semantics or engine integration model to change.
+This provides the behavior needed by the current engine without requiring the complexity of a native compiler or multithreaded scripting VM.

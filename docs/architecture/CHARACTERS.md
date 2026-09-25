@@ -2,25 +2,25 @@
 
 The `CharacterSystem` owns runtime character gameplay state.
 
-Characters are simulated separately from generic dynamic physics bodies while interacting with the same authored World collision environment.
+Character simulation is separate from generic dynamic PhysicsBodies while using the same authored World collision environment.
 
 ---
 
-# 1. Character State
+# 1. CharacterSystem
 
-The runtime character maintains state for:
+`CharacterSystem` owns live runtime Characters and their gameplay state.
+
+Character state includes:
 
 * Position.
 * Movement.
-* Velocity-related motion.
+* Gravity.
 * Collision.
 * Grounded state.
 * Jumping.
 * Orientation.
 * Animation state.
-* Visual appearance.
-
-The CharacterSystem is responsible for updating this state during fixed-step gameplay simulation.
+* Runtime visual state.
 
 ---
 
@@ -28,27 +28,77 @@ The CharacterSystem is responsible for updating this state during fixed-step gam
 
 Characters can be spawned from authored SpawnPoint Cells.
 
-Spawn logic validates candidate spawn positions and searches nearby space when the initial location is not clear.
+The spawn system:
 
-The goal is to avoid spawning the runtime character embedded in solid World geometry.
+* Locates available SpawnPoints.
+* Evaluates candidate positions.
+* Checks clearance.
+* Selects a usable runtime position.
+
+The objective is to avoid starting the runtime character inside solid World geometry.
 
 ---
 
 # 3. Fixed-Step Movement
 
-Character movement is updated using the engine's fixed-step simulation timing.
+Character movement runs as part of the engine's fixed-step simulation.
 
-This keeps movement, gravity, and collision behavior consistent with the physics update cadence.
+This keeps:
+
+* Movement.
+* Gravity.
+* Collision.
+* Jumping.
+
+synchronized with the physics simulation cadence.
 
 ---
 
-# 4. Gravity and Grounding
+# 4. Input
 
-Characters have runtime gravity and grounded state.
+The application gathers runtime input.
 
-Grounded state controls whether jumping is allowed.
+AeoScript can also access gameplay input through the scripting API.
 
-The character can respond to:
+The general control path is:
+
+```text
+Player input
+      ↓
+App / script input access
+      ↓
+CharacterSystem
+      ↓
+Runtime character state
+```
+
+Input ownership remains separate from the character's physical simulation.
+
+---
+
+# 5. Movement
+
+Character movement includes:
+
+* Horizontal movement.
+* Jumping.
+* Gravity.
+* Orientation.
+* Movement state.
+
+Movement constants and state live in the character movement subsystem.
+
+Character-relative behavior can also be driven by AeoScript through the player APIs.
+
+---
+
+# 6. Grounding
+
+Grounded state is determined from collision with supporting geometry.
+
+Grounded state affects gameplay behavior such as jumping.
+
+The character also responds to:
 
 * Floor collision.
 * Wall collision.
@@ -56,88 +106,118 @@ The character can respond to:
 
 ---
 
-# 5. World Collision
+# 7. World Collision
 
-Character collision is performed against solid World geometry.
+Character collision uses solid World geometry.
 
-The authored World therefore remains the source of static scene collision while CharacterSystem owns the runtime character position and motion.
-
-~~~text
+```text
 Authored World
       ↓
-Solid collision geometry
+Effective collision geometry
       ↓
 CharacterSystem
       ↓
 Runtime character motion
-~~~
+```
+
+The character's runtime position does not become an authored Cell position.
 
 ---
 
-# 6. Movement State
+# 8. Dynamic Physics Interaction
 
-The character runtime tracks gameplay movement state including Idle and Walk behavior.
+Characters can interact with dynamic physics bodies.
 
-Character orientation follows movement direction independently from camera orientation.
+Character-specific collision handling determines how runtime character motion responds to dynamic bodies.
 
----
-
-# 7. Animation
-
-The character system contains the runtime character rig, skeleton, and animation state.
-
-Current character animation includes Idle and Walk clips with evaluated poses and blending.
-
-Animation is updated on the same fixed runtime cadence as the character simulation.
+The character remains owned by CharacterSystem while PhysicsWorld owns the generic physics bodies.
 
 ---
 
-# 8. Character Appearance
+# 9. Animation
 
-Character appearance is represented through runtime customization data and generated character geometry.
+The runtime character contains animation state and evaluated pose information.
 
-The visual implementation is owned by the character system rather than being hard-coded into the editor World representation.
+Current animation workflows include:
 
----
+* Idle.
+* Walk.
+* Animation selection.
+* Animation blending.
+* Pose evaluation.
 
-# 9. Character Rendering
+The high-level runtime state is owned by CharacterSystem.
 
-The runtime character is rendered using dynamic character meshes generated from the current character state and evaluated pose.
+Lower-level animation and rig data are implemented under:
 
-The temporary placeholder character representation was replaced by the integrated 3D character implementation.
-
----
-
-# 10. Gameplay Camera Relationship
-
-The GameplayCamera follows the active runtime character.
-
-The camera can:
-
-* Follow the character.
-* Orbit using mouse input.
-* Clamp pitch.
-* Avoid obstruction from solid World geometry.
-
-Camera orientation does not directly define character facing direction.
+```text
+src/character_custom/
+```
 
 ---
 
-# 11. Editor Separation
+# 10. Custom Character Infrastructure
 
-Editor camera state and gameplay camera state are separate.
+The custom character subsystem contains:
 
-Entering Play preserves the editor camera.
+```text
+animation.rs
+appearance.rs
+blend.rs
+collision.rs
+geometry.rs
+rig.rs
+```
 
-Leaving Play restores the editor camera without using the gameplay camera as the editor camera state.
+Responsibilities include:
+
+* Animation clips.
+* Transform tracks.
+* Skeleton/rig data.
+* Pose evaluation.
+* Animation blending.
+* Character geometry.
+* Appearance/material configuration.
+* Custom collision representation.
+
+---
+
+# 11. Gameplay Camera
+
+Gameplay camera behavior is separate from CharacterSystem.
+
+The runtime relationship is:
+
+```text
+CharacterSystem
+      ↓
+Runtime character state
+      ↓
+GameplayCamera
+      ↓
+Renderer
+```
+
+Character logic can provide the runtime state needed by the gameplay camera, while the camera remains a separate subsystem.
 
 ---
 
 # 12. Runtime Boundary
 
-Character state exists only during runtime.
+Characters are runtime objects.
 
-The authored SpawnPoint and World geometry remain persistent scene data.
+```text
+Authored SpawnPoint
+      ↓
+Character spawning
+      ↓
+Runtime Character
+      ↓
+Movement / collision / animation
+      ↓
+Temporary Play-mode state
+```
 
-When Play mode stops, runtime character state is discarded.
+When Play mode ends, runtime character state is discarded.
 
+The authored SpawnPoint and other World data remain unchanged.

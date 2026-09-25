@@ -6,43 +6,43 @@
 
 * [0.1.x — Foundation](#01x--foundation)
 
-    * [0.1.0](#010)
-    * [0.1.1](#011)
+  * [0.1.0](#010)
+  * [0.1.1](#011)
 * [0.2.x — Editor Expansion](#02x--editor-expansion)
 
-    * [0.2.0](#020)
-    * [0.2.1](#021)
+  * [0.2.0](#020)
+  * [0.2.1](#021)
 * [0.3.x — Physics](#03x--physics)
 
-    * [0.3.0](#030)
-    * [0.3.1](#031)
+  * [0.3.0](#030)
+  * [0.3.1](#031)
 * [0.4.x — Blocks and Building](#04x--blocks-and-building)
 
-    * [0.4.0](#040)
-    * [0.4.1](#041)
-    * [0.4.2](#042)
+  * [0.4.0](#040)
+  * [0.4.1](#041)
+  * [0.4.2](#042)
 * [0.5.x — Character and Gameplay](#05x--character-and-gameplay)
 
-    * [0.5.0](#050)
-    * [0.5.1](#051)
-    * [0.5.2](#052)
-    * [0.5.3](#053)
+  * [0.5.0](#050)
+  * [0.5.1](#051)
+  * [0.5.2](#052)
+  * [0.5.3](#053)
 * [0.6.x — Editor and AeoScript Foundation](#06x--editor-and-aeoscript-foundation)
 
-    * [0.6.0](#060)
-    * [0.6.1](#061)
-    * [0.6.2](#062)
-    * [0.6.3](#063)
-    * [0.6.4](#064)
-    * [0.6.5](#065)
-    * [0.6.6](#066)
+  * [0.6.0](#060)
+  * [0.6.1](#061)
+  * [0.6.2](#062)
+  * [0.6.3](#063)
+  * [0.6.4](#064)
+  * [0.6.5](#065)
+  * [0.6.6](#066)
 * [0.7.x — Runtime Scripting Expansion](#07x--runtime-scripting-expansion)
 
-    * [0.7.0](#070)
-    * [0.7.1](#071)
-    * [0.7.2](#072)
-    * [0.7.3](#073)
-    * [0.7.4](#074)
+  * [0.7.0](#070)
+  * [0.7.1](#071)
+  * [0.7.2](#072)
+  * [0.7.3](#073)
+  * [0.7.4](#074)
 * [TODO](#todo)
 
 ---
@@ -388,8 +388,8 @@
 * Script Editor V1 with Monaco-based editing and file management
 * Print Output terminal with severity-based coloring:
 
-    * Yellow for warnings
-    * Red for errors
+  * Yellow for warnings
+  * Red for errors
 
 ### Notes
 
@@ -404,16 +404,16 @@
 * Opaque engine handles for `Cell` and `Entity` objects
 * Generic object discovery:
 
-    * `getAllCellsOfClass(type)`
-    * `find(identity)`
+  * `getAllCellsOfClass(type)`
+  * `find(identity)`
 * Stable 8-digit randomized Cell IDs for persistent instance tracking
 * Temporary runtime overrides for Cell properties:
 
-    * `color`
-    * `visibility`
-    * `solidity`
-    * `anchored`
-    * `offset`
+  * `color`
+  * `visibility`
+  * `solidity`
+  * `anchored`
+  * `offset`
 * Persistent script binding system allowing scripts to be attached to authored World objects
 
 ### Changed
@@ -433,22 +433,22 @@
 
 * AeoScript Standard Library:
 
-    * `math`
-    * `basket`
-    * `string`
+  * `math`
+  * `basket`
+  * `string`
 * `math` namespace with deterministic trigonometric, rounding, and range functions including `clamp` and `lerp`
 * `basket` namespace with reference-backed arrays and support for:
 
-    * `sort`
-    * `find`
-    * `move`
-    * `clone`
-    * `freeze`
+  * `sort`
+  * `find`
+  * `move`
+  * `clone`
+  * `freeze`
 * `string` namespace with Unicode-aware text manipulation including:
 
-    * `len`
-    * `reverse`
-    * character-based `split`
+  * `len`
+  * `reverse`
+  * character-based `split`
 * Automatic routing of basket namespace functions to method calls such as `b.len()`
 
 ### Changed
@@ -493,8 +493,8 @@
 * Nested Yielding: scripts can now call `wait()` from inside nested function calls
 * Improved Map semantics:
 
-    * Reading a missing key returns `nil`
-    * Assigning `nil` deletes the key
+  * Reading a missing key returns `nil`
+  * Assigning `nil` deletes the key
 
 ### Changed
 
@@ -548,10 +548,10 @@
 * Warnings for entity lifecycle declarations that have no matching script binding
 * Regression coverage for:
 
-    * top-level execution
-    * top-level yielding
-    * top-level runtime errors
-    * unattached lifecycle warnings
+  * top-level execution
+  * top-level yielding
+  * top-level runtime errors
+  * unattached lifecycle warnings
 
 ### Changed
 
@@ -587,11 +587,11 @@
 * `cell.delete(handle)`: removes a Cell from the active Play-time World
 * Expanded mutable Cell properties for runtime-only instances including:
 
-    * `name`
-    * `visible`
-    * `solid`
-    * `anchored`
-    * `color`
+  * `name`
+  * `visible`
+  * `solid`
+  * `anchored`
+  * `color`
 * Regression coverage for runtime Cell creation, authored-state preservation, and `math.random()` behavior
 
 ### Changed
@@ -616,11 +616,11 @@
 * Camera-locked skybox positioning to eliminate translation parallax
 * Five built-in sky presets:
 
-    * `Temperate`
-    * `Tropical`
-    * `Desert`
-    * `Snowy`
-    * `Mars`
+  * `Temperate`
+  * `Tropical`
+  * `Desert`
+  * `Snowy`
+  * `Mars`
 * Persistent `SKY` configuration in World data
 * Editor UI in the World panel for enabling sky and switching presets
 * Asset routing for the dedicated `.assets/skybox/` directory
@@ -736,6 +736,10 @@
 * Generic Runtime Entity Character Controls. AeoScript entities can now expose position, velocity, facing, grounded state, animation, health, maximum health, and alive state, along with jump, damage, heal, destroy, and pathfinding operations.
 * Scripted Runtime Character Spawning. AeoScript can spawn generic runtime character entities and control them through the generic Entity API.
 * Scripted Enemy Orchestration. Enemy behavior can now be organized across multiple AeoScript files using shared events for spawning, AI, combat, damage, death, and respawning.
+* Persistent World Hierarchy Cache. The editor now caches grouped World hierarchy data and reuses it until the World render revision changes.
+* Category Navigation for non-Block World objects. Lights, Audio Emitters, Spawn Points, FX Blocks, Players, and NPCs can be navigated with `PREV` / `NEXT` controls instead of rendering one UI entry per Cell.
+* Count-only Block hierarchy display. Large Block collections are represented by a single `BLOCKS (count)` entry instead of thousands of individual UI rows.
+* Physics static collider bulk registration for large authored Worlds.
 
 ### Changed
 
@@ -744,36 +748,66 @@
 * History & Undo/Redo. History now snapshots both `world.cells` and `world.script_bindings` together, keeping script binding associations synchronized on undo/redo.
 * Character gameplay responsibilities now separate engine-owned movement, gravity, collision, and grounded state from script-owned movement decisions and behavior.
 * AeoScript gameplay control now favors generic Entity APIs rather than specialized NPC-specific namespaces.
+* World-panel hierarchy construction no longer creates one egui widget per authored Block.
+* Static physics registration now builds the static collider chunk index once after bulk registration instead of rebuilding it for every anchored solid Cell.
+* World hierarchy cache invalidation is now tied to World replacement when projects are loaded or closed, preventing data from a previous project from remaining visible in the World panel.
 
 ### Fixed
 
 * Fixed a long-standing issue where block shadows could become detached from their source blocks as the camera moved.
 * Fixed runtime Entity method dispatch for scripted character controls.
 * Fixed script event queuing and dispatch for runtime gameplay events.
+* Fixed severe World-panel frame-rate degradation in large Worlds caused by creating tens of thousands of Block UI entries every frame.
+* Fixed severe Play-mode startup cost for large anchored Worlds caused by repeatedly rebuilding the static physics chunk index during Cell registration.
+* Fixed World hierarchy data remaining from a closed project after opening a different project.
+* Fixed World hierarchy cache state becoming stale when a newly loaded World happened to use the same render revision as the previous World.
+* Fixed voxel-face shadow artifacts caused by insufficient shadow-map self-shadowing bias.
+
+### Performance
+
+* Large Worlds can now remain at 60 FPS while displaying the World panel without constructing a UI row for every Block.
+* Large anchored Worlds can now enter Play mode without rebuilding the complete static physics index once per Cell.
+* 60K-Block stress testing now maintains 60 FPS in Editor mode and Play mode across repeated Play/Stop cycles and project switching.
+* Selective renderer chunk rebuilding remains localized after the large-World performance changes.
 
 ### Notes
 
-> Renderer optimization work is now using a four-phase static voxel pipeline: exposed-face meshing, spatial chunking, selective dirty-chunk rebuilding, and greedy meshing.
+> Version 0.7.4 continues the static voxel renderer work while removing major non-rendering frame and startup costs exposed by large-World testing.
 >
-> Editor Grab / Drag operates transactionally (`GrabState`). World cells and cell IDs are not mutated during mouse movement, avoiding undo stack churn and ID regeneration until the move is committed on mouse release.
+> The World panel now treats Blocks as aggregate authored data and provides individual navigation controls only for World object categories where selecting a specific Cell is useful.
 >
-> The editor clipboard is strictly session-based and is automatically invalidated when clearing or switching projects to prevent cross-project state leakage.
+> Physics registration now separates bulk World initialization from incremental runtime synchronization: initial static colliders are registered first and the static chunk index is rebuilt once, while later mutations continue to use the existing dirty-cell synchronization path.
 >
-> AeoScript enemy behavior is intentionally composed from small scripts communicating through events rather than introducing a large dedicated enemy API.
+> World hierarchy caching is invalidated explicitly across project lifecycle transitions because World revisions are local to a World instance and cannot by themselves identify a newly loaded project.
 >
-> A known rendering issue affecting vertical voxel faces is still under investigation.
+> 60K-Block stress testing completed the following lifecycle without an FPS drop:
+>
+> `Editor → Play → Stop → Play → Close Project → Open Project → Play`
+>
+> Static voxel renderer benchmarking continues to show localized selective rebuild timings independent of total World size within the tested cases.
+>
+> The renderer shadow artifact affecting voxel faces was corrected with slope-dependent shadow bias and normal-offset protection.
 
 ---
 
-| Verification                |                                                                  Result |
-| --------------------------- | ----------------------------------------------------------------------: |
-| Rust tests                  |                                                          **477 passed** |
-| Rust test failures          |                                                                   **0** |
-| In-game integration testing | Runtime UI, scripting, gameplay, character, and runtime-system coverage |
+| Verification                         |                                                   Result |
+| ------------------------------------ | -------------------------------------------------------: |
+| Rust benchmark: large-world renderer |                                   **1 passed, 0 failed** |
+| Large-world 60K stress test          |                               **60 FPS — Editor / Play** |
+| Repeated Play / Stop test            |                                                 **PASS** |
+| Project switching stress test        |                                                 **PASS** |
+| Renderer selective rebuild benchmark |                                                 **PASS** |
+| Full Rust test suite                 | Existing suite plus focused regression/performance tests |
+
+---
+
+## TODO
+
+* Continue focused performance profiling using measured AeoEngine hot paths
+* Expand regression coverage around large-World editor and runtime lifecycle behavior
+* Continue renderer optimization only where profiling identifies a remaining measurable cost
 
 ---
 
 > **Current release:** `0.7.3`
 > **Development cycle:** `0.7.x`
-
-
