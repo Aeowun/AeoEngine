@@ -4843,34 +4843,66 @@ entity Trigger {
     fn test_audio_emitter_persistence_full() {
         use crate::world::persistence::{load_world, save_world};
         use std::fs;
-        use std::path::Path;
+
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+
+        let project = std::env::temp_dir().join(format!(
+            "aeoengine_script_audio_persistence_{}_{}",
+            std::process::id(),
+            timestamp
+        ));
+
+        fs::create_dir_all(&project).unwrap();
+
+        let path = project.join("world.dat");
 
         let mut world = World::new();
+
         let coord = WorldCoord::new(1, 2, 3);
-        let id = world.set_cell(coord, CellType::AudioEmitter);
+
+        let id = world.set_cell(
+            coord,
+            CellType::AudioEmitter,
+        );
 
         if let Some(cell) = world.get_mut(coord) {
-            cell.audio = "battle/sword-unsheathe.wav".to_string();
+            cell.audio =
+                "battle/sword-unsheathe.wav".to_string();
             cell.playing = true;
             cell.looped = true;
             cell.volume = 0.75;
         }
 
-        let path = Path::new("test_audio_emitter_full.dat");
-        save_world(&world, path).unwrap();
+        save_world(&world, &path).unwrap();
 
         let mut loaded_world = World::new();
-        load_world(&mut loaded_world, path).unwrap();
 
-        let loaded = loaded_world.get(coord).unwrap();
+        load_world(
+            &mut loaded_world,
+            &path,
+        )
+        .unwrap();
+
+        let loaded =
+            loaded_world.get(coord).unwrap();
+
         assert_eq!(loaded.id, id);
-        assert_eq!(loaded.cell_type, CellType::AudioEmitter);
-        assert_eq!(loaded.audio, "battle/sword-unsheathe.wav");
-        assert_eq!(loaded.playing, true);
-        assert_eq!(loaded.looped, true);
-        assert_eq!(loaded.volume, 0.75);
+        assert_eq!(
+            loaded.cell_type,
+            CellType::AudioEmitter
+        );
+        assert_eq!(
+            loaded.audio,
+            "battle/sword-unsheathe.wav"
+        );
+        assert!(loaded.playing);
+        assert!(loaded.looped);
+        assert!((loaded.volume - 0.75).abs() < 1e-6);
 
-        fs::remove_file(path).ok();
+        fs::remove_dir_all(project).ok();
     }
 
     #[test]

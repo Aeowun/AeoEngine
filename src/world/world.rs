@@ -85,7 +85,11 @@ pub struct World {
 
     // Optimized lookup for cell coordinates by ID.
     pub(crate) id_to_coord: HashMap<u64, WorldCoord>,
-
+    /// Next globally unique authored cell ID.
+    ///
+    /// This is persistent world state. It must not depend on which chunks
+    /// happen to be resident in memory.
+    pub(crate) next_cell_id: u64,
     // Storage for cells created at runtime via cell.new()
     pub(crate) runtime_cells: HashMap<u64, Cell>,
     // ID -> Coord index for runtime cells
@@ -176,6 +180,7 @@ impl World {
             runtime_state: HashMap::new(),
             physics_dirty_cells: std::collections::HashSet::new(),
             id_to_coord: HashMap::new(),
+            next_cell_id: 10_000_000,
             runtime_cells: HashMap::new(),
             runtime_id_to_coord: HashMap::new(),
             coord_to_runtime_id: HashMap::new(),
@@ -847,9 +852,15 @@ impl World {
     }
 
     /// Internal helper to update the ID index when an ID is changed manually (e.g. during loading).
-    pub(crate) fn update_id_mapping(&mut self, old_id: u64, new_id: u64, coord: WorldCoord) {
+    pub(crate) fn update_id_mapping(
+        &mut self,
+        old_id: u64,
+        new_id: u64,
+        coord: WorldCoord,
+    ) {
         self.id_to_coord.remove(&old_id);
         self.id_to_coord.insert(new_id, coord);
+        self.observe_authored_id(new_id);
     }
 
     /// Rebuilds the ID to coordinate index. Call this if the cells map is replaced (e.g. undo/redo).
@@ -865,35 +876,31 @@ impl World {
         self.rebuild_spatial_index();
     }
 
-    pub(crate) fn generate_unique_id(&mut self, coord: WorldCoord, cell_type: CellType) -> u64 {
-        use chrono::Local;
-        use std::hash::{Hash, Hasher};
+    pub(crate) fn generate_unique_id(
+        &mut self,
+        _coord: WorldCoord,
+        _cell_type: CellType,
+    ) -> u64 {
+        let id = self.next_cell_id;
 
-        let mut retry_count = 0;
+        self.next_cell_id = self
+            .next_cell_id
+            .checked_add(1)
+            .expect("Authored cell ID space exhausted");
 
-        loop {
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-
-            let timestamp = Local::now().format("%Y:%m:%d:%S").to_string();
-
-            timestamp.hash(&mut hasher);
-            coord.hash(&mut hasher);
-            (cell_type as u32).hash(&mut hasher);
-            retry_count.hash(&mut hasher);
-
-            let hash = hasher.finish();
-
-            // Map to 8 digit range: 10,000,000 to 99,999,999.
-            let id = 10_000_000 + (hash % 90_000_000);
-
-            // Only currently existing cells participate in collision checks.
-            if !self.cells.values().any(|cell| cell.id == id) {
-                return id;
-            }
-
-            retry_count += 1;
-        }
+        id
     }
+
+        /// Advances the allocator past an existing authored ID.
+        ///
+        /// Used when loading IDs that were already assigned on disk.
+        pub(crate) fn observe_authored_id(&mut self, id: u64) {
+            if id >= self.next_cell_id {
+                self.next_cell_id = id
+                    .checked_add(1)
+                    .expect("Authored cell ID space exhausted");
+            }
+        }
 
     pub fn active_blocks(&self) -> Vec<WorldCoord> {
         self.cells.keys().cloned().collect()
@@ -1077,7 +1084,63 @@ mod tests {
         assert_eq!(clip_cell1.offset, WorldCoord::new(0, 0, 0));
         assert_eq!(clip_cell2.offset, WorldCoord::new(1, 0, 0));
     }
+        #[test]
+        fn test_authored_ids_are_monotonic() {
+            let mut world = World::new();
 
+            let id1 = world.set_cell(
+                WorldCoord::new(0, 0, 0),
+                CellType::Block,
+            );
+
+            let id2 = world.set_cell(
+                WorldCoord::new(1, 0, 0),
+                CellType::Block,
+            );
+
+            let id3 = world.set_cell(
+                WorldCoord::new(2, 0, 0),
+                CellType::Block,
+            );
+
+            assert_eq!(id1, 10_000_000);
+            assert_eq!(id2, 10_000_001);
+            assert_eq!(id3, 10_000_002);
+
+            assert_eq!(world.next_cell_id, 10_000_003);
+        }
+
+        #[test]
+        fn test_deleted_authored_id_is_not_reused() {
+            let mut world = World::new();
+
+            let first = WorldCoord::new(0, 0, 0);
+            let second = WorldCoord::new(1, 0, 0);
+
+            let id1 = world.set_cell(first, CellType::Block);
+
+            world.set_cell(first, CellType::Empty);
+
+            let id2 = world.set_cell(second, CellType::Block);
+
+            assert_eq!(id2, id1 + 1);
+            assert_ne!(id1, id2);
+        }
+
+        #[test]
+        fn test_observing_existing_id_advances_allocator() {
+            let mut world = World::new();
+
+            world.observe_authored_id(50_000_000);
+
+            let id = world.set_cell(
+                WorldCoord::new(0, 0, 0),
+                CellType::Block,
+            );
+
+            assert_eq!(id, 50_000_001);
+            assert_eq!(world.next_cell_id, 50_000_002);
+        }
     #[test]
     fn test_paste_creates_new_ids_and_preserves_properties_bindings_and_layout() {
         let mut world = World::new();
