@@ -130,6 +130,16 @@ pub struct Editor {
     pub attribute_add_value: AttributeValue,
     pub attribute_add_error: Option<String>,
     pub last_selected_coord: Option<WorldCoord>,
+
+    // Cached World hierarchy data. Rebuilt only when the World render revision changes.
+    world_hierarchy_revision: u64,
+    world_hierarchy_blocks: Vec<WorldCoord>,
+    world_hierarchy_lights: Vec<WorldCoord>,
+    world_hierarchy_audio_emitters: Vec<WorldCoord>,
+    world_hierarchy_spawn_points: Vec<WorldCoord>,
+    world_hierarchy_fx_blocks: Vec<WorldCoord>,
+    world_hierarchy_players: Vec<WorldCoord>,
+    world_hierarchy_npcs: Vec<WorldCoord>,
 }
 
 impl Editor {
@@ -178,6 +188,15 @@ impl Editor {
             attribute_add_value: AttributeValue::String(String::new()),
             attribute_add_error: None,
             last_selected_coord: None,
+
+            world_hierarchy_revision: 0,
+            world_hierarchy_blocks: Vec::new(),
+            world_hierarchy_lights: Vec::new(),
+            world_hierarchy_audio_emitters: Vec::new(),
+            world_hierarchy_spawn_points: Vec::new(),
+            world_hierarchy_fx_blocks: Vec::new(),
+            world_hierarchy_players: Vec::new(),
+            world_hierarchy_npcs: Vec::new(),
         }
     }
 

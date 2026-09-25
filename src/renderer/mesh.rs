@@ -99,20 +99,11 @@ pub fn upload_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
         gl::BindVertexArray(0);
     }
 
-    (
-        vao,
-        vbo,
-        (vertices.len() / VERTEX_3D_FLOATS) as i32,
-    )
+    (vao, vbo, (vertices.len() / VERTEX_3D_FLOATS) as i32)
 }
 
 #[inline]
-pub fn add_line(
-    vertices: &mut Vec<f32>,
-    a: [f32; 3],
-    b: [f32; 3],
-    color: [f32; 4],
-) {
+pub fn add_line(vertices: &mut Vec<f32>, a: [f32; 3], b: [f32; 3], color: [f32; 4]) {
     // Lines do not use lighting, so the normal is only present to match the
     // shared 3D vertex format.
     let normal = [0.0, 1.0, 0.0];
@@ -141,12 +132,7 @@ pub fn add_quad(
 }
 
 #[inline(always)]
-fn add_vertex(
-    vertices: &mut Vec<f32>,
-    position: [f32; 3],
-    normal: [f32; 3],
-    color: [f32; 4],
-) {
+fn add_vertex(vertices: &mut Vec<f32>, position: [f32; 3], normal: [f32; 3], color: [f32; 4]) {
     vertices.extend_from_slice(&[
         position[0],
         position[1],
@@ -171,9 +157,7 @@ pub fn add_block_quad(
     color: [f32; 4],
     normal: [f32; 3],
 ) {
-    add_merged_block_quad(
-        vertices, v1, v2, v3, v4, color, normal, 1.0, 1.0,
-    );
+    add_merged_block_quad(vertices, v1, v2, v3, v4, color, normal, 1.0, 1.0);
 }
 
 #[inline]
@@ -282,11 +266,7 @@ pub fn upload_block_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
         gl::BindVertexArray(0);
     }
 
-    (
-        vao,
-        vbo,
-        (vertices.len() / BLOCK_VERTEX_FLOATS) as i32,
-    )
+    (vao, vbo, (vertices.len() / BLOCK_VERTEX_FLOATS) as i32)
 }
 
 /// Uploads and draws a dynamic mesh used by runtime character rendering.
@@ -339,11 +319,7 @@ pub fn upload_and_draw_mesh_3d(vertices: &[f32]) {
         );
         gl::EnableVertexAttribArray(2);
 
-        gl::DrawArrays(
-            gl::TRIANGLES,
-            0,
-            (vertices.len() / VERTEX_3D_FLOATS) as i32,
-        );
+        gl::DrawArrays(gl::TRIANGLES, 0, (vertices.len() / VERTEX_3D_FLOATS) as i32);
 
         gl::BindVertexArray(0);
         gl::DeleteBuffers(1, &vbo);
@@ -460,11 +436,7 @@ impl CubeFace {
 }
 
 #[inline(always)]
-fn neighbor_visible(
-    world: &World,
-    cell_id: u64,
-    authored_visible: bool,
-) -> bool {
+fn neighbor_visible(world: &World, cell_id: u64, authored_visible: bool) -> bool {
     world
         .runtime_state
         .get(&cell_id)
@@ -473,11 +445,7 @@ fn neighbor_visible(
 }
 
 #[inline(always)]
-fn neighbor_solid(
-    world: &World,
-    cell_id: u64,
-    authored_solid: bool,
-) -> bool {
+fn neighbor_solid(world: &World, cell_id: u64, authored_solid: bool) -> bool {
     world
         .runtime_state
         .get(&cell_id)
@@ -486,11 +454,7 @@ fn neighbor_solid(
 }
 
 #[inline(always)]
-fn neighbor_anchored(
-    world: &World,
-    cell_id: u64,
-    authored_anchored: bool,
-) -> bool {
+fn neighbor_anchored(world: &World, cell_id: u64, authored_anchored: bool) -> bool {
     world
         .runtime_state
         .get(&cell_id)
@@ -499,11 +463,7 @@ fn neighbor_anchored(
 }
 
 #[inline(always)]
-fn main_neighbor_occludes(
-    world: &World,
-    neighbor_coord: WorldCoord,
-    mode: EditorMode,
-) -> bool {
+fn main_neighbor_occludes(world: &World, neighbor_coord: WorldCoord, mode: EditorMode) -> bool {
     let Some(neighbor_cell) = world.get_effective_cell(neighbor_coord) else {
         return false;
     };
@@ -517,30 +477,18 @@ fn main_neighbor_occludes(
         return false;
     }
 
-    if !neighbor_visible(
-        world,
-        neighbor_cell.id,
-        neighbor_cell.visible,
-    ) {
+    if !neighbor_visible(world, neighbor_cell.id, neighbor_cell.visible) {
         return false;
     }
 
     match mode {
         EditorMode::Editor => true,
-        EditorMode::Play => neighbor_anchored(
-            world,
-            neighbor_cell.id,
-            neighbor_cell.anchored,
-        ),
+        EditorMode::Play => neighbor_anchored(world, neighbor_cell.id, neighbor_cell.anchored),
     }
 }
 
 #[inline(always)]
-fn shadow_neighbor_occludes(
-    world: &World,
-    neighbor_coord: WorldCoord,
-    mode: EditorMode,
-) -> bool {
+fn shadow_neighbor_occludes(world: &World, neighbor_coord: WorldCoord, mode: EditorMode) -> bool {
     let Some(neighbor_cell) = world.get_effective_cell(neighbor_coord) else {
         return false;
     };
@@ -554,48 +502,28 @@ fn shadow_neighbor_occludes(
         return false;
     }
 
-    if !neighbor_visible(
-        world,
-        neighbor_cell.id,
-        neighbor_cell.visible,
-    ) {
+    if !neighbor_visible(world, neighbor_cell.id, neighbor_cell.visible) {
         return false;
     }
 
-    if !neighbor_solid(
-        world,
-        neighbor_cell.id,
-        neighbor_cell.solid,
-    ) {
+    if !neighbor_solid(world, neighbor_cell.id, neighbor_cell.solid) {
         return false;
     }
 
     match mode {
         EditorMode::Editor => true,
-        EditorMode::Play => neighbor_anchored(
-            world,
-            neighbor_cell.id,
-            neighbor_cell.anchored,
-        ),
+        EditorMode::Play => neighbor_anchored(world, neighbor_cell.id, neighbor_cell.anchored),
     }
 }
 
 #[inline(always)]
-pub fn compute_exposed_faces_main(
-    world: &World,
-    coord: WorldCoord,
-    mode: EditorMode,
-) -> u8 {
+pub fn compute_exposed_faces_main(world: &World, coord: WorldCoord, mode: EditorMode) -> u8 {
     let mut mask = 0u8;
 
     for &face in &CubeFace::ALL {
         let neighbor_coord = face.neighbor_coord(coord);
 
-        if !main_neighbor_occludes(
-            world,
-            neighbor_coord,
-            mode,
-        ) {
+        if !main_neighbor_occludes(world, neighbor_coord, mode) {
             mask |= face.mask();
         }
     }
@@ -604,21 +532,13 @@ pub fn compute_exposed_faces_main(
 }
 
 #[inline(always)]
-pub fn compute_exposed_faces_shadow(
-    world: &World,
-    coord: WorldCoord,
-    mode: EditorMode,
-) -> u8 {
+pub fn compute_exposed_faces_shadow(world: &World, coord: WorldCoord, mode: EditorMode) -> u8 {
     let mut mask = 0u8;
 
     for &face in &CubeFace::ALL {
         let neighbor_coord = face.neighbor_coord(coord);
 
-        if !shadow_neighbor_occludes(
-            world,
-            neighbor_coord,
-            mode,
-        ) {
+        if !shadow_neighbor_occludes(world, neighbor_coord, mode) {
             mask |= face.mask();
         }
     }
@@ -631,8 +551,7 @@ pub fn create_block_masks() -> (u32, u32, [(i32, i32); 64]) {
     let mut mask_ranges = [(0i32, 0i32); 64];
 
     for mask in 0u8..64 {
-        let first_vertex =
-            (all_vertices.len() / BLOCK_VERTEX_FLOATS) as i32;
+        let first_vertex = (all_vertices.len() / BLOCK_VERTEX_FLOATS) as i32;
 
         let mut count = 0i32;
 
@@ -663,8 +582,7 @@ mod tests {
         let coord = WorldCoord::new(0, 0, 0);
         world.set_cell(coord, CellType::Block);
 
-        let mask =
-            compute_exposed_faces_main(&world, coord, EditorMode::Editor);
+        let mask = compute_exposed_faces_main(&world, coord, EditorMode::Editor);
 
         assert_eq!(mask, 63);
 
@@ -676,8 +594,7 @@ mod tests {
             }
         }
 
-        let vertex_count =
-            (vertices.len() / BLOCK_VERTEX_FLOATS) as i32;
+        let vertex_count = (vertices.len() / BLOCK_VERTEX_FLOATS) as i32;
 
         assert_eq!(vertex_count, 36);
     }
@@ -692,13 +609,9 @@ mod tests {
         world.set_cell(c1, CellType::Block);
         world.set_cell(c2, CellType::Block);
 
-        let mask =
-            compute_exposed_faces_main(&world, c1, EditorMode::Editor);
+        let mask = compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
-        assert_eq!(
-            mask,
-            63 & !CubeFace::Top.mask()
-        );
+        assert_eq!(mask, 63 & !CubeFace::Top.mask());
 
         let mut vertices = Vec::new();
 
@@ -708,8 +621,7 @@ mod tests {
             }
         }
 
-        let vertex_count =
-            (vertices.len() / BLOCK_VERTEX_FLOATS) as i32;
+        let vertex_count = (vertices.len() / BLOCK_VERTEX_FLOATS) as i32;
 
         assert_eq!(vertex_count, 30);
     }
@@ -721,22 +633,12 @@ mod tests {
         let c1 = WorldCoord::new(0, 0, 0);
 
         world.set_cell(c1, CellType::Block);
-        world.set_cell(
-            WorldCoord::new(0, 1, 0),
-            CellType::Block,
-        );
-        world.set_cell(
-            WorldCoord::new(1, 0, 0),
-            CellType::Block,
-        );
+        world.set_cell(WorldCoord::new(0, 1, 0), CellType::Block);
+        world.set_cell(WorldCoord::new(1, 0, 0), CellType::Block);
 
-        let mask =
-            compute_exposed_faces_main(&world, c1, EditorMode::Editor);
+        let mask = compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
-        let expected =
-            63
-                & !CubeFace::Top.mask()
-                & !CubeFace::Right.mask();
+        let expected = 63 & !CubeFace::Top.mask() & !CubeFace::Right.mask();
 
         assert_eq!(mask, expected);
 
@@ -748,8 +650,7 @@ mod tests {
             }
         }
 
-        let vertex_count =
-            (vertices.len() / BLOCK_VERTEX_FLOATS) as i32;
+        let vertex_count = (vertices.len() / BLOCK_VERTEX_FLOATS) as i32;
 
         assert_eq!(vertex_count, 24);
     }
@@ -761,22 +662,12 @@ mod tests {
         let c1 = WorldCoord::new(0, 0, 0);
 
         world.set_cell(c1, CellType::Block);
-        world.set_cell(
-            WorldCoord::new(0, 1, 0),
-            CellType::Block,
-        );
-        world.set_cell(
-            WorldCoord::new(0, -1, 0),
-            CellType::Block,
-        );
+        world.set_cell(WorldCoord::new(0, 1, 0), CellType::Block);
+        world.set_cell(WorldCoord::new(0, -1, 0), CellType::Block);
 
-        let mask =
-            compute_exposed_faces_main(&world, c1, EditorMode::Editor);
+        let mask = compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
-        let expected =
-            63
-                & !CubeFace::Top.mask()
-                & !CubeFace::Bottom.mask();
+        let expected = 63 & !CubeFace::Top.mask() & !CubeFace::Bottom.mask();
 
         assert_eq!(mask, expected);
     }
@@ -788,33 +679,14 @@ mod tests {
         let c1 = WorldCoord::new(0, 0, 0);
 
         world.set_cell(c1, CellType::Block);
-        world.set_cell(
-            WorldCoord::new(0, 1, 0),
-            CellType::Block,
-        );
-        world.set_cell(
-            WorldCoord::new(0, -1, 0),
-            CellType::Block,
-        );
-        world.set_cell(
-            WorldCoord::new(0, 0, 1),
-            CellType::Block,
-        );
-        world.set_cell(
-            WorldCoord::new(0, 0, -1),
-            CellType::Block,
-        );
-        world.set_cell(
-            WorldCoord::new(-1, 0, 0),
-            CellType::Block,
-        );
-        world.set_cell(
-            WorldCoord::new(1, 0, 0),
-            CellType::Block,
-        );
+        world.set_cell(WorldCoord::new(0, 1, 0), CellType::Block);
+        world.set_cell(WorldCoord::new(0, -1, 0), CellType::Block);
+        world.set_cell(WorldCoord::new(0, 0, 1), CellType::Block);
+        world.set_cell(WorldCoord::new(0, 0, -1), CellType::Block);
+        world.set_cell(WorldCoord::new(-1, 0, 0), CellType::Block);
+        world.set_cell(WorldCoord::new(1, 0, 0), CellType::Block);
 
-        let mask =
-            compute_exposed_faces_main(&world, c1, EditorMode::Editor);
+        let mask = compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
         assert_eq!(mask, 0);
 
@@ -837,19 +709,10 @@ mod tests {
         world.set_cell(c1, CellType::Block);
 
         for &face in &CubeFace::ALL {
-            assert!(
-                world
-                    .get_effective_cell(face.neighbor_coord(c1))
-                    .is_none()
-            );
+            assert!(world.get_effective_cell(face.neighbor_coord(c1)).is_none());
         }
 
-        let mask =
-            compute_exposed_faces_main(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+        let mask = compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
         assert_eq!(mask, 63);
     }
@@ -891,27 +754,15 @@ mod tests {
         let c1 = WorldCoord::new(0, 0, 0);
         world.set_cell(c1, CellType::Block);
 
-        let id =
-            world.create_runtime_cell(CellType::Block);
+        let id = world.create_runtime_cell(CellType::Block);
 
         world
-            .move_runtime_cell(
-                id,
-                WorldCoord::new(0, 1, 0),
-            )
+            .move_runtime_cell(id, WorldCoord::new(0, 1, 0))
             .unwrap();
 
-        let mask =
-            compute_exposed_faces_main(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+        let mask = compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
-        assert_eq!(
-            mask,
-            63 & !CubeFace::Top.mask()
-        );
+        assert_eq!(mask, 63 & !CubeFace::Top.mask());
     }
 
     #[test]
@@ -922,26 +773,17 @@ mod tests {
         let c2 = WorldCoord::new(0, 1, 0);
 
         world.set_cell(c1, CellType::Block);
-        let id2 =
-            world.set_cell(c2, CellType::Block);
+        let id2 = world.set_cell(c2, CellType::Block);
 
         assert_eq!(
-            compute_exposed_faces_main(
-                &world,
-                c1,
-                EditorMode::Editor,
-            ),
+            compute_exposed_faces_main(&world, c1, EditorMode::Editor,),
             63 & !CubeFace::Top.mask()
         );
 
         world.delete_cell_runtime(id2);
 
         assert_eq!(
-            compute_exposed_faces_main(
-                &world,
-                c1,
-                EditorMode::Editor,
-            ),
+            compute_exposed_faces_main(&world, c1, EditorMode::Editor,),
             63
         );
     }
@@ -956,17 +798,9 @@ mod tests {
         world.set_cell(c1, CellType::Block);
         world.set_cell(c2, CellType::Block);
 
-        world.set_cell_visible_runtime(
-            c2,
-            false,
-        );
+        world.set_cell_visible_runtime(c2, false);
 
-        let mask =
-            compute_exposed_faces_main(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+        let mask = compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
         assert_eq!(mask, 63);
     }
@@ -981,22 +815,11 @@ mod tests {
         world.set_cell(c1, CellType::Block);
         world.set_cell(c2, CellType::Block);
 
-        world.set_cell_solid_runtime(
-            c2,
-            false,
-        );
+        world.set_cell_solid_runtime(c2, false);
 
-        let mask_main =
-            compute_exposed_faces_main(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+        let mask_main = compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
-        assert_eq!(
-            mask_main,
-            63 & !CubeFace::Top.mask()
-        );
+        assert_eq!(mask_main, 63 & !CubeFace::Top.mask());
     }
 
     #[test]
@@ -1009,29 +832,13 @@ mod tests {
         world.set_cell(c1, CellType::Block);
         world.set_cell(c2, CellType::Block);
 
-        let mask_shadow_1 =
-            compute_exposed_faces_shadow(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+        let mask_shadow_1 = compute_exposed_faces_shadow(&world, c1, EditorMode::Editor);
 
-        assert_eq!(
-            mask_shadow_1,
-            63 & !CubeFace::Top.mask()
-        );
+        assert_eq!(mask_shadow_1, 63 & !CubeFace::Top.mask());
 
-        world.set_cell_solid_runtime(
-            c2,
-            false,
-        );
+        world.set_cell_solid_runtime(c2, false);
 
-        let mask_shadow_2 =
-            compute_exposed_faces_shadow(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+        let mask_shadow_2 = compute_exposed_faces_shadow(&world, c1, EditorMode::Editor);
 
         assert_eq!(mask_shadow_2, 63);
     }
@@ -1046,21 +853,11 @@ mod tests {
         world.set_cell(c1, CellType::Block);
         world.set_cell(c2, CellType::FxBlock);
 
-        let mask_main =
-            compute_exposed_faces_main(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+        let mask_main = compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
         assert_eq!(mask_main, 63);
 
-        let mask_shadow =
-            compute_exposed_faces_shadow(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+        let mask_shadow = compute_exposed_faces_shadow(&world, c1, EditorMode::Editor);
 
         assert_eq!(mask_shadow, 63);
     }
@@ -1073,26 +870,13 @@ mod tests {
         let c2 = WorldCoord::new(0, 1, 0);
 
         world.set_cell(c1, CellType::Block);
-        world.set_cell(
-            c2,
-            CellType::AudioEmitter,
-        );
+        world.set_cell(c2, CellType::AudioEmitter);
 
-        let mask_main =
-            compute_exposed_faces_main(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+        let mask_main = compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
         assert_eq!(mask_main, 63);
 
-        let mask_shadow =
-            compute_exposed_faces_shadow(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+        let mask_shadow = compute_exposed_faces_shadow(&world, c1, EditorMode::Editor);
 
         assert_eq!(mask_shadow, 63);
     }
@@ -1107,29 +891,13 @@ mod tests {
         world.set_cell(c1, CellType::Block);
         world.set_cell(c2, CellType::Light);
 
-        world.set_cell_visible_runtime(
-            c2,
-            true,
-        );
+        world.set_cell_visible_runtime(c2, true);
 
-        let mask_main =
-            compute_exposed_faces_main(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+        let mask_main = compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
-        assert_eq!(
-            mask_main,
-            63 & !CubeFace::Top.mask()
-        );
+        assert_eq!(mask_main, 63 & !CubeFace::Top.mask());
 
-        let mask_shadow =
-            compute_exposed_faces_shadow(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+        let mask_shadow = compute_exposed_faces_shadow(&world, c1, EditorMode::Editor);
 
         assert_eq!(mask_shadow, 63);
     }
@@ -1140,27 +908,15 @@ mod tests {
 
         CubeFace::Top.add_face_quad(&mut vertices);
 
-        assert_eq!(
-            vertices.len(),
-            6 * BLOCK_VERTEX_FLOATS
-        );
+        assert_eq!(vertices.len(), 6 * BLOCK_VERTEX_FLOATS);
 
         assert_eq!(vertices[3], 0.0);
         assert_eq!(vertices[4], 1.0);
         assert_eq!(vertices[5], 0.0);
 
-        assert_eq!(
-            &vertices[10..12],
-            &[0.0, 1.0]
-        );
-        assert_eq!(
-            &vertices[22..24],
-            &[1.0, 1.0]
-        );
-        assert_eq!(
-            &vertices[34..36],
-            &[1.0, 0.0]
-        );
+        assert_eq!(&vertices[10..12], &[0.0, 1.0]);
+        assert_eq!(&vertices[22..24], &[1.0, 1.0]);
+        assert_eq!(&vertices[34..36], &[1.0, 0.0]);
     }
 
     #[test]
@@ -1176,13 +932,9 @@ mod tests {
                 }
             }
 
-            let count =
-                (vertices.len() / BLOCK_VERTEX_FLOATS) as i32;
+            let count = (vertices.len() / BLOCK_VERTEX_FLOATS) as i32;
 
-            assert_eq!(
-                count,
-                num_faces * 6
-            );
+            assert_eq!(count, num_faces * 6);
         }
     }
 }

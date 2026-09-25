@@ -1,5 +1,3 @@
-use std::ffi::CString;
-
 use glam::{Mat4, Vec3};
 
 use crate::editor::{Editor, GridPlane};
@@ -120,22 +118,12 @@ impl Renderer {
 
                 gl::UseProgram(self.shadow_program);
 
-                let s_lsm_name = CString::new("u_light_space_matrix").unwrap();
-
-                let s_lsm_location =
-                    gl::GetUniformLocation(self.shadow_program, s_lsm_name.as_ptr());
-
                 gl::UniformMatrix4fv(
-                    s_lsm_location,
+                    self.shadow_light_space_matrix_location,
                     1,
                     gl::FALSE,
                     light_space_matrix.to_cols_array().as_ptr(),
                 );
-
-                let s_model_name = CString::new("u_model").unwrap();
-
-                let s_model_location =
-                    gl::GetUniformLocation(self.shadow_program, s_model_name.as_ptr());
 
                 let cache = self.chunk_cache.borrow();
 
@@ -146,7 +134,7 @@ impl Renderer {
                         let model = Mat4::from_translation(origin);
 
                         gl::UniformMatrix4fv(
-                            s_model_location,
+                            self.shadow_model_location,
                             1,
                             gl::FALSE,
                             model.to_cols_array().as_ptr(),
@@ -171,7 +159,7 @@ impl Renderer {
                         let model = Mat4::from_translation(body.position);
 
                         gl::UniformMatrix4fv(
-                            s_model_location,
+                            self.shadow_model_location,
                             1,
                             gl::FALSE,
                             model.to_cols_array().as_ptr(),
@@ -200,9 +188,11 @@ impl Renderer {
 
             gl::UseProgram(self.grid_program);
 
-            let vp_name = CString::new("u_view_projection").unwrap();
-
-            let vp_location = gl::GetUniformLocation(self.grid_program, vp_name.as_ptr());
+            let vp_location = self.grid_view_projection_location;
+            let model_location = self.grid_model_location;
+            let base_color_location = self.grid_base_color_location;
+            let alpha_location = self.grid_alpha_location;
+            let use_tex_location = self.grid_use_texture_location;
 
             gl::UniformMatrix4fv(
                 vp_location,
@@ -211,39 +201,18 @@ impl Renderer {
                 view_projection.to_cols_array().as_ptr(),
             );
 
-            let model_name = CString::new("u_model").unwrap();
-
-            let model_location = gl::GetUniformLocation(self.grid_program, model_name.as_ptr());
-
-            let base_color_name = CString::new("u_base_color").unwrap();
-
-            let base_color_location =
-                gl::GetUniformLocation(self.grid_program, base_color_name.as_ptr());
-
             gl::Uniform3f(base_color_location, 1.0, 1.0, 1.0);
 
-            let alpha_name = CString::new("u_alpha").unwrap();
-
-            let alpha_location = gl::GetUniformLocation(self.grid_program, alpha_name.as_ptr());
-
-            let use_tex_name = CString::new("u_use_texture").unwrap();
-
-            let use_tex_location = gl::GetUniformLocation(self.grid_program, use_tex_name.as_ptr());
+            gl::Uniform1f(alpha_location, 1.0);
 
             // Global lighting.
-            let ambient_name = CString::new("u_ambient_intensity").unwrap();
-
-            let ambient_location = gl::GetUniformLocation(self.grid_program, ambient_name.as_ptr());
-
-            gl::Uniform1f(ambient_location, world.lighting.ambient_intensity);
-
-            let global_enabled_name = CString::new("u_global_light_enabled").unwrap();
-
-            let global_enabled_location =
-                gl::GetUniformLocation(self.grid_program, global_enabled_name.as_ptr());
+            gl::Uniform1f(
+                self.grid_ambient_intensity_location,
+                world.lighting.ambient_intensity,
+            );
 
             gl::Uniform1i(
-                global_enabled_location,
+                self.grid_global_light_enabled_location,
                 if world.lighting.global_light_enabled {
                     1
                 } else {
@@ -251,59 +220,35 @@ impl Renderer {
                 },
             );
 
-            let global_dir_name = CString::new("u_global_light_direction").unwrap();
-
-            let global_dir_location =
-                gl::GetUniformLocation(self.grid_program, global_dir_name.as_ptr());
-
             gl::Uniform3f(
-                global_dir_location,
+                self.grid_global_light_direction_location,
                 world.lighting.global_light_direction.x,
                 world.lighting.global_light_direction.y,
                 world.lighting.global_light_direction.z,
             );
 
-            let global_color_name = CString::new("u_global_light_color").unwrap();
-
-            let global_color_location =
-                gl::GetUniformLocation(self.grid_program, global_color_name.as_ptr());
-
             gl::Uniform3f(
-                global_color_location,
+                self.grid_global_light_color_location,
                 world.lighting.global_light_color.x,
                 world.lighting.global_light_color.y,
                 world.lighting.global_light_color.z,
             );
 
-            let global_intensity_name = CString::new("u_global_light_intensity").unwrap();
-
-            let global_intensity_location =
-                gl::GetUniformLocation(self.grid_program, global_intensity_name.as_ptr());
-
             gl::Uniform1f(
-                global_intensity_location,
+                self.grid_global_light_intensity_location,
                 world.lighting.global_light_intensity,
             );
 
             // Shadow uniforms.
-            let lsm_name = CString::new("u_light_space_matrix").unwrap();
-
-            let lsm_location = gl::GetUniformLocation(self.grid_program, lsm_name.as_ptr());
-
             gl::UniformMatrix4fv(
-                lsm_location,
+                self.grid_light_space_matrix_location,
                 1,
                 gl::FALSE,
                 light_space_matrix.to_cols_array().as_ptr(),
             );
 
-            let shadows_enabled_name = CString::new("u_shadows_enabled").unwrap();
-
-            let shadows_enabled_location =
-                gl::GetUniformLocation(self.grid_program, shadows_enabled_name.as_ptr());
-
             gl::Uniform1i(
-                shadows_enabled_location,
+                self.grid_shadows_enabled_location,
                 if world.lighting.shadows_enabled { 1 } else { 0 },
             );
 
@@ -311,12 +256,7 @@ impl Renderer {
 
             gl::BindTexture(gl::TEXTURE_2D, self.shadow_depth_tex);
 
-            let shadow_map_name = CString::new("u_shadow_map").unwrap();
-
-            let shadow_map_location =
-                gl::GetUniformLocation(self.grid_program, shadow_map_name.as_ptr());
-
-            gl::Uniform1i(shadow_map_location, 0);
+            gl::Uniform1i(self.grid_shadow_map_location, 0);
 
             gl::ActiveTexture(gl::TEXTURE1);
 
@@ -343,50 +283,31 @@ impl Renderer {
                 }
             }
 
-            let count_name = CString::new("u_point_light_count").unwrap();
-
-            let count_location = gl::GetUniformLocation(self.grid_program, count_name.as_ptr());
-
-            gl::Uniform1i(count_location, point_lights.len() as i32);
+            gl::Uniform1i(
+                self.grid_point_light_count_location,
+                point_lights.len() as i32,
+            );
 
             for (i, (coord, cell)) in point_lights.iter().enumerate() {
-                let base = format!("u_point_lights[{i}]");
-
-                let position_name = CString::new(format!("{base}.position")).unwrap();
-
-                let position_location =
-                    gl::GetUniformLocation(self.grid_program, position_name.as_ptr());
+                let uniforms = self.grid_point_light_uniforms[i];
 
                 gl::Uniform3f(
-                    position_location,
+                    uniforms.position,
                     coord.x as f32,
                     coord.y as f32,
                     coord.z as f32,
                 );
 
-                let color_name = CString::new(format!("{base}.color")).unwrap();
-
-                let color_location = gl::GetUniformLocation(self.grid_program, color_name.as_ptr());
-
                 gl::Uniform3f(
-                    color_location,
+                    uniforms.color,
                     cell.light_color.x,
                     cell.light_color.y,
                     cell.light_color.z,
                 );
 
-                let intensity_name = CString::new(format!("{base}.intensity")).unwrap();
+                gl::Uniform1f(uniforms.intensity, cell.light_intensity);
 
-                let intensity_location =
-                    gl::GetUniformLocation(self.grid_program, intensity_name.as_ptr());
-
-                gl::Uniform1f(intensity_location, cell.light_intensity);
-
-                let range_name = CString::new(format!("{base}.range")).unwrap();
-
-                let range_location = gl::GetUniformLocation(self.grid_program, range_name.as_ptr());
-
-                gl::Uniform1f(range_location, cell.light_range);
+                gl::Uniform1f(uniforms.range, cell.light_range);
             }
 
             // Authored world editor markers (Light and AudioEmitter).
@@ -480,10 +401,6 @@ impl Renderer {
                     gl::ActiveTexture(gl::TEXTURE1);
 
                     gl::BindTexture(gl::TEXTURE_2D, tex);
-
-                    gl::Uniform3f(base_color_location, 1.0, 1.0, 1.0);
-
-                    gl::Uniform1f(alpha_location, 1.0);
 
                     gl::DrawArrays(gl::TRIANGLES, batch.start_vertex, batch.vertex_count);
                 }

@@ -34,6 +34,14 @@ use self::resources::{
 use self::shader::create_program;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct PointLightUniformLocations {
+    pub(super) position: i32,
+    pub(super) color: i32,
+    pub(super) intensity: i32,
+    pub(super) range: i32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct GhostRenderCell {
     pub(super) coord: WorldCoord,
     pub(super) mask: u8,
@@ -53,6 +61,25 @@ pub struct Renderer {
     pub(super) ghost_model_location: i32,
     pub(super) ghost_color_location: i32,
     pub(super) ghost_alpha_location: i32,
+
+    pub(super) grid_view_projection_location: i32,
+    pub(super) grid_model_location: i32,
+    pub(super) grid_base_color_location: i32,
+    pub(super) grid_alpha_location: i32,
+    pub(super) grid_use_texture_location: i32,
+    pub(super) grid_ambient_intensity_location: i32,
+    pub(super) grid_global_light_enabled_location: i32,
+    pub(super) grid_global_light_direction_location: i32,
+    pub(super) grid_global_light_color_location: i32,
+    pub(super) grid_global_light_intensity_location: i32,
+    pub(super) grid_light_space_matrix_location: i32,
+    pub(super) grid_shadows_enabled_location: i32,
+    pub(super) grid_shadow_map_location: i32,
+    pub(super) grid_point_light_count_location: i32,
+    pub(super) grid_point_light_uniforms: [PointLightUniformLocations; 16],
+
+    pub(super) shadow_light_space_matrix_location: i32,
+    pub(super) shadow_model_location: i32,
 
     pub(super) grid_vao_xz: u32,
     pub(super) grid_vbo_xz: u32,
@@ -136,6 +163,45 @@ impl Renderer {
 
         let ghost_program = create_program(GHOST_VERTEX_SHADER, GHOST_FRAGMENT_SHADER);
 
+        let shadow_program = create_program(SHADOW_VERTEX_SHADER, SHADOW_FRAGMENT_SHADER);
+
+        let grid_view_projection_location = get_uniform_location(grid_program, "u_view_projection");
+        let grid_model_location = get_uniform_location(grid_program, "u_model");
+        let grid_base_color_location = get_uniform_location(grid_program, "u_base_color");
+        let grid_alpha_location = get_uniform_location(grid_program, "u_alpha");
+        let grid_use_texture_location = get_uniform_location(grid_program, "u_use_texture");
+        let grid_ambient_intensity_location =
+            get_uniform_location(grid_program, "u_ambient_intensity");
+        let grid_global_light_enabled_location =
+            get_uniform_location(grid_program, "u_global_light_enabled");
+        let grid_global_light_direction_location =
+            get_uniform_location(grid_program, "u_global_light_direction");
+        let grid_global_light_color_location =
+            get_uniform_location(grid_program, "u_global_light_color");
+        let grid_global_light_intensity_location =
+            get_uniform_location(grid_program, "u_global_light_intensity");
+        let grid_light_space_matrix_location =
+            get_uniform_location(grid_program, "u_light_space_matrix");
+        let grid_shadows_enabled_location = get_uniform_location(grid_program, "u_shadows_enabled");
+        let grid_shadow_map_location = get_uniform_location(grid_program, "u_shadow_map");
+        let grid_point_light_count_location =
+            get_uniform_location(grid_program, "u_point_light_count");
+
+        let grid_point_light_uniforms = std::array::from_fn(|i| {
+            let base = format!("u_point_lights[{i}]");
+
+            PointLightUniformLocations {
+                position: get_uniform_location(grid_program, &format!("{base}.position")),
+                color: get_uniform_location(grid_program, &format!("{base}.color")),
+                intensity: get_uniform_location(grid_program, &format!("{base}.intensity")),
+                range: get_uniform_location(grid_program, &format!("{base}.range")),
+            }
+        });
+
+        let shadow_light_space_matrix_location =
+            get_uniform_location(shadow_program, "u_light_space_matrix");
+        let shadow_model_location = get_uniform_location(shadow_program, "u_model");
+
         let ghost_view_projection_location =
             get_uniform_location(ghost_program, "u_view_projection");
         let ghost_model_location = get_uniform_location(ghost_program, "u_model");
@@ -159,8 +225,6 @@ impl Renderer {
         let (billboard_vao, billboard_vbo) = create_billboard_vao();
 
         let (character_vao, character_vbo) = create_character_vao_vbo();
-
-        let shadow_program = create_program(SHADOW_VERTEX_SHADER, SHADOW_FRAGMENT_SHADER);
 
         let mut shadow_fbo = 0;
         let mut shadow_depth_tex = 0;
@@ -186,17 +250,9 @@ impl Renderer {
                 std::ptr::null(),
             );
 
-            gl::TexParameteri(
-                gl::TEXTURE_2D,
-                gl::TEXTURE_MIN_FILTER,
-                gl::NEAREST as i32,
-            );
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
 
-            gl::TexParameteri(
-                gl::TEXTURE_2D,
-                gl::TEXTURE_MAG_FILTER,
-                gl::NEAREST as i32,
-            );
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
 
             gl::TexParameteri(
                 gl::TEXTURE_2D,
@@ -261,17 +317,9 @@ impl Renderer {
                 white_data.as_ptr() as *const _,
             );
 
-            gl::TexParameteri(
-                gl::TEXTURE_2D,
-                gl::TEXTURE_MIN_FILTER,
-                gl::NEAREST as i32,
-            );
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
 
-            gl::TexParameteri(
-                gl::TEXTURE_2D,
-                gl::TEXTURE_MAG_FILTER,
-                gl::NEAREST as i32,
-            );
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
 
             gl::BindTexture(gl::TEXTURE_2D, 0);
 
@@ -292,6 +340,25 @@ impl Renderer {
             ghost_model_location,
             ghost_color_location,
             ghost_alpha_location,
+
+            grid_view_projection_location,
+            grid_model_location,
+            grid_base_color_location,
+            grid_alpha_location,
+            grid_use_texture_location,
+            grid_ambient_intensity_location,
+            grid_global_light_enabled_location,
+            grid_global_light_direction_location,
+            grid_global_light_color_location,
+            grid_global_light_intensity_location,
+            grid_light_space_matrix_location,
+            grid_shadows_enabled_location,
+            grid_shadow_map_location,
+            grid_point_light_count_location,
+            grid_point_light_uniforms,
+
+            shadow_light_space_matrix_location,
+            shadow_model_location,
 
             grid_vao_xz,
             grid_vbo_xz,
@@ -380,6 +447,31 @@ impl Renderer {
             ghost_model_location: -1,
             ghost_color_location: -1,
             ghost_alpha_location: -1,
+
+            grid_view_projection_location: -1,
+            grid_model_location: -1,
+            grid_base_color_location: -1,
+            grid_alpha_location: -1,
+            grid_use_texture_location: -1,
+            grid_ambient_intensity_location: -1,
+            grid_global_light_enabled_location: -1,
+            grid_global_light_direction_location: -1,
+            grid_global_light_color_location: -1,
+            grid_global_light_intensity_location: -1,
+            grid_light_space_matrix_location: -1,
+            grid_shadows_enabled_location: -1,
+            grid_shadow_map_location: -1,
+            grid_point_light_count_location: -1,
+
+            grid_point_light_uniforms: [PointLightUniformLocations {
+                position: -1,
+                color: -1,
+                intensity: -1,
+                range: -1,
+            }; 16],
+
+            shadow_light_space_matrix_location: -1,
+            shadow_model_location: -1,
 
             grid_vao_xz: 0,
             grid_vbo_xz: 0,

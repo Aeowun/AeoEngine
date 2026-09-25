@@ -235,6 +235,307 @@ mod tests {
     use super::*;
     use crate::renderer::Renderer;
     use crate::world::DirtyReason;
+    use std::hint::black_box;
+    use std::time::{Duration, Instant};
+
+    const WORLD_BENCHMARK_COUNTS: &[usize] = &[
+        5_000, 10_000, 20_000, 30_000, 50_000, 75_000, 100_000, 200_000, 1_000_000,
+    ];
+
+    /// Safety ceiling for the number of chunks a benchmark case is allowed
+    /// to create. This specifically prevents pathological 1-D layouts from
+    /// allocating tens of thousands of chunk buckets.
+    const MAX_ESTIMATED_CHUNKS: usize = 4_096;
+
+    /// A single benchmark case must not monopolize the machine indefinitely.
+    const MAX_WORLD_CASE_TIME: Duration = Duration::from_secs(3);
+
+    /// A single spatial distribution gets a larger aggregate allowance while
+    /// still guaranteeing that the benchmark will stop.
+    const MAX_WORLD_SHAPE_TIME: Duration = Duration::from_secs(12);
+
+    /// Absolute ceiling for the complete large-world benchmark.
+    const MAX_WORLD_BENCHMARK_TIME: Duration = Duration::from_secs(30);
+
+    /// A sudden timing explosion relative to the previous size is treated as
+    /// suspicious and terminates that spatial distribution.
+    const MAX_WORLD_TIME_MULTIPLIER: f64 = 6.0;
+
+    const MARKER_COUNTS_PER_TYPE: &[usize] = &[5_000, 10_000, 25_000, 50_000, 100_000];
+
+    const MAX_MARKER_CASE_CELLS: usize = 300_000;
+    const MAX_MARKER_CASE_TIME: Duration = Duration::from_secs(3);
+    const MAX_MARKER_TOTAL_TIME: Duration = Duration::from_secs(15);
+    const MAX_MARKER_TIME_MULTIPLIER: f64 = 6.0;
+
+    #[derive(Clone, Copy, Debug)]
+    enum WorldBenchmarkShape {
+        Cube,
+        FlatPlane,
+        XLine,
+    }
+
+    impl WorldBenchmarkShape {
+        fn name(self) -> &'static str {
+            match self {
+                Self::Cube => "3D cube",
+                Self::FlatPlane => "2D flat plane",
+                Self::XLine => "1D X line",
+            }
+        }
+    }
+
+    fn ceil_div(value: usize, divisor: usize) -> usize {
+        value.div_ceil(divisor)
+    }
+
+    fn estimated_chunk_count(block_count: usize, shape: WorldBenchmarkShape) -> usize {
+        match shape {
+            WorldBenchmarkShape::Cube => {
+                let side = (block_count as f64).cbrt().ceil() as usize;
+                let chunks_per_axis = ceil_div(side.max(1), 16);
+
+                chunks_per_axis
+                    .saturating_mul(chunks_per_axis)
+                    .saturating_mul(chunks_per_axis)
+            }
+            WorldBenchmarkShape::FlatPlane => {
+                let side = (block_count as f64).sqrt().ceil() as usize;
+                let chunks_per_axis = ceil_div(side.max(1), 16);
+
+                chunks_per_axis.saturating_mul(chunks_per_axis)
+            }
+            WorldBenchmarkShape::XLine => ceil_div(block_count.max(1), 16),
+        }
+    }
+
+    fn populate_world_for_benchmark(
+        world: &mut World,
+        block_count: usize,
+        shape: WorldBenchmarkShape,
+    ) {
+        match shape {
+            WorldBenchmarkShape::Cube => {
+                let side = (block_count as f64).cbrt().ceil() as i32;
+
+                let mut count = 0usize;
+
+                'outer: for x in 0..side {
+                    for y in 0..side {
+                        for z in 0..side {
+                            world.set_cell(WorldCoord::new(x, y, z), CellType::Block);
+
+                            count += 1;
+
+                            if count >= block_count {
+                                break 'outer;
+                            }
+                        }
+                    }
+                }
+            }
+
+            WorldBenchmarkShape::FlatPlane => {
+                let side = (block_count as f64).sqrt().ceil() as i32;
+
+                let mut count = 0usize;
+
+                'outer: for x in 0..side {
+                    for z in 0..side {
+                        world.set_cell(WorldCoord::new(x, 0, z), CellType::Block);
+
+                        count += 1;
+
+                        if count >= block_count {
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+
+            WorldBenchmarkShape::XLine => {
+                for x in 0..block_count {
+                    world.set_cell(WorldCoord::new(x as i32, 0, 0), CellType::Block);
+                }
+            }
+        }
+    }
+
+    fn run_world_shape_benchmark(shape: WorldBenchmarkShape, total_start: Instant) {
+        let shape_start = Instant::now();
+        let mut previous_full_build: Option<Duration> = None;
+
+        for &block_count in WORLD_BENCHMARK_COUNTS {
+            if total_start.elapsed() >= MAX_WORLD_BENCHMARK_TIME {
+                println!(
+                    "[BENCHMARK BREAK] total world benchmark cutoff reached after {:?}; stopping before {} blocks ({})",
+                    total_start.elapsed(),
+                    block_count,
+                    shape.name()
+                );
+                break;
+            }
+
+            if shape_start.elapsed() >= MAX_WORLD_SHAPE_TIME {
+                println!(
+                    "[BENCHMARK BREAK] {} shape cutoff reached after {:?}; stopping before {} blocks",
+                    shape.name(),
+                    shape_start.elapsed(),
+                    block_count
+                );
+                break;
+            }
+
+            let estimated_chunks = estimated_chunk_count(block_count, shape);
+
+            if estimated_chunks > MAX_ESTIMATED_CHUNKS {
+                println!(
+                    "[BENCHMARK BREAK] {} would require approximately {} chunks for {} blocks; safety ceiling is {}",
+                    shape.name(),
+                    estimated_chunks,
+                    block_count,
+                    MAX_ESTIMATED_CHUNKS
+                );
+                break;
+            }
+
+            let case_start = Instant::now();
+
+            let mut world = World::new();
+
+            let population_start = Instant::now();
+
+            populate_world_for_benchmark(&mut world, block_count, shape);
+
+            let population_time = population_start.elapsed();
+
+            if world.resident_authored_cell_count() != block_count {
+                println!(
+                    "[BENCHMARK BREAK] {} blocks requested but world contains {}; stopping on unexpected population result",
+                    block_count,
+                    world.resident_authored_cell_count()
+                );
+                break;
+            }
+
+            if case_start.elapsed() >= MAX_WORLD_CASE_TIME {
+                println!(
+                    "[BENCHMARK BREAK] {} {} case exceeded {:?} during world setup ({:?}); stopping this shape",
+                    shape.name(),
+                    block_count,
+                    MAX_WORLD_CASE_TIME,
+                    case_start.elapsed()
+                );
+                break;
+            }
+
+            // The population mutations intentionally populate render dirtiness.
+            // Drain it before the full-build measurement so the benchmark only
+            // measures the CPU chunk construction itself.
+            let _ = world.drain_render_dirty_cells();
+
+            let full_build_start = Instant::now();
+
+            let mut total_batches = 0usize;
+            let mut built_chunks = 0usize;
+
+            for chunk_coord in world.iter_active_chunks() {
+                if let Some(coords) = world.get_active_coords_in_chunk(chunk_coord) {
+                    let coords_vec: Vec<WorldCoord> = coords.iter().copied().collect();
+
+                    let cpu_data =
+                        build_cpu_chunk_data(&world, chunk_coord, &coords_vec, EditorMode::Editor);
+
+                    total_batches += cpu_data.main_texture_vertices.len();
+
+                    built_chunks += 1;
+
+                    if full_build_start.elapsed() >= MAX_WORLD_CASE_TIME {
+                        println!(
+                            "[BENCHMARK BREAK] {} {} CPU chunk build exceeded {:?} at chunk {} of approximately {}",
+                            shape.name(),
+                            block_count,
+                            MAX_WORLD_CASE_TIME,
+                            built_chunks,
+                            estimated_chunks
+                        );
+                        return;
+                    }
+                }
+            }
+
+            let full_build_time = full_build_start.elapsed();
+
+            if let Some(previous) = previous_full_build {
+                if previous > Duration::from_millis(1)
+                    && full_build_time.as_secs_f64()
+                        > previous.as_secs_f64() * MAX_WORLD_TIME_MULTIPLIER
+                {
+                    println!(
+                        "[BENCHMARK BREAK] {} {} produced suspicious full-build growth: {:?} after {:?}; multiplier limit is {:.1}x",
+                        shape.name(),
+                        block_count,
+                        full_build_time,
+                        previous,
+                        MAX_WORLD_TIME_MULTIPLIER
+                    );
+                    break;
+                }
+            }
+
+            previous_full_build = Some(full_build_time);
+
+            if case_start.elapsed() >= MAX_WORLD_CASE_TIME {
+                println!(
+                    "[BENCHMARK BREAK] {} {} case exceeded {:?} after full build ({:?}); stopping this shape",
+                    shape.name(),
+                    block_count,
+                    MAX_WORLD_CASE_TIME,
+                    case_start.elapsed()
+                );
+                break;
+            }
+
+            // Measure one real selective edit after the initial dirty state has
+            // been drained, matching the previous benchmark methodology.
+            world.set_cell(WorldCoord::new(0, 0, 0), CellType::Empty);
+
+            let selective_start = Instant::now();
+
+            let dirty_coords = world.drain_render_dirty_cells();
+
+            let dirty_chunks = expand_dirty_coords_to_chunks(&dirty_coords);
+
+            let mut edit_batches = 0usize;
+
+            for chunk_coord in dirty_chunks {
+                let coords_vec: Vec<WorldCoord> = world
+                    .get_active_coords_in_chunk(chunk_coord)
+                    .map(|set| set.iter().copied().collect())
+                    .unwrap_or_default();
+
+                let cpu_data =
+                    build_cpu_chunk_data(&world, chunk_coord, &coords_vec, EditorMode::Editor);
+
+                edit_batches += cpu_data.main_texture_vertices.len();
+            }
+
+            let selective_edit_time = selective_start.elapsed();
+
+            println!(
+                "[BENCHMARK] Shape: {} | Blocks: {} | Estimated chunks: {} | Built chunks: {} | Population: {:?} | Full CPU build: {:?} | Selective edit rebuild: {:?} | Full batches: {} | Edit batches: {}",
+                shape.name(),
+                block_count,
+                estimated_chunks,
+                built_chunks,
+                population_time,
+                full_build_time,
+                selective_edit_time,
+                total_batches,
+                edit_batches
+            );
+        }
+    }
 
     #[test]
     fn test_renderer_chunk_cache_cleared_on_project_reset() {
@@ -438,80 +739,217 @@ mod tests {
 
     #[test]
     fn test_benchmark_large_world_performance_cliff() {
-        use std::time::Instant;
+        let total_start = Instant::now();
 
-        use crate::renderer::chunk::build_cpu_chunk_data;
+        for shape in [
+            WorldBenchmarkShape::Cube,
+            WorldBenchmarkShape::FlatPlane,
+            WorldBenchmarkShape::XLine,
+        ] {
+            if total_start.elapsed() >= MAX_WORLD_BENCHMARK_TIME {
+                println!(
+                    "[BENCHMARK BREAK] global world benchmark cutoff reached after {:?}; stopping before {}",
+                    total_start.elapsed(),
+                    shape.name()
+                );
+                break;
+            }
 
-        for &block_count in &[5_000, 10_000, 20_000] {
+            println!("[BENCHMARK SHAPE START] {}", shape.name());
+
+            run_world_shape_benchmark(shape, total_start);
+        }
+    }
+
+    #[test]
+    fn test_benchmark_marker_index_stress() {
+        let total_start = Instant::now();
+        let mut previous_resolve_time: Option<Duration> = None;
+
+        for &count_per_type in MARKER_COUNTS_PER_TYPE {
+            if total_start.elapsed() >= MAX_MARKER_TOTAL_TIME {
+                println!(
+                    "[MARKER BENCHMARK BREAK] total cutoff reached after {:?}; stopping before {} cells/type",
+                    total_start.elapsed(),
+                    count_per_type
+                );
+                break;
+            }
+
+            let total_cells = count_per_type.saturating_mul(3);
+
+            if total_cells > MAX_MARKER_CASE_CELLS {
+                println!(
+                    "[MARKER BENCHMARK BREAK] {} total marker cells exceeds safety ceiling of {}",
+                    total_cells, MAX_MARKER_CASE_CELLS
+                );
+                break;
+            }
+
+            let case_start = Instant::now();
             let mut world = World::new();
 
-            let side = (block_count as f32).cbrt().ceil() as i32;
+            let population_start = Instant::now();
 
-            let mut count = 0;
+            for x in 0..count_per_type {
+                world.set_cell(WorldCoord::new(x as i32, 0, 0), CellType::Light);
 
-            'outer: for x in 0..side {
-                for y in 0..side {
-                    for z in 0..side {
-                        world.set_cell(WorldCoord::new(x, y, z), CellType::Block);
+                world.set_cell(WorldCoord::new(x as i32, 1, 0), CellType::AudioEmitter);
 
-                        count += 1;
-
-                        if count >= block_count {
-                            break 'outer;
-                        }
-                    }
-                }
+                world.set_cell(WorldCoord::new(x as i32, 2, 0), CellType::SpawnPoint);
             }
 
-            let start_full = Instant::now();
+            let population_time = population_start.elapsed();
 
-            let mut total_batches = 0;
-
-            for chunk_coord in world.iter_active_chunks() {
-                if let Some(coords) = world.get_active_coords_in_chunk(chunk_coord) {
-                    let coords_vec: Vec<WorldCoord> = coords.iter().copied().collect();
-
-                    let cpu_data =
-                        build_cpu_chunk_data(&world, chunk_coord, &coords_vec, EditorMode::Editor);
-
-                    total_batches += cpu_data.main_texture_vertices.len();
-                }
+            if world.resident_authored_cell_count() != total_cells {
+                println!(
+                    "[MARKER BENCHMARK BREAK] expected {} cells but world contains {}; stopping",
+                    total_cells,
+                    world.resident_authored_cell_count()
+                );
+                break;
             }
 
-            let full_build_time = start_full.elapsed();
+            if population_time >= MAX_MARKER_CASE_TIME {
+                println!(
+                    "[MARKER BENCHMARK BREAK] population of {} cells took {:?}; cutoff is {:?}",
+                    total_cells, population_time, MAX_MARKER_CASE_TIME
+                );
+                break;
+            }
 
-            // World construction intentionally populated the render dirty set.
-            // Drain that state before measuring a single selective edit so this
-            // benchmark measures only the new mutation and its affected chunks.
             let _ = world.drain_render_dirty_cells();
 
-            world.set_cell(WorldCoord::new(0, 0, 0), CellType::Empty);
+            let marker_iteration_start = Instant::now();
 
-            let start_edit = Instant::now();
+            let mut editor_marker_count = 0usize;
+            let mut editor_marker_checksum = 0u64;
 
-            let dirty_coords = world.drain_render_dirty_cells();
-
-            let dirty_chunks = expand_dirty_coords_to_chunks(&dirty_coords);
-
-            let mut edit_batches = 0;
-
-            for chunk_coord in dirty_chunks {
-                let coords_vec: Vec<WorldCoord> = world
-                    .get_active_coords_in_chunk(chunk_coord)
-                    .map(|set| set.iter().copied().collect())
-                    .unwrap_or_default();
-
-                let cpu_data =
-                    build_cpu_chunk_data(&world, chunk_coord, &coords_vec, EditorMode::Editor);
-
-                edit_batches += cpu_data.main_texture_vertices.len();
+            for id in world.iter_editor_marker_ids() {
+                editor_marker_checksum ^= black_box(id);
+                editor_marker_count += 1;
             }
 
-            let edit_time = start_edit.elapsed();
+            black_box(editor_marker_checksum);
+
+            let marker_iteration_time = marker_iteration_start.elapsed();
+
+            let resolve_start = Instant::now();
+
+            let mut resolved_marker_count = 0usize;
+            let mut resolved_checksum = 0u64;
+
+            for id in world.iter_editor_marker_ids() {
+                let Some(coord) = world.resolve_cell_id(id) else {
+                    continue;
+                };
+
+                let Some(cell) = world.get_effective_cell(coord) else {
+                    continue;
+                };
+
+                resolved_checksum ^= black_box(cell.id ^ id);
+
+                resolved_marker_count += 1;
+            }
+
+            black_box(resolved_checksum);
+
+            let resolve_time = resolve_start.elapsed();
+
+            let light_start = Instant::now();
+
+            let mut light_count = 0usize;
+            let mut light_checksum = 0u64;
+
+            for id in world.iter_light_ids() {
+                light_checksum ^= black_box(id);
+                light_count += 1;
+            }
+
+            black_box(light_checksum);
+
+            let light_iteration_time = light_start.elapsed();
+
+            let audio_start = Instant::now();
+
+            let mut audio_count = 0usize;
+            let mut audio_checksum = 0u64;
+
+            for id in world.iter_audio_emitter_ids() {
+                audio_checksum ^= black_box(id);
+                audio_count += 1;
+            }
+
+            black_box(audio_checksum);
+
+            let audio_iteration_time = audio_start.elapsed();
+
+            if editor_marker_count != count_per_type * 2 {
+                println!(
+                    "[MARKER BENCHMARK BREAK] expected {} editor markers but indexed {}",
+                    count_per_type * 2,
+                    editor_marker_count
+                );
+                break;
+            }
+
+            if resolved_marker_count != editor_marker_count {
+                println!(
+                    "[MARKER BENCHMARK BREAK] {} editor markers indexed but only {} resolved",
+                    editor_marker_count, resolved_marker_count
+                );
+                break;
+            }
+
+            if light_count != count_per_type {
+                println!(
+                    "[MARKER BENCHMARK BREAK] expected {} lights but indexed {}",
+                    count_per_type, light_count
+                );
+                break;
+            }
+
+            if audio_count != count_per_type {
+                println!(
+                    "[MARKER BENCHMARK BREAK] expected {} audio emitters but indexed {}",
+                    count_per_type, audio_count
+                );
+                break;
+            }
+
+            if case_start.elapsed() >= MAX_MARKER_CASE_TIME {
+                println!(
+                    "[MARKER BENCHMARK BREAK] {} marker cells exceeded {:?} total-case cutoff",
+                    total_cells, MAX_MARKER_CASE_TIME
+                );
+                break;
+            }
+
+            if let Some(previous) = previous_resolve_time {
+                if previous > Duration::from_micros(100)
+                    && resolve_time.as_secs_f64()
+                        > previous.as_secs_f64() * MAX_MARKER_TIME_MULTIPLIER
+                {
+                    println!(
+                        "[MARKER BENCHMARK BREAK] {} marker cells produced suspicious resolve growth: {:?} after {:?}; multiplier limit is {:.1}x",
+                        total_cells, resolve_time, previous, MAX_MARKER_TIME_MULTIPLIER
+                    );
+                    break;
+                }
+            }
+
+            previous_resolve_time = Some(resolve_time);
 
             println!(
-                "[BENCHMARK] World size: {} blocks | Full CPU chunk build: {:?} (batches: {}) | Selective edit rebuild: {:?} (batches: {})",
-                block_count, full_build_time, total_batches, edit_time, edit_batches
+                "[MARKER BENCHMARK] Cells: {} | Per type: {} | Populate: {:?} | Marker ID iteration: {:?} | Marker resolve path: {:?} | Light index iteration: {:?} | Audio index iteration: {:?}",
+                total_cells,
+                count_per_type,
+                population_time,
+                marker_iteration_time,
+                resolve_time,
+                light_iteration_time,
+                audio_iteration_time
             );
         }
     }
