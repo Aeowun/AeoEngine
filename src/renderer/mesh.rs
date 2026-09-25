@@ -140,7 +140,7 @@ pub fn add_quad(
     add_vertex(vertices, v4, normal, color);
 }
 
-#[inline]
+#[inline(always)]
 fn add_vertex(
     vertices: &mut Vec<f32>,
     position: [f32; 3],
@@ -197,7 +197,7 @@ pub fn add_merged_block_quad(
     add_block_vertex(vertices, v4, normal, color, [0.0, 0.0]);
 }
 
-#[inline]
+#[inline(always)]
 fn add_block_vertex(
     vertices: &mut Vec<f32>,
     position: [f32; 3],
@@ -243,14 +243,7 @@ pub fn upload_block_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
         let stride = (BLOCK_VERTEX_FLOATS * mem::size_of::<f32>()) as i32;
 
         // Position.
-        gl::VertexAttribPointer(
-            0,
-            3,
-            gl::FLOAT,
-            gl::FALSE,
-            stride,
-            ptr::null(),
-        );
+        gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, stride, ptr::null());
         gl::EnableVertexAttribArray(0);
 
         // Normal.
@@ -298,14 +291,9 @@ pub fn upload_block_vertices_3d(vertices: &[f32]) -> (u32, u32, i32) {
 
 /// Uploads and draws a dynamic mesh used by runtime character rendering.
 ///
-/// This remains a short-lived compatibility path. The active renderer uses
-/// `draw_character_mesh_persistent()` for characters, so normal character
-/// rendering does not allocate a VAO/VBO here.
+/// The mesh is intentionally short-lived: the VAO and VBO are created for
+/// the draw and released immediately afterward.
 pub fn upload_and_draw_mesh_3d(vertices: &[f32]) {
-    if vertices.is_empty() {
-        return;
-    }
-
     unsafe {
         let mut vao = 0;
         let mut vbo = 0;
@@ -326,14 +314,7 @@ pub fn upload_and_draw_mesh_3d(vertices: &[f32]) {
         let stride = (VERTEX_3D_FLOATS * mem::size_of::<f32>()) as i32;
 
         // Position.
-        gl::VertexAttribPointer(
-            0,
-            3,
-            gl::FLOAT,
-            gl::FALSE,
-            stride,
-            ptr::null(),
-        );
+        gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, stride, ptr::null());
         gl::EnableVertexAttribArray(0);
 
         // Normal.
@@ -365,7 +346,6 @@ pub fn upload_and_draw_mesh_3d(vertices: &[f32]) {
         );
 
         gl::BindVertexArray(0);
-
         gl::DeleteBuffers(1, &vbo);
         gl::DeleteVertexArrays(1, &vao);
     }
@@ -391,8 +371,8 @@ impl CubeFace {
         CubeFace::Right,
     ];
 
-    #[inline]
-    pub fn mask(&self) -> u8 {
+    #[inline(always)]
+    pub fn mask(self) -> u8 {
         match self {
             CubeFace::Top => 1 << 0,
             CubeFace::Bottom => 1 << 1,
@@ -403,32 +383,19 @@ impl CubeFace {
         }
     }
 
-    #[inline]
-    pub fn neighbor_coord(&self, coord: WorldCoord) -> WorldCoord {
+    #[inline(always)]
+    pub fn neighbor_coord(self, coord: WorldCoord) -> WorldCoord {
         match self {
-            CubeFace::Top => {
-                WorldCoord::new(coord.x, coord.y + 1, coord.z)
-            }
-            CubeFace::Bottom => {
-                WorldCoord::new(coord.x, coord.y - 1, coord.z)
-            }
-            CubeFace::Front => {
-                WorldCoord::new(coord.x, coord.y, coord.z + 1)
-            }
-            CubeFace::Back => {
-                WorldCoord::new(coord.x, coord.y, coord.z - 1)
-            }
-            CubeFace::Left => {
-                WorldCoord::new(coord.x - 1, coord.y, coord.z)
-            }
-            CubeFace::Right => {
-                WorldCoord::new(coord.x + 1, coord.y, coord.z)
-            }
+            CubeFace::Top => WorldCoord::new(coord.x, coord.y + 1, coord.z),
+            CubeFace::Bottom => WorldCoord::new(coord.x, coord.y - 1, coord.z),
+            CubeFace::Front => WorldCoord::new(coord.x, coord.y, coord.z + 1),
+            CubeFace::Back => WorldCoord::new(coord.x, coord.y, coord.z - 1),
+            CubeFace::Left => WorldCoord::new(coord.x - 1, coord.y, coord.z),
+            CubeFace::Right => WorldCoord::new(coord.x + 1, coord.y, coord.z),
         }
     }
 
-    #[inline]
-    pub fn add_face_quad(&self, vertices: &mut Vec<f32>) {
+    pub fn add_face_quad(self, vertices: &mut Vec<f32>) {
         let color = [1.0, 1.0, 1.0, 1.0];
         let min = 0.0;
         let max = 1.0;
@@ -492,8 +459,12 @@ impl CubeFace {
     }
 }
 
-#[inline]
-fn neighbor_visible(world: &World, cell_id: u64, authored_visible: bool) -> bool {
+#[inline(always)]
+fn neighbor_visible(
+    world: &World,
+    cell_id: u64,
+    authored_visible: bool,
+) -> bool {
     world
         .runtime_state
         .get(&cell_id)
@@ -501,8 +472,12 @@ fn neighbor_visible(world: &World, cell_id: u64, authored_visible: bool) -> bool
         .unwrap_or(authored_visible)
 }
 
-#[inline]
-fn neighbor_solid(world: &World, cell_id: u64, authored_solid: bool) -> bool {
+#[inline(always)]
+fn neighbor_solid(
+    world: &World,
+    cell_id: u64,
+    authored_solid: bool,
+) -> bool {
     world
         .runtime_state
         .get(&cell_id)
@@ -510,7 +485,7 @@ fn neighbor_solid(world: &World, cell_id: u64, authored_solid: bool) -> bool {
         .unwrap_or(authored_solid)
 }
 
-#[inline]
+#[inline(always)]
 fn neighbor_anchored(
     world: &World,
     cell_id: u64,
@@ -523,7 +498,7 @@ fn neighbor_anchored(
         .unwrap_or(authored_anchored)
 }
 
-#[inline]
+#[inline(always)]
 fn main_neighbor_occludes(
     world: &World,
     neighbor_coord: WorldCoord,
@@ -542,7 +517,11 @@ fn main_neighbor_occludes(
         return false;
     }
 
-    if !neighbor_visible(world, neighbor_cell.id, neighbor_cell.visible) {
+    if !neighbor_visible(
+        world,
+        neighbor_cell.id,
+        neighbor_cell.visible,
+    ) {
         return false;
     }
 
@@ -556,7 +535,7 @@ fn main_neighbor_occludes(
     }
 }
 
-#[inline]
+#[inline(always)]
 fn shadow_neighbor_occludes(
     world: &World,
     neighbor_coord: WorldCoord,
@@ -575,11 +554,19 @@ fn shadow_neighbor_occludes(
         return false;
     }
 
-    if !neighbor_visible(world, neighbor_cell.id, neighbor_cell.visible) {
+    if !neighbor_visible(
+        world,
+        neighbor_cell.id,
+        neighbor_cell.visible,
+    ) {
         return false;
     }
 
-    if !neighbor_solid(world, neighbor_cell.id, neighbor_cell.solid) {
+    if !neighbor_solid(
+        world,
+        neighbor_cell.id,
+        neighbor_cell.solid,
+    ) {
         return false;
     }
 
@@ -593,7 +580,7 @@ fn shadow_neighbor_occludes(
     }
 }
 
-#[inline]
+#[inline(always)]
 pub fn compute_exposed_faces_main(
     world: &World,
     coord: WorldCoord,
@@ -601,10 +588,14 @@ pub fn compute_exposed_faces_main(
 ) -> u8 {
     let mut mask = 0u8;
 
-    for face in &CubeFace::ALL {
+    for &face in &CubeFace::ALL {
         let neighbor_coord = face.neighbor_coord(coord);
 
-        if !main_neighbor_occludes(world, neighbor_coord, mode) {
+        if !main_neighbor_occludes(
+            world,
+            neighbor_coord,
+            mode,
+        ) {
             mask |= face.mask();
         }
     }
@@ -612,7 +603,7 @@ pub fn compute_exposed_faces_main(
     mask
 }
 
-#[inline]
+#[inline(always)]
 pub fn compute_exposed_faces_shadow(
     world: &World,
     coord: WorldCoord,
@@ -620,10 +611,14 @@ pub fn compute_exposed_faces_shadow(
 ) -> u8 {
     let mut mask = 0u8;
 
-    for face in &CubeFace::ALL {
+    for &face in &CubeFace::ALL {
         let neighbor_coord = face.neighbor_coord(coord);
 
-        if !shadow_neighbor_occludes(world, neighbor_coord, mode) {
+        if !shadow_neighbor_occludes(
+            world,
+            neighbor_coord,
+            mode,
+        ) {
             mask |= face.mask();
         }
     }
@@ -641,7 +636,7 @@ pub fn create_block_masks() -> (u32, u32, [(i32, i32); 64]) {
 
         let mut count = 0i32;
 
-        for face in &CubeFace::ALL {
+        for &face in &CubeFace::ALL {
             if (mask & face.mask()) != 0 {
                 face.add_face_quad(&mut all_vertices);
                 count += 6;
@@ -651,8 +646,7 @@ pub fn create_block_masks() -> (u32, u32, [(i32, i32); 64]) {
         mask_ranges[mask as usize] = (first_vertex, count);
     }
 
-    let (vao, vbo, _) =
-        upload_block_vertices_3d(&all_vertices);
+    let (vao, vbo, _) = upload_block_vertices_3d(&all_vertices);
 
     (vao, vbo, mask_ranges)
 }
@@ -667,21 +661,16 @@ mod tests {
     fn test_isolated_voxel_exposes_all_six_faces() {
         let mut world = World::new();
         let coord = WorldCoord::new(0, 0, 0);
-
         world.set_cell(coord, CellType::Block);
 
         let mask =
-            compute_exposed_faces_main(
-                &world,
-                coord,
-                EditorMode::Editor,
-            );
+            compute_exposed_faces_main(&world, coord, EditorMode::Editor);
 
         assert_eq!(mask, 63);
 
         let mut vertices = Vec::new();
 
-        for face in &CubeFace::ALL {
+        for &face in &CubeFace::ALL {
             if (mask & face.mask()) != 0 {
                 face.add_face_quad(&mut vertices);
             }
@@ -704,11 +693,7 @@ mod tests {
         world.set_cell(c2, CellType::Block);
 
         let mask =
-            compute_exposed_faces_main(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+            compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
         assert_eq!(
             mask,
@@ -717,7 +702,7 @@ mod tests {
 
         let mut vertices = Vec::new();
 
-        for face in &CubeFace::ALL {
+        for &face in &CubeFace::ALL {
             if (mask & face.mask()) != 0 {
                 face.add_face_quad(&mut vertices);
             }
@@ -746,11 +731,7 @@ mod tests {
         );
 
         let mask =
-            compute_exposed_faces_main(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+            compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
         let expected =
             63
@@ -761,7 +742,7 @@ mod tests {
 
         let mut vertices = Vec::new();
 
-        for face in &CubeFace::ALL {
+        for &face in &CubeFace::ALL {
             if (mask & face.mask()) != 0 {
                 face.add_face_quad(&mut vertices);
             }
@@ -790,11 +771,7 @@ mod tests {
         );
 
         let mask =
-            compute_exposed_faces_main(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+            compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
         let expected =
             63
@@ -837,17 +814,13 @@ mod tests {
         );
 
         let mask =
-            compute_exposed_faces_main(
-                &world,
-                c1,
-                EditorMode::Editor,
-            );
+            compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
         assert_eq!(mask, 0);
 
         let mut vertices = Vec::new();
 
-        for face in &CubeFace::ALL {
+        for &face in &CubeFace::ALL {
             if (mask & face.mask()) != 0 {
                 face.add_face_quad(&mut vertices);
             }
@@ -861,15 +834,12 @@ mod tests {
         let mut world = World::new();
 
         let c1 = WorldCoord::new(0, 0, 0);
-
         world.set_cell(c1, CellType::Block);
 
-        for face in &CubeFace::ALL {
+        for &face in &CubeFace::ALL {
             assert!(
                 world
-                    .get_effective_cell(
-                        face.neighbor_coord(c1)
-                    )
+                    .get_effective_cell(face.neighbor_coord(c1))
                     .is_none()
             );
         }
@@ -892,27 +862,22 @@ mod tests {
             CubeFace::Top.neighbor_coord(c1),
             WorldCoord::new(10, -4, 20)
         );
-
         assert_eq!(
             CubeFace::Bottom.neighbor_coord(c1),
             WorldCoord::new(10, -6, 20)
         );
-
         assert_eq!(
             CubeFace::Front.neighbor_coord(c1),
             WorldCoord::new(10, -5, 21)
         );
-
         assert_eq!(
             CubeFace::Back.neighbor_coord(c1),
             WorldCoord::new(10, -5, 19)
         );
-
         assert_eq!(
             CubeFace::Left.neighbor_coord(c1),
             WorldCoord::new(9, -5, 20)
         );
-
         assert_eq!(
             CubeFace::Right.neighbor_coord(c1),
             WorldCoord::new(11, -5, 20)
@@ -924,7 +889,6 @@ mod tests {
         let mut world = World::new();
 
         let c1 = WorldCoord::new(0, 0, 0);
-
         world.set_cell(c1, CellType::Block);
 
         let id =
@@ -958,7 +922,6 @@ mod tests {
         let c2 = WorldCoord::new(0, 1, 0);
 
         world.set_cell(c1, CellType::Block);
-
         let id2 =
             world.set_cell(c2, CellType::Block);
 
@@ -993,7 +956,10 @@ mod tests {
         world.set_cell(c1, CellType::Block);
         world.set_cell(c2, CellType::Block);
 
-        world.set_cell_visible_runtime(c2, false);
+        world.set_cell_visible_runtime(
+            c2,
+            false,
+        );
 
         let mask =
             compute_exposed_faces_main(
@@ -1015,7 +981,10 @@ mod tests {
         world.set_cell(c1, CellType::Block);
         world.set_cell(c2, CellType::Block);
 
-        world.set_cell_solid_runtime(c2, false);
+        world.set_cell_solid_runtime(
+            c2,
+            false,
+        );
 
         let mask_main =
             compute_exposed_faces_main(
@@ -1052,7 +1021,10 @@ mod tests {
             63 & !CubeFace::Top.mask()
         );
 
-        world.set_cell_solid_runtime(c2, false);
+        world.set_cell_solid_runtime(
+            c2,
+            false,
+        );
 
         let mask_shadow_2 =
             compute_exposed_faces_shadow(
@@ -1101,7 +1073,10 @@ mod tests {
         let c2 = WorldCoord::new(0, 1, 0);
 
         world.set_cell(c1, CellType::Block);
-        world.set_cell(c2, CellType::AudioEmitter);
+        world.set_cell(
+            c2,
+            CellType::AudioEmitter,
+        );
 
         let mask_main =
             compute_exposed_faces_main(
@@ -1131,7 +1106,11 @@ mod tests {
 
         world.set_cell(c1, CellType::Block);
         world.set_cell(c2, CellType::Light);
-        world.set_cell_visible_runtime(c2, true);
+
+        world.set_cell_visible_runtime(
+            c2,
+            true,
+        );
 
         let mask_main =
             compute_exposed_faces_main(
@@ -1174,12 +1153,10 @@ mod tests {
             &vertices[10..12],
             &[0.0, 1.0]
         );
-
         assert_eq!(
             &vertices[22..24],
             &[1.0, 1.0]
         );
-
         assert_eq!(
             &vertices[34..36],
             &[1.0, 0.0]
@@ -1193,7 +1170,7 @@ mod tests {
 
             let mut vertices = Vec::new();
 
-            for face in &CubeFace::ALL {
+            for &face in &CubeFace::ALL {
                 if (mask & face.mask()) != 0 {
                     face.add_face_quad(&mut vertices);
                 }
@@ -1202,7 +1179,10 @@ mod tests {
             let count =
                 (vertices.len() / BLOCK_VERTEX_FLOATS) as i32;
 
-            assert_eq!(count, num_faces * 6);
+            assert_eq!(
+                count,
+                num_faces * 6
+            );
         }
     }
 }

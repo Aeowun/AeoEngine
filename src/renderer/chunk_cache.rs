@@ -480,6 +480,11 @@ mod tests {
 
             let full_build_time = start_full.elapsed();
 
+            // World construction intentionally populated the render dirty set.
+            // Drain that state before measuring a single selective edit so this
+            // benchmark measures only the new mutation and its affected chunks.
+            let _ = world.drain_render_dirty_cells();
+
             world.set_cell(WorldCoord::new(0, 0, 0), CellType::Empty);
 
             let start_edit = Instant::now();
