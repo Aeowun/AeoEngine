@@ -1,0 +1,130 @@
+// ENEMY BRAIN
+//
+// Owns enemy decision making.
+// Each spawned Enemy gets its own persistent brain fiber.
+
+on enemy_spawned(enemy) {
+    const player = get_entity("Player")
+
+    const detection_range = 12.0
+    const attack_range = 1.35
+    const move_speed = 2.5
+
+    touching_player = false
+
+    chase_time = 0.0
+    previous_chase_distance = 0.0
+
+    while enemy.is_valid() && enemy.alive {
+        if player.is_valid() && player.alive {
+            const enemy_position = enemy.position
+            const player_position = player.position
+
+            const dx = player_position[0] - enemy_position[0]
+            const dz = player_position[2] - enemy_position[2]
+
+            const distance = math.sqrt( dx * dx +    dz * dz    )
+
+            if distance <= detection_range {
+                // ---------------------------------------------------------
+                // CHASING
+                // ---------------------------------------------------------
+                if distance > 0.05 {
+                    const direction_x = dx / distance
+                    const direction_z = dz / distance
+
+                    enemy.velocity = [
+                        direction_x * move_speed,
+                        enemy.velocity[1],
+                        direction_z * move_speed
+                    ]
+
+                    enemy.facing = [
+                        direction_x,
+                        direction_z
+                    ]
+
+                    enemy.animation = "Walk"
+                }
+
+                // ---------------------------------------------------------
+                // STUCK CHECK
+                //
+                // If the enemy is still chasing but its distance from the
+                // player has barely changed after three seconds, jump.
+                // ---------------------------------------------------------
+                chase_time += 0.1
+
+                if chase_time >= 3.0 {
+                    const distance_change =        math.sqrt(       (distance - previous_chase_distance) *           (distance - previous_chase_distance)             )
+
+                    if distance_change <= 0.1 {
+                        if enemy.grounded {
+                            enemy.jump()
+                        }
+                    }
+
+                    previous_chase_distance = distance
+                    chase_time = 0.0
+                }
+
+                // ---------------------------------------------------------
+                // ATTACK RANGE
+                // ---------------------------------------------------------
+                if distance <= attack_range {
+                    if !touching_player {
+                        touching_player = true
+
+                        event.fire(
+                            "enemy_touch",
+                            enemy
+                        )
+                    }
+                } else {
+                    touching_player = false
+                }
+            } else {
+                // No longer chasing.
+                enemy.velocity = [
+                    0,
+                    enemy.velocity[1],
+                    0
+                ]
+
+                enemy.animation = "Idle"
+
+                touching_player = false
+                chase_time = 0.0
+                previous_chase_distance = distance
+            }
+        } else {
+            enemy.velocity = [
+                0,
+                enemy.velocity[1],
+                0
+            ]
+
+            enemy.animation = "Idle"
+
+            touching_player = false
+            chase_time = 0.0
+        }
+
+        wait(0.1)
+    }
+
+    if enemy.is_valid() {
+        enemy.velocity = [
+            0,
+            enemy.velocity[1],
+            0
+        ]
+
+        enemy.animation = "Idle"
+
+        event.fire(
+            "enemy_killed",
+            enemy
+        )
+    }
+}

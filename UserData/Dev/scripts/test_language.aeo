@@ -1,0 +1,27 @@
+on run_test() {
+    debug.log("[TEST] test_language START")
+    ok: bool = true
+
+    a: number = 10
+    const b: number = 20
+    a = a + b
+    if a != 30 { ok = false }
+
+    const c = a * 2 - 10
+    if c != 50 { ok = false }
+
+    const is_true = true
+    const is_false = false
+    if !is_true || is_false { ok = false }
+
+    const n = nil
+    if n != nil { ok = false }
+
+    if ok {
+        debug.log("[TEST] test_language PASS")
+    } else {
+        debug.log("[TEST] test_language FAIL")
+    }
+
+    test.complete("language", ok)
+}

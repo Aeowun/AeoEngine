@@ -1,0 +1,30 @@
+on run_test() {
+    debug.log("[TEST] test_arrays START")
+    ok: bool = true
+
+    const arr = basket.create(3, 0)
+    if basket.len(arr) != 3 { ok = false }
+
+    basket.insert(arr, 100)
+    if arr[3] != 100 { ok = false }
+
+    const rem = basket.remove(arr)
+    if rem != 100 { ok = false }
+
+    const idx = basket.find(arr, 0)
+    if idx != 0 { ok = false }
+
+    const copy = basket.clone(arr)
+    if basket.len(copy) != 3 { ok = false }
+
+    basket.clear(arr)
+    if basket.len(arr) != 0 { ok = false }
+
+    if ok {
+        debug.log("[TEST] test_arrays PASS")
+    } else {
+        debug.log("[TEST] test_arrays FAIL")
+    }
+
+    test.complete("arrays", ok)
+}

@@ -1,0 +1,7 @@
+const traps = find("Trap")
+
+for trap in traps {
+    trap.on_touch = fn(c) {
+        event.fire("on_damage", 10)
+    }
+}

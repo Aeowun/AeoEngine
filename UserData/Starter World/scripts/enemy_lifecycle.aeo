@@ -1,0 +1,28 @@
+// ENEMY LIFECYCLE
+//
+// Central enemy damage/death handling.
+//
+// Any gameplay system can damage an enemy through:
+// event.fire("enemy_damage", enemy, amount)
+
+on enemy_damage(enemy, amount) {
+    if !enemy.is_valid() || !enemy.alive {
+        return
+    }
+
+    enemy.damage(amount)
+
+    event.fire(
+        "enemy_damaged",
+        enemy,
+        amount
+    )
+
+    if !enemy.alive {
+        event.fire(
+            "enemy_killed",
+            enemy
+        )
+    }
+}
+

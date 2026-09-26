@@ -1,0 +1,239 @@
+
+
+// GAME HUD
+//
+// The HUD does not own player health or gold.
+//
+// The Player Manager owns the actual values.
+// The HUD only listens for events and displays what it receives.
+//
+// The flow is:
+//
+//     Player Manager
+//          |
+//          +----> on_health_changed ---> HUD
+//          |
+//          +----> on_gold_changed ----> HUD
+//          |
+//          +----> on_game_over -------> HUD
+//
+// This means the HUD can be changed without changing the game's
+// health or gold logic.
+//
+// It also means the game state does not depend on the HUD existing.
+
+
+// -----------------------------------------------------------------------------
+// HUD SETTINGS
+// -----------------------------------------------------------------------------
+//
+// These values control the visual layout only.
+// They are not part of the game's player state.
+
+const hud_width = 220
+const hud_height = 76
+const hud_margin = 20
+
+
+// -----------------------------------------------------------------------------
+// HUD ELEMENTS
+// -----------------------------------------------------------------------------
+//
+// These are UI objects owned by this script.
+//
+// The Player Manager never needs to know that these objects exist.
+
+const hud_panel = ui.new("Panel")
+const health_text = ui.new("Text")
+const gold_text = ui.new("Text")
+
+
+// -----------------------------------------------------------------------------
+// GAME OVER UI
+// -----------------------------------------------------------------------------
+//
+// The HUD listens for "on_game_over".
+//
+// When that event arrives, the HUD shows its game-over screen.
+//
+// The game-over screen is therefore a response to game state,
+// not the place where game state is stored.
+
+const game_over_text = ui.new("Text")
+const game_over_panel = ui.new("Panel")
+game_over_text.visible = false
+game_over_panel.visible = false
+game_over_text.color = [1.0, 1.0, 1.0, 1.0]
+game_over_panel.color = [0.0, 0.0, 0.0, 1.0]
+
+
+// -----------------------------------------------------------------------------
+// HUD UPDATE
+// -----------------------------------------------------------------------------
+//
+// This function positions the HUD using the current viewport size.
+//
+// It is purely presentation logic.
+
+fn update_hud() {
+    const viewport = ui.get_viewport_size()
+
+    const hud_y = viewport[1] - hud_height - hud_margin - 150
+
+    hud_panel.position = [
+        hud_margin,
+        hud_y
+    ]
+
+    health_text.position = [
+        hud_margin + 14,
+        hud_y + 14
+    ]
+
+    gold_text.position = [
+        hud_margin + 14,
+        hud_y + 42
+    ]
+}
+
+
+// -----------------------------------------------------------------------------
+// GAME OVER SCREEN
+// -----------------------------------------------------------------------------
+//
+// The Player Manager starts the game-over sequence by firing:
+//
+//     event.fire("on_game_over")
+//
+// The HUD receives that event here and handles only the presentation.
+//
+// The HUD does not decide that the player died.
+// It only shows what the game state tells it to show.
+
+fn show_game_over() {
+    const viewport = ui.get_viewport_size()
+
+    game_over_panel.position = [
+        0,
+        0
+    ]
+
+    game_over_panel.size = [
+        viewport[0],
+        viewport[1]
+    ]
+
+    game_over_text.position = [
+        viewport[0] / 2 - 12,
+        viewport[1] / 2 - 20
+    ]
+
+    game_over_panel.visible = true
+    game_over_text.visible = true
+
+    // The countdown is presentation logic.
+    game_over_text.text = "3"
+    wait(1)
+
+    game_over_text.text = "2"
+    wait(1)
+
+    game_over_text.text = "1"
+    wait(1)
+
+    game_over_text.visible = false
+    game_over_panel.visible = false
+}
+
+
+// -----------------------------------------------------------------------------
+// INITIAL HUD SETUP
+// -----------------------------------------------------------------------------
+//
+// This section creates the initial visual state.
+//
+// The values here are only the starting display.
+// The Player Manager remains the authority for the real game state.
+
+hud_panel.size = [
+    hud_width,
+    hud_height
+]
+
+hud_panel.color = [
+    0.05,
+    0.05,
+    0.05,
+    0.80
+]
+
+health_text.color = [
+    1.0,
+    1.0,
+    1.0,
+    1.0
+]
+
+gold_text.color = [
+    1.0,
+    0.85,
+    0.25,
+    1.0
+]
+
+health_text.text = "HEALTH: 100 / 100"
+gold_text.text = "GOLD: 0"
+
+update_hud()
+
+
+// -----------------------------------------------------------------------------
+// HEALTH CHANGED
+// -----------------------------------------------------------------------------
+//
+// The Player Manager sends:
+//
+//     event.fire("on_health_changed", health, max_health)
+//
+// The HUD listens for that event here.
+//
+// The important idea is that the HUD receives the state.
+// It does not calculate or own health itself.
+
+on on_health_changed(current, maximum) {
+    health_text.text = "HEALTH: " + current + " / " + maximum
+}
+
+
+// -----------------------------------------------------------------------------
+// GOLD CHANGED
+// -----------------------------------------------------------------------------
+//
+// The Player Manager sends:
+//
+//     event.fire("on_gold_changed", gold)
+//
+// The HUD simply displays the value it receives.
+
+on on_gold_changed(total_gold) {
+    gold_text.text = "GOLD: "
+    gold_text.text += total_gold
+}
+
+
+// -----------------------------------------------------------------------------
+// GAME OVER
+// -----------------------------------------------------------------------------
+//
+// The Player Manager announces:
+//
+//     event.fire("on_game_over")
+//
+// The HUD responds by showing its game-over UI.
+//
+// The Player Manager owns the game state.
+// The HUD owns the presentation.
+
+on on_game_over() {
+    show_game_over()
+}

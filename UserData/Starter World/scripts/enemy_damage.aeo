@@ -1,0 +1,25 @@
+// ENEMY DAMAGE
+//
+// Central player damage receiver.
+//
+// Any gameplay system can request damage through:
+// event.fire("on_damage", amount)
+
+on on_damage(amount) {
+    const player = get_entity("Player")
+
+    if !player.is_valid() || !player.alive {
+        return
+    }
+
+    player.damage(amount)
+
+    event.fire(
+        "player_damaged",
+        amount
+    )
+
+    if !player.alive {
+        event.fire("player_defeated")
+    }
+}

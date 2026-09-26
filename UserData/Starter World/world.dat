@@ -1,0 +1,42 @@
+WORLD_FORMAT 2
+NEXT_CELL_ID 100066672
+GRAVITY 0 -9.2 0
+LIGHTING true true 0.65 -0.45 0.68 0.2401583 0.2069728 0.2069728 9.5 0.2
+SKY true Cubemap_Tropical_01-512x512.png
+MOUSE false true
+DISABLED_SCRIPT scripts/attributeTest.aeo
+DISABLED_SCRIPT scripts/cellNew.aeo
+DISABLED_SCRIPT scripts/closure_test_expression.aeo
+DISABLED_SCRIPT scripts/closure_test_no_wait.aeo
+DISABLED_SCRIPT scripts/closure_test_wait.aeo
+DISABLED_SCRIPT scripts/test1_debugNewScript.aeo
+DISABLED_SCRIPT scripts/test_language.aeo
+DISABLED_SCRIPT scripts/test_control_flow.aeo
+DISABLED_SCRIPT scripts/test_arrays.aeo
+DISABLED_SCRIPT scripts/test_maps.aeo
+DISABLED_SCRIPT scripts/test_strings.aeo
+DISABLED_SCRIPT scripts/test_functions.aeo
+DISABLED_SCRIPT scripts/test_closures.aeo
+DISABLED_SCRIPT scripts/test_wait.aeo
+DISABLED_SCRIPT scripts/test_cells.aeo
+DISABLED_SCRIPT scripts/test_attributes.aeo
+DISABLED_SCRIPT scripts/test_entities.aeo
+DISABLED_SCRIPT scripts/test_lights.aeo
+DISABLED_SCRIPT scripts/test_world.aeo
+DISABLED_SCRIPT scripts/test_handles.aeo
+DISABLED_SCRIPT scripts/test_callbacks.aeo
+DISABLED_SCRIPT scripts/test_math.aeo
+DISABLED_SCRIPT scripts/master_test.aeo
+DISABLED_SCRIPT scripts/coins.aeo
+DISABLED_SCRIPT scripts/enemy_brain.aeo
+DISABLED_SCRIPT scripts/enemy_combat.aeo
+DISABLED_SCRIPT scripts/enemy_damage.aeo
+DISABLED_SCRIPT scripts/enviroment.aeo
+DISABLED_SCRIPT scripts/enemy_lifecycle.aeo
+DISABLED_SCRIPT scripts/ui_demo.aeo
+DISABLED_SCRIPT scripts/traps.aeo
+DISABLED_SCRIPT scripts/player_manager.aeo
+DISABLED_SCRIPT scripts/npc_spawn.aeo
+SELECTED_CHARACTER custom
+SELECTED_CONTROLLER thirdPerson_Controller
+SELECTED_CAMERA thirdPerson

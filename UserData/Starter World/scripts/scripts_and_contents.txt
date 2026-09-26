@@ -1,0 +1,1245 @@
+﻿----
+Script: scripts\coins.aeo
+Name:   coins.aeo
+Type:   AEO
+---
+// COINS
+//
+// Every object named "Coin" becomes collectible.
+//
+// The Coin script is responsible for the physical interaction:
+//
+//     player touches Coin
+//          |
+//          v
+//     Coin becomes invisible
+//     Coin becomes non-solid
+//          |
+//          v
+//     "on_gold" event
+//
+// The Coin itself does not own the player's gold total.
+//
+// Instead it sends the value to the Player Manager:
+//
+//     event.fire("on_gold", value)
+//
+// The Player Manager then:
+//
+//     1. adds the gold
+//     2. updates the score
+//     3. tells the HUD about the new gold total
+//     4. fires "on_coin" for the collection sound
+//
+// This creates a chain of small systems instead of one large script.
+//
+// Optional:
+//     coin.attributes["value"] = 5
+//
+// Attributes allow each Coin to carry its own value while the
+// collection logic stays the same for every Coin.
+
+const coins = find("Coin")
+
+for coin in coins {
+
+    // Read the value authored on this particular Coin.
+    const value = coin.attributes["value"]
+
+    // Give every Coin the same touch behavior.
+    coin.on_touch = fn(c) {
+
+        debug.log("Coin collected:", c.id)
+
+        // Send the value to the system that owns the player's gold.
+        //
+        // Coin = interaction
+        // Player Manager = game state
+        event.fire("on_gold", value)
+
+        // Hide this Coin for the current run.
+        coin.visible = false
+        coin.solid = false
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// LEVEL RESET
+// -----------------------------------------------------------------------------
+//
+// The Player Manager fires:
+//
+//     event.fire("on_lvl_reset")
+//
+// when the player respawns.
+//
+// The Coin script listens for that event and restores all Coins.
+//
+// This is another useful event pattern:
+//
+//     Player Manager
+//          |
+//          | "on_lvl_reset"
+//          v
+//     Coin system
+//          |
+//          v
+//     Restore collected Coins
+//
+// The Player Manager does not need to know how Coins are restored.
+// It only announces that the level state has been reset.
+
+on on_lvl_reset() {
+
+    for coin in coins {
+        coin.visible = true
+        coin.solid = true
+    }
+}
+
+----
+Script: scripts\doorScript.aeo
+Name:   doorScript.aeo
+Type:   AEO
+---
+// DOORS
+//
+// This script connects authored Door objects to gameplay behavior.
+//
+// Any object placed in the level with the name "Doors" becomes part
+// of this system.
+//
+// The Door script owns the temporary open/close behavior.
+//
+// When a Door is touched:
+//
+//     Door
+//       |
+//       +----> fires "door_open"
+//       |
+//       +----> hides the Doors
+//       |
+//       +----> waits
+//       |
+//       +----> restores the Doors
+//
+// The first event is important because the Door itself does not
+// play the sound.
+//
+// Instead it announces:
+//
+//     event.fire("door_open")
+//
+// The Environment script is listening for that event and plays
+// the correct sound.
+//
+// This is the general event pattern:
+//
+//     gameplay system -> event -> another system
+//
+// The two systems do not need to know about each other's implementation.
+
+const doors = find("Doors")
+
+
+// -----------------------------------------------------------------------------
+// INITIAL DOOR STATE
+// -----------------------------------------------------------------------------
+//
+// Set every Door to its authored starting state.
+
+for target in doors {
+    target.visible = true
+    target.solid = true
+}
+
+
+// -----------------------------------------------------------------------------
+// DOOR TOUCH BEHAVIOR
+// -----------------------------------------------------------------------------
+//
+// Every matching Door gets the same behavior.
+//
+// c is the object that touched the Door.
+
+for door in doors {
+
+    door.on_touch = fn(c) {
+
+        debug.log("Door touched:", c.id)
+
+        // Announce that a Door opened.
+        //
+        // The Environment script listens for this event and plays
+        // the Door sound.
+        event.fire("door_open")
+
+        // Open every Door together.
+        for target in doors {
+            target.visible = false
+            target.solid = false
+        }
+
+        // Keep the room open for one second.
+        wait(1)
+
+        // Close every Door together.
+        for target in doors {
+            target.visible = true
+            target.solid = true
+        }
+    }
+}
+
+----
+Script: scripts\enemy_brain.aeo
+Name:   enemy_brain.aeo
+Type:   AEO
+---
+// ENEMY BRAIN
+//
+// Owns enemy decision making.
+// Each spawned Enemy gets its own persistent brain fiber.
+
+on enemy_spawned(enemy) {
+    const player = get_entity("Player")
+
+    const detection_range = 12.0
+    const attack_range = 1.35
+    const move_speed = 2.5
+
+    touching_player = false
+
+    chase_time = 0.0
+    previous_chase_distance = 0.0
+
+    while enemy.is_valid() && enemy.alive {
+        if player.is_valid() && player.alive {
+            const enemy_position = enemy.position
+            const player_position = player.position
+
+            const dx = player_position[0] - enemy_position[0]
+            const dz = player_position[2] - enemy_position[2]
+
+            const distance = math.sqrt( dx * dx +    dz * dz    )
+
+            if distance <= detection_range {
+                // ---------------------------------------------------------
+                // CHASING
+                // ---------------------------------------------------------
+                if distance > 0.05 {
+                    const direction_x = dx / distance
+                    const direction_z = dz / distance
+
+                    enemy.velocity = [
+                        direction_x * move_speed,
+                        enemy.velocity[1],
+                        direction_z * move_speed
+                    ]
+
+                    enemy.facing = [
+                        direction_x,
+                        direction_z
+                    ]
+
+                    enemy.animation = "Walk"
+                }
+
+                // ---------------------------------------------------------
+                // STUCK CHECK
+                //
+                // If the enemy is still chasing but its distance from the
+                // player has barely changed after three seconds, jump.
+                // ---------------------------------------------------------
+                chase_time += 0.1
+
+                if chase_time >= 3.0 {
+                    const distance_change =        math.sqrt(       (distance - previous_chase_distance) *           (distance - previous_chase_distance)             )
+
+                    if distance_change <= 0.1 {
+                        if enemy.grounded {
+                            enemy.jump()
+                        }
+                    }
+
+                    previous_chase_distance = distance
+                    chase_time = 0.0
+                }
+
+                // ---------------------------------------------------------
+                // ATTACK RANGE
+                // ---------------------------------------------------------
+                if distance <= attack_range {
+                    if !touching_player {
+                        touching_player = true
+
+                        event.fire(
+                            "enemy_touch",
+                            enemy
+                        )
+                    }
+                } else {
+                    touching_player = false
+                }
+            } else {
+                // No longer chasing.
+                enemy.velocity = [
+                    0,
+                    enemy.velocity[1],
+                    0
+                ]
+
+                enemy.animation = "Idle"
+
+                touching_player = false
+                chase_time = 0.0
+                previous_chase_distance = distance
+            }
+        } else {
+            enemy.velocity = [
+                0,
+                enemy.velocity[1],
+                0
+            ]
+
+            enemy.animation = "Idle"
+
+            touching_player = false
+            chase_time = 0.0
+        }
+
+        wait(0.1)
+    }
+
+    if enemy.is_valid() {
+        enemy.velocity = [
+            0,
+            enemy.velocity[1],
+            0
+        ]
+
+        enemy.animation = "Idle"
+
+        event.fire(
+            "enemy_killed",
+            enemy
+        )
+    }
+}
+
+----
+Script: scripts\enemy_combat.aeo
+Name:   enemy_combat.aeo
+Type:   AEO
+---
+// ENEMY COMBAT
+//
+// Handles actual melee contact.
+// Chase range is completely separate from attack contact.
+
+on enemy_touch(enemy) {
+    if !enemy.is_valid() || !enemy.alive {
+        return
+    }
+
+    const player = get_entity("Player")
+
+    if !player.is_valid() || !player.alive {
+        return
+    }
+
+    const enemy_position = enemy.position
+    const player_position = player.position
+
+    const x_difference = math.abs( player_position[0] - enemy_position[0]  )
+
+    const y_difference = math.abs(  player_position[1] - enemy_position[1] )
+
+    const z_difference = math.abs( player_position[2] - enemy_position[2]  )
+
+    // Character-sized contact box.
+    const horizontal_contact = 1.0
+    const vertical_contact = 1.5
+
+    if x_difference <= horizontal_contact &&  y_difference <= vertical_contact && z_difference <= horizontal_contact {
+   event.fire("on_damage", 10)    }
+}
+
+
+----
+Script: scripts\enemy_damage.aeo
+Name:   enemy_damage.aeo
+Type:   AEO
+---
+// ENEMY DAMAGE
+//
+// Central player damage receiver.
+//
+// Any gameplay system can request damage through:
+// event.fire("on_damage", amount)
+
+on on_damage(amount) {
+    const player = get_entity("Player")
+
+    if !player.is_valid() || !player.alive {
+        return
+    }
+
+    player.damage(amount)
+
+    event.fire(
+        "player_damaged",
+        amount
+    )
+
+    if !player.alive {
+        event.fire("player_defeated")
+    }
+}
+
+----
+Script: scripts\enemy_lifecycle.aeo
+Name:   enemy_lifecycle.aeo
+Type:   AEO
+---
+// ENEMY LIFECYCLE
+//
+// Central enemy damage/death handling.
+//
+// Any gameplay system can damage an enemy through:
+// event.fire("enemy_damage", enemy, amount)
+
+on enemy_damage(enemy, amount) {
+    if !enemy.is_valid() || !enemy.alive {
+        return
+    }
+
+    enemy.damage(amount)
+
+    event.fire(
+        "enemy_damaged",
+        enemy,
+        amount
+    )
+
+    if !enemy.alive {
+        event.fire(
+            "enemy_killed",
+            enemy
+        )
+    }
+}
+
+
+----
+Script: scripts\enviroment.aeo
+Name:   enviroment.aeo
+Type:   AEO
+---
+// ENVIRONMENT
+//
+// This script is an example of using events to connect gameplay
+// to presentation effects such as sound.
+//
+// The Environment script does not decide when a door opens,
+// when the player is hurt, or when a coin is collected.
+//
+// Other systems announce those events.
+//
+// The flow is:
+//
+//     DOOR
+//       |
+//       | "door_open"
+//       v
+//     ENVIRONMENT
+//       |
+//       v
+//     Door sound
+//
+//     PLAYER MANAGER
+//       |
+//       | "on_coin"
+//       v
+//     ENVIRONMENT
+//       |
+//       v
+//     Coin sound
+//
+//     TRAP
+//       |
+//       | "on_hurt"
+//       v
+//     ENVIRONMENT
+//       |
+//       v
+//     Hurt sound
+//
+// This keeps sound effects independent from gameplay logic.
+//
+// A Trap does not need to know which sound object to play.
+// A Door does not need to know which sound asset is assigned.
+// They only need to fire the appropriate event.
+
+
+// -----------------------------------------------------------------------------
+// DOOR SOUND
+// -----------------------------------------------------------------------------
+//
+// Find the sound object by its authored name.
+//
+// find() connects the script to objects placed in the level.
+// The object itself contains the sound configuration.
+
+const door_sound = find("DoorSound")[0]
+
+// Start from a known state.
+door_sound.sound.stop()
+door_sound.sound.playing = false
+
+
+// -----------------------------------------------------------------------------
+// DOOR OPEN EVENT
+// -----------------------------------------------------------------------------
+//
+// The Doors script sends:
+//
+//     event.fire("door_open")
+//
+// This script listens for that event.
+//
+// Notice that the sound system does not need a reference to the Door.
+// The event is the connection between the two systems.
+
+on door_open() {
+
+    door_sound.sound.play()
+
+    // Let the effect play for one second.
+    wait(1)
+
+    door_sound.sound.stop()
+}
+
+
+// -----------------------------------------------------------------------------
+// DAMAGE SOUND
+// -----------------------------------------------------------------------------
+//
+// The Trap script sends:
+//
+//     event.fire("on_hurt")
+//
+// The Environment script responds by playing the hurt sound.
+//
+// The Trap does not know anything about this sound.
+
+const dmg = find("DmgSound")[0]
+dmg.sound.stop()
+dmg.sound.playing = false
+on on_hurt() {
+
+    dmg.sound.play()
+
+    wait(1)
+
+    dmg.sound.stop()
+}
+
+
+// -----------------------------------------------------------------------------
+// COIN COLLECTION SOUND
+// -----------------------------------------------------------------------------
+//
+// The Coin script does NOT fire the sound event directly.
+//
+// Instead:
+//
+//     Coin
+//       |
+//       | on_gold
+//       v
+//     Player Manager
+//       |
+//       | on_coin
+//       v
+//     Environment
+//
+// This lets the Player Manager remain responsible for game state
+// while the Environment remains responsible for sound.
+
+const coin = find("CollectFx")[0]
+
+coin.sound.stop()
+coin.sound.playing = false
+
+on on_coin() {
+
+    coin.sound.play()
+
+    wait(1)
+
+    coin.sound.stop()
+}
+
+----
+Script: scripts\npc_spawn.aeo
+Name:   npc_spawn.aeo
+Type:   AEO
+---
+
+// ENEMY MASTER
+//
+// Owns the enemy population.
+// Spawns one enemy type, tracks every instance,
+// handles death events, and respawns enemies.
+
+enemies: basket = []
+
+const enemy_health = 100
+const enemy_max_count = 5
+
+const spawn_points = [
+    [-41, 17, -2],
+    [-46, 17, -2],
+    [-36, 17, -2],
+    [-41, 17, -7],
+    [-41, 17, 3]
+]
+
+spawn_index = 0
+enemy_kills = 0
+
+fn spawn_enemy(position) {
+    const enemy = spawn("Enemy", position)
+
+    enemy.health = enemy_health
+    enemy.max_health = enemy_health
+    enemy.facing = [0, -1]
+    enemy.animation = "Idle"
+
+    basket.insert(enemies, enemy)
+
+    event.fire("enemy_spawned", enemy)
+}
+
+fn spawn_next_enemy() {
+    const position = spawn_points[spawn_index]
+
+    spawn_enemy(position)
+
+    spawn_index += 1
+
+    if spawn_index >= spawn_points.len() {
+        spawn_index = 0
+    }
+}
+
+// Initial population.
+spawn_enemy(spawn_points[0])
+spawn_enemy(spawn_points[1])
+spawn_enemy(spawn_points[2])
+spawn_enemy(spawn_points[3])
+spawn_enemy(spawn_points[4])
+
+// Enemy death notification.
+//
+// Remove the dead enemy from the registry, then
+// spawn a replacement after a short delay.
+on enemy_killed(enemy) {
+    enemy_kills += 1
+
+    wait(2.0)
+
+    index = 0
+
+    while index < enemies.len() {
+        const tracked = enemies[index]
+
+        if tracked.id == enemy.id {
+            basket.remove(enemies, index)
+            break
+        }
+
+        index += 1
+    }
+
+    if enemies.len() < enemy_max_count {
+        spawn_next_enemy()
+    }
+}
+
+----
+Script: scripts\player_manager.aeo
+Name:   player_manager.aeo
+Type:   AEO
+---
+// PLAYER MANAGER
+//
+// The Player Manager is the central owner of the player's game state.
+//
+// It does not handle UI, sound effects, doors, coins, or traps directly.
+// Instead, those systems send events here and the Player Manager updates
+// the actual game state.
+//
+// The basic flow is:
+//
+//     GAMEPLAY OBJECT
+//          |
+//          | event.fire(...)
+//          v
+//     PLAYER MANAGER
+//          |
+//          | event.fire(...)
+//          v
+//     OTHER SYSTEMS
+//
+// For example:
+//
+//     Trap
+//       -> "on_damage"
+//       -> Player Manager reduces health
+//       -> "on_health_changed"
+//       -> HUD updates
+//
+// This keeps each script responsible for one job.
+//
+// The level is authored from simple groups:
+//     Player
+//     Doors
+//     Trap
+//     Coin
+//
+// The names connect the authored world to the scripts through find().
+
+
+// -----------------------------------------------------------------------------
+// PLAYER STATE
+// -----------------------------------------------------------------------------
+//
+// The Player Manager owns these values.
+//
+// Other scripts should not create their own copy of health or gold.
+// They should communicate with this script through events.
+
+const max_health = 100
+const player = find("Player")[0]
+
+const spawn_position = player.position
+health = max_health
+gold = 0
+score = 0
+room = 1
+game_over = false
+
+
+// -----------------------------------------------------------------------------
+// INITIAL HEALTH STATE
+// -----------------------------------------------------------------------------
+//
+// The Player Manager can broadcast its current state to other systems.
+//
+// The HUD listens for "on_health_changed" and displays the values.
+//
+// This is an important pattern:
+//
+//     STATE OWNER
+//          |
+//          | event.fire(...)
+//          v
+//     DISPLAY / OTHER SYSTEM
+//
+// The event carries the data instead of the HUD reading the Player
+// Manager's variables directly.
+//
+//event.fire("on_health_changed", health, max_health)
+
+
+// -----------------------------------------------------------------------------
+// PLAYER TOOK DAMAGE
+// -----------------------------------------------------------------------------
+//
+// Traps do not change health themselves.
+//
+// Instead, a Trap sends:
+//
+//     event.fire("on_damage", 10)
+//
+// The Player Manager receives that event here and changes the real
+// health value.
+//
+// This makes the Trap a damage source rather than the owner of health.
+
+on on_damage(amount) {
+    if game_over {
+        return
+    }
+
+    health = math.max(0, health - amount)
+
+
+    // Tell every listener that the authoritative health value changed.
+    //
+    // The HUD listens for this event and updates its text.
+    event.fire("on_health_changed", health, max_health)
+
+    if health <= 0 {
+        game_over = true
+
+        // The Player Manager announces the game-over state.
+        //
+        // The HUD listens for this event and displays the
+        // game-over screen.
+        event.fire("on_game_over")
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// GAME OVER / RESPAWN
+// -----------------------------------------------------------------------------
+//
+// "on_game_over" begins the respawn flow.
+//
+// The Player Manager waits, moves the player back to the saved spawn
+// position, restores the game state, and then tells other systems
+// that the level state has been reset.
+
+on on_game_over() {
+    // Wait for the game-over countdown.
+    wait(3)
+
+    // Move the player back to the saved spawn position.
+    player.set_position(
+        spawn_position[0],
+        spawn_position[1],
+        spawn_position[2]
+    )
+
+    // Restore the player's game state.
+    health = max_health
+    gold = 0
+    game_over = false
+
+    // "on_lvl_reset" is a broadcast to gameplay systems.
+    //
+    // The Coin script listens for this event and restores collected coins.
+    event.fire("on_lvl_reset")
+
+    // Tell the HUD that the player's gold was reset.
+    event.fire("on_gold_changed", 0)
+
+    // Tell the HUD that health was restored.
+    event.fire("on_health_changed", health, max_health)
+}
+
+
+// -----------------------------------------------------------------------------
+// PLAYER COLLECTED GOLD
+// -----------------------------------------------------------------------------
+//
+// Coins do not own the player's gold total.
+//
+// A Coin sends:
+//
+//     event.fire("on_gold", value)
+//
+// The Player Manager receives the event and updates gold and score.
+//
+// Then it broadcasts the new total:
+//
+//     "on_gold_changed"
+//
+// The HUD listens for that event and displays the new amount.
+//
+// The Player Manager also sends:
+//
+//     "on_coin"
+//
+// The Environment script listens for that event and plays the
+// collection sound.
+//
+// So one gameplay action can travel through several systems:
+//
+//     Coin
+//       |
+//       | on_gold
+//       v
+//     Player Manager
+//       |
+//       +----> on_gold_changed ---> HUD
+//       |
+//       +----> on_coin -----------> Environment sound
+
+on on_gold(amount) {
+    if game_over {
+        return
+    }
+
+    gold += amount
+    score += amount * 10
+
+    // Tell the sound system that a coin was collected.
+    event.fire("on_coin")
+
+    // Tell the HUD the new total.
+    event.fire("on_gold_changed", gold)
+}
+
+
+// -----------------------------------------------------------------------------
+// PLAYER ENTERED A NEW ROOM  (PLACEHOLDER)
+// -----------------------------------------------------------------------------
+//
+// Gameplay systems can announce things that happen in the world.
+//
+// The Player Manager can then update the game's state in response.
+//
+// This event currently only stores the room number.
+
+on on_room_entered(room_number) {
+    if game_over {
+        return
+    }
+
+    room = room_number
+
+    debug.log("Entered room:", room)
+}
+
+
+// -----------------------------------------------------------------------------
+// PLAYER REACHED THE EXIT (PLACEHOLDER)
+// -----------------------------------------------------------------------------
+//
+// An exit or trigger can send:
+//
+//     event.fire("on_exit_reached")
+//
+// The Player Manager decides what that means for the current game.
+
+on on_exit_reached() {
+    if game_over {
+        return
+    }
+
+    debug.log("Exit reached")
+
+    event.fire("on_room_complete")
+}
+
+
+// -----------------------------------------------------------------------------
+// ROOM FINISHED (PLACEHOLDER)
+// -----------------------------------------------------------------------------
+//
+// This is another example of event-driven game flow.
+//
+// One system announces that the room is complete.
+// The Player Manager updates the game state.
+
+on on_room_complete() {
+    if game_over {
+        return
+    }
+
+    room += 1
+
+    debug.log("Room complete:", room)
+}
+
+----
+Script: scripts\traps.aeo
+Name:   traps.aeo
+Type:   AEO
+---
+// TRAPS
+//
+// Every object named "Trap" becomes a damage source.
+//
+// A Trap does not own the player's health.
+//
+// It only reports what happened:
+//
+//     player touched Trap
+//          |
+//          +----> "on_hurt"
+//          |
+//          +----> "on_damage", 10
+//
+// Two different systems can respond to those events.
+//
+// "on_hurt" is used by the Environment script to play the hurt sound.
+//
+// "on_damage" is used by the Player Manager to actually reduce health.
+//
+// So one interaction can notify multiple independent systems.
+//
+// This is the core event-driven pattern used throughout the example:
+// one system announces something happened, and any interested system
+// can listen and respond.
+
+const traps = find("Trap")
+
+for trap in traps {
+
+    trap.on_touch = fn(c) {
+
+        // Presentation event.
+        //
+        // Environment listens for this and plays the hurt sound.
+        event.fire("on_hurt")
+
+        // Gameplay event.
+        //
+        // Player Manager listens for this and changes health.
+        event.fire("on_damage", 10)
+    }
+}
+
+----
+Script: scripts\ui_demo.aeo
+Name:   ui_demo.aeo
+Type:   AEO
+---
+
+
+// GAME HUD
+//
+// The HUD does not own player health or gold.
+//
+// The Player Manager owns the actual values.
+// The HUD only listens for events and displays what it receives.
+//
+// The flow is:
+//
+//     Player Manager
+//          |
+//          +----> on_health_changed ---> HUD
+//          |
+//          +----> on_gold_changed ----> HUD
+//          |
+//          +----> on_game_over -------> HUD
+//
+// This means the HUD can be changed without changing the game's
+// health or gold logic.
+//
+// It also means the game state does not depend on the HUD existing.
+
+
+// -----------------------------------------------------------------------------
+// HUD SETTINGS
+// -----------------------------------------------------------------------------
+//
+// These values control the visual layout only.
+// They are not part of the game's player state.
+
+const hud_width = 220
+const hud_height = 76
+const hud_margin = 20
+
+
+// -----------------------------------------------------------------------------
+// HUD ELEMENTS
+// -----------------------------------------------------------------------------
+//
+// These are UI objects owned by this script.
+//
+// The Player Manager never needs to know that these objects exist.
+
+const hud_panel = ui.new("Panel")
+const health_text = ui.new("Text")
+const gold_text = ui.new("Text")
+
+
+// -----------------------------------------------------------------------------
+// GAME OVER UI
+// -----------------------------------------------------------------------------
+//
+// The HUD listens for "on_game_over".
+//
+// When that event arrives, the HUD shows its game-over screen.
+//
+// The game-over screen is therefore a response to game state,
+// not the place where game state is stored.
+
+const game_over_text = ui.new("Text")
+const game_over_panel = ui.new("Panel")
+game_over_text.visible = false
+game_over_panel.visible = false
+game_over_text.color = [1.0, 1.0, 1.0, 1.0]
+game_over_panel.color = [0.0, 0.0, 0.0, 1.0]
+
+
+// -----------------------------------------------------------------------------
+// HUD UPDATE
+// -----------------------------------------------------------------------------
+//
+// This function positions the HUD using the current viewport size.
+//
+// It is purely presentation logic.
+
+fn update_hud() {
+    const viewport = ui.get_viewport_size()
+
+    const hud_y = viewport[1] - hud_height - hud_margin - 150
+
+    hud_panel.position = [
+        hud_margin,
+        hud_y
+    ]
+
+    health_text.position = [
+        hud_margin + 14,
+        hud_y + 14
+    ]
+
+    gold_text.position = [
+        hud_margin + 14,
+        hud_y + 42
+    ]
+}
+
+
+// -----------------------------------------------------------------------------
+// GAME OVER SCREEN
+// -----------------------------------------------------------------------------
+//
+// The Player Manager starts the game-over sequence by firing:
+//
+//     event.fire("on_game_over")
+//
+// The HUD receives that event here and handles only the presentation.
+//
+// The HUD does not decide that the player died.
+// It only shows what the game state tells it to show.
+
+fn show_game_over() {
+    const viewport = ui.get_viewport_size()
+
+    game_over_panel.position = [
+        0,
+        0
+    ]
+
+    game_over_panel.size = [
+        viewport[0],
+        viewport[1]
+    ]
+
+    game_over_text.position = [
+        viewport[0] / 2 - 12,
+        viewport[1] / 2 - 20
+    ]
+
+    game_over_panel.visible = true
+    game_over_text.visible = true
+
+    // The countdown is presentation logic.
+    game_over_text.text = "3"
+    wait(1)
+
+    game_over_text.text = "2"
+    wait(1)
+
+    game_over_text.text = "1"
+    wait(1)
+
+    game_over_text.visible = false
+    game_over_panel.visible = false
+}
+
+
+// -----------------------------------------------------------------------------
+// INITIAL HUD SETUP
+// -----------------------------------------------------------------------------
+//
+// This section creates the initial visual state.
+//
+// The values here are only the starting display.
+// The Player Manager remains the authority for the real game state.
+
+hud_panel.size = [
+    hud_width,
+    hud_height
+]
+
+hud_panel.color = [
+    0.05,
+    0.05,
+    0.05,
+    0.80
+]
+
+health_text.color = [
+    1.0,
+    1.0,
+    1.0,
+    1.0
+]
+
+gold_text.color = [
+    1.0,
+    0.85,
+    0.25,
+    1.0
+]
+
+health_text.text = "HEALTH: 100 / 100"
+gold_text.text = "GOLD: 0"
+
+update_hud()
+
+
+// -----------------------------------------------------------------------------
+// HEALTH CHANGED
+// -----------------------------------------------------------------------------
+//
+// The Player Manager sends:
+//
+//     event.fire("on_health_changed", health, max_health)
+//
+// The HUD listens for that event here.
+//
+// The important idea is that the HUD receives the state.
+// It does not calculate or own health itself.
+
+on on_health_changed(current, maximum) {
+    health_text.text = "HEALTH: " + current + " / " + maximum
+}
+
+
+// -----------------------------------------------------------------------------
+// GOLD CHANGED
+// -----------------------------------------------------------------------------
+//
+// The Player Manager sends:
+//
+//     event.fire("on_gold_changed", gold)
+//
+// The HUD simply displays the value it receives.
+
+on on_gold_changed(total_gold) {
+    gold_text.text = "GOLD: "
+    gold_text.text += total_gold
+}
+
+
+// -----------------------------------------------------------------------------
+// GAME OVER
+// -----------------------------------------------------------------------------
+//
+// The Player Manager announces:
+//
+//     event.fire("on_game_over")
+//
+// The HUD responds by showing its game-over UI.
+//
+// The Player Manager owns the game state.
+// The HUD owns the presentation.
+
+on on_game_over() {
+    show_game_over()
+}
+

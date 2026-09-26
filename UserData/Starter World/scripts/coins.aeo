@@ -1,0 +1,94 @@
+// COINS
+//
+// Every object named "Coin" becomes collectible.
+//
+// The Coin script is responsible for the physical interaction:
+//
+//     player touches Coin
+//          |
+//          v
+//     Coin becomes invisible
+//     Coin becomes non-solid
+//          |
+//          v
+//     "on_gold" event
+//
+// The Coin itself does not own the player's gold total.
+//
+// Instead it sends the value to the Player Manager:
+//
+//     event.fire("on_gold", value)
+//
+// The Player Manager then:
+//
+//     1. adds the gold
+//     2. updates the score
+//     3. tells the HUD about the new gold total
+//     4. fires "on_coin" for the collection sound
+//
+// This creates a chain of small systems instead of one large script.
+//
+// Optional:
+//     coin.attributes["value"] = 5
+//
+// Attributes allow each Coin to carry its own value while the
+// collection logic stays the same for every Coin.
+
+const coins = find("Coin")
+
+for coin in coins {
+
+    // Read the value authored on this particular Coin.
+    const value = coin.attributes["value"]
+
+    // Give every Coin the same touch behavior.
+    coin.on_touch = fn(c) {
+
+        debug.log("Coin collected:", c.id)
+
+        // Send the value to the system that owns the player's gold.
+        //
+        // Coin = interaction
+        // Player Manager = game state
+        event.fire("on_gold", value)
+
+        // Hide this Coin for the current run.
+        coin.visible = false
+        coin.solid = false
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// LEVEL RESET
+// -----------------------------------------------------------------------------
+//
+// The Player Manager fires:
+//
+//     event.fire("on_lvl_reset")
+//
+// when the player respawns.
+//
+// The Coin script listens for that event and restores all Coins.
+//
+// This is another useful event pattern:
+//
+//     Player Manager
+//          |
+//          | "on_lvl_reset"
+//          v
+//     Coin system
+//          |
+//          v
+//     Restore collected Coins
+//
+// The Player Manager does not need to know how Coins are restored.
+// It only announces that the level state has been reset.
+
+on on_lvl_reset() {
+
+    for coin in coins {
+        coin.visible = true
+        coin.solid = true
+    }
+}

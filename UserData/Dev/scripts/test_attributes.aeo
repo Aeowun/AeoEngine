@@ -1,0 +1,28 @@
+on run_test() {
+    debug.log("[TEST] test_attributes START")
+    ok: bool = true
+
+    const temp_cell = cell.new("Block")
+    if temp_cell != nil {
+        temp_cell.attributes["health"] = 100
+        if temp_cell.attributes["health"] != 100 { ok = false }
+
+        temp_cell.attributes["health"] = 75
+        if temp_cell.attributes["health"] != 75 { ok = false }
+
+        temp_cell.attributes["health"] = nil
+        if temp_cell.attributes["health"] != nil { ok = false }
+
+        cell.delete(temp_cell)
+    } else {
+        ok = false
+    }
+
+    if ok {
+        debug.log("[TEST] test_attributes PASS")
+    } else {
+        debug.log("[TEST] test_attributes FAIL")
+    }
+
+    test.complete("attributes", ok)
+}

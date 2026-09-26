@@ -1,0 +1,88 @@
+// DOORS
+//
+// This script connects authored Door objects to gameplay behavior.
+//
+// Any object placed in the level with the name "Doors" becomes part
+// of this system.
+//
+// The Door script owns the temporary open/close behavior.
+//
+// When a Door is touched:
+//
+//     Door
+//       |
+//       +----> fires "door_open"
+//       |
+//       +----> hides the Doors
+//       |
+//       +----> waits
+//       |
+//       +----> restores the Doors
+//
+// The first event is important because the Door itself does not
+// play the sound.
+//
+// Instead it announces:
+//
+//     event.fire("door_open")
+//
+// The Environment script is listening for that event and plays
+// the correct sound.
+//
+// This is the general event pattern:
+//
+//     gameplay system -> event -> another system
+//
+// The two systems do not need to know about each other's implementation.
+
+const doors = find("Doors")
+
+
+// -----------------------------------------------------------------------------
+// INITIAL DOOR STATE
+// -----------------------------------------------------------------------------
+//
+// Set every Door to its authored starting state.
+
+for target in doors {
+    target.visible = true
+    target.solid = true
+}
+
+
+// -----------------------------------------------------------------------------
+// DOOR TOUCH BEHAVIOR
+// -----------------------------------------------------------------------------
+//
+// Every matching Door gets the same behavior.
+//
+// c is the object that touched the Door.
+
+for door in doors {
+
+    door.on_touch = fn(c) {
+
+        debug.log("Door touched:", c.id)
+
+        // Announce that a Door opened.
+        //
+        // The Environment script listens for this event and plays
+        // the Door sound.
+        event.fire("door_open")
+
+        // Open every Door together.
+        for target in doors {
+            target.visible = false
+            target.solid = false
+        }
+
+        // Keep the room open for one second.
+        wait(1)
+
+        // Close every Door together.
+        for target in doors {
+            target.visible = true
+            target.solid = true
+        }
+    }
+}

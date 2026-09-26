@@ -1,0 +1,81 @@
+
+// ENEMY MASTER
+//
+// Owns the enemy population.
+// Spawns one enemy type, tracks every instance,
+// handles death events, and respawns enemies.
+
+enemies: basket = []
+
+const enemy_health = 100
+const enemy_max_count = 5
+
+const spawn_points = [
+    [-41, 17, -2],
+    [-46, 17, -2],
+    [-36, 17, -2],
+    [-41, 17, -7],
+    [-41, 17, 3]
+]
+
+spawn_index = 0
+enemy_kills = 0
+
+fn spawn_enemy(position) {
+    const enemy = spawn("Enemy", position)
+
+    enemy.health = enemy_health
+    enemy.max_health = enemy_health
+    enemy.facing = [0, -1]
+    enemy.animation = "Idle"
+
+    basket.insert(enemies, enemy)
+
+    event.fire("enemy_spawned", enemy)
+}
+
+fn spawn_next_enemy() {
+    const position = spawn_points[spawn_index]
+
+    spawn_enemy(position)
+
+    spawn_index += 1
+
+    if spawn_index >= spawn_points.len() {
+        spawn_index = 0
+    }
+}
+
+// Initial population.
+spawn_enemy(spawn_points[0])
+spawn_enemy(spawn_points[1])
+spawn_enemy(spawn_points[2])
+spawn_enemy(spawn_points[3])
+spawn_enemy(spawn_points[4])
+
+// Enemy death notification.
+//
+// Remove the dead enemy from the registry, then
+// spawn a replacement after a short delay.
+on enemy_killed(enemy) {
+    enemy_kills += 1
+
+    wait(2.0)
+
+    index = 0
+
+    while index < enemies.len() {
+        const tracked = enemies[index]
+
+        if tracked.id == enemy.id {
+            basket.remove(enemies, index)
+            break
+        }
+
+        index += 1
+    }
+
+    if enemies.len() < enemy_max_count {
+        spawn_next_enemy()
+    }
+}

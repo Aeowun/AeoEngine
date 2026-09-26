@@ -1,0 +1,46 @@
+on run_test() {
+    debug.log("[TEST] test_closures START")
+    ok: bool = true
+
+    // 1. Basic capture and mutation
+    value: number = 10
+    const f1 = fn() {
+        value = value + 5
+    }
+    f1()
+    if value != 15 { ok = false }
+
+    // 2. Closure expression return
+    const f2 = fn(x) {
+        return x * 2
+    }
+    const res2 = f2(21)
+    if res2 != 42 { ok = false }
+
+    // 3. Closure returning closure
+    const make_adder = fn(x) {
+        return fn(y) {
+            return x + y
+        }
+    }
+
+    const add10 = make_adder(10)
+    if add10(5) != 15 { ok = false }
+
+    // 4. Standalone closure call followed by assignment (exact regression test)
+    state: number = 100
+    const mutator = fn() {
+        state = state + 50
+    }
+    mutator()
+    const final_state = state
+    if final_state != 150 { ok = false }
+
+    if ok {
+        debug.log("[TEST] test_closures PASS")
+    } else {
+        debug.log("[TEST] test_closures FAIL")
+    }
+
+    test.complete("closures", ok)
+}

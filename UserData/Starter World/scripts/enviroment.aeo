@@ -1,0 +1,145 @@
+// ENVIRONMENT
+//
+// This script is an example of using events to connect gameplay
+// to presentation effects such as sound.
+//
+// The Environment script does not decide when a door opens,
+// when the player is hurt, or when a coin is collected.
+//
+// Other systems announce those events.
+//
+// The flow is:
+//
+//     DOOR
+//       |
+//       | "door_open"
+//       v
+//     ENVIRONMENT
+//       |
+//       v
+//     Door sound
+//
+//     PLAYER MANAGER
+//       |
+//       | "on_coin"
+//       v
+//     ENVIRONMENT
+//       |
+//       v
+//     Coin sound
+//
+//     TRAP
+//       |
+//       | "on_hurt"
+//       v
+//     ENVIRONMENT
+//       |
+//       v
+//     Hurt sound
+//
+// This keeps sound effects independent from gameplay logic.
+//
+// A Trap does not need to know which sound object to play.
+// A Door does not need to know which sound asset is assigned.
+// They only need to fire the appropriate event.
+
+
+// -----------------------------------------------------------------------------
+// DOOR SOUND
+// -----------------------------------------------------------------------------
+//
+// Find the sound object by its authored name.
+//
+// find() connects the script to objects placed in the level.
+// The object itself contains the sound configuration.
+
+const door_sound = find("DoorSound")[0]
+
+// Start from a known state.
+door_sound.sound.stop()
+door_sound.sound.playing = false
+
+
+// -----------------------------------------------------------------------------
+// DOOR OPEN EVENT
+// -----------------------------------------------------------------------------
+//
+// The Doors script sends:
+//
+//     event.fire("door_open")
+//
+// This script listens for that event.
+//
+// Notice that the sound system does not need a reference to the Door.
+// The event is the connection between the two systems.
+
+on door_open() {
+
+    door_sound.sound.play()
+
+    // Let the effect play for one second.
+    wait(1)
+
+    door_sound.sound.stop()
+}
+
+
+// -----------------------------------------------------------------------------
+// DAMAGE SOUND
+// -----------------------------------------------------------------------------
+//
+// The Trap script sends:
+//
+//     event.fire("on_hurt")
+//
+// The Environment script responds by playing the hurt sound.
+//
+// The Trap does not know anything about this sound.
+
+const dmg = find("DmgSound")[0]
+dmg.sound.stop()
+dmg.sound.playing = false
+on on_hurt() {
+
+    dmg.sound.play()
+
+    wait(1)
+
+    dmg.sound.stop()
+}
+
+
+// -----------------------------------------------------------------------------
+// COIN COLLECTION SOUND
+// -----------------------------------------------------------------------------
+//
+// The Coin script does NOT fire the sound event directly.
+//
+// Instead:
+//
+//     Coin
+//       |
+//       | on_gold
+//       v
+//     Player Manager
+//       |
+//       | on_coin
+//       v
+//     Environment
+//
+// This lets the Player Manager remain responsible for game state
+// while the Environment remains responsible for sound.
+
+const coin = find("CollectFx")[0]
+
+coin.sound.stop()
+coin.sound.playing = false
+
+on on_coin() {
+
+    coin.sound.play()
+
+    wait(1)
+
+    coin.sound.stop()
+}

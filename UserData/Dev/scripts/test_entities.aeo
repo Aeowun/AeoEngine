@@ -1,0 +1,40 @@
+on run_test() {
+    debug.log("[TEST] test_entities START")
+    ok: bool = true
+
+    const matches = find("Player")
+
+    if basket.len(matches) == 0 {
+        ok = false
+    } else {
+        const e = matches[0]
+
+        if !e.is_valid() {
+            ok = false
+        }
+
+        if e.name() != "Player" {
+            ok = false
+        }
+
+        e.set_position(10, 20, 30)
+        const p1 = e.position
+        if p1[0] != 10 || p1[1] != 20 || p1[2] != 30 {
+            ok = false
+        }
+
+        e.translate(1, 2, 3)
+        const p2 = e.position
+        if p2[0] != 11 || p2[1] != 22 || p2[2] != 33 {
+            ok = false
+        }
+    }
+
+    if ok {
+        debug.log("[TEST] test_entities PASS")
+    } else {
+        debug.log("[TEST] test_entities FAIL")
+    }
+
+    test.complete("entities", ok)
+}

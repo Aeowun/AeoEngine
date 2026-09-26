@@ -1,0 +1,273 @@
+// PLAYER MANAGER
+//
+// The Player Manager is the central owner of the player's game state.
+//
+// It does not handle UI, sound effects, doors, coins, or traps directly.
+// Instead, those systems send events here and the Player Manager updates
+// the actual game state.
+//
+// The basic flow is:
+//
+//     GAMEPLAY OBJECT
+//          |
+//          | event.fire(...)
+//          v
+//     PLAYER MANAGER
+//          |
+//          | event.fire(...)
+//          v
+//     OTHER SYSTEMS
+//
+// For example:
+//
+//     Trap
+//       -> "on_damage"
+//       -> Player Manager reduces health
+//       -> "on_health_changed"
+//       -> HUD updates
+//
+// This keeps each script responsible for one job.
+//
+// The level is authored from simple groups:
+//     Player
+//     Doors
+//     Trap
+//     Coin
+//
+// The names connect the authored world to the scripts through find().
+
+
+// -----------------------------------------------------------------------------
+// PLAYER STATE
+// -----------------------------------------------------------------------------
+//
+// The Player Manager owns these values.
+//
+// Other scripts should not create their own copy of health or gold.
+// They should communicate with this script through events.
+
+const max_health = 100
+const player = find("Player")[0]
+
+const spawn_position = player.position
+health = max_health
+gold = 0
+score = 0
+room = 1
+game_over = false
+
+
+// -----------------------------------------------------------------------------
+// INITIAL HEALTH STATE
+// -----------------------------------------------------------------------------
+//
+// The Player Manager can broadcast its current state to other systems.
+//
+// The HUD listens for "on_health_changed" and displays the values.
+//
+// This is an important pattern:
+//
+//     STATE OWNER
+//          |
+//          | event.fire(...)
+//          v
+//     DISPLAY / OTHER SYSTEM
+//
+// The event carries the data instead of the HUD reading the Player
+// Manager's variables directly.
+//
+//event.fire("on_health_changed", health, max_health)
+
+
+// -----------------------------------------------------------------------------
+// PLAYER TOOK DAMAGE
+// -----------------------------------------------------------------------------
+//
+// Traps do not change health themselves.
+//
+// Instead, a Trap sends:
+//
+//     event.fire("on_damage", 10)
+//
+// The Player Manager receives that event here and changes the real
+// health value.
+//
+// This makes the Trap a damage source rather than the owner of health.
+
+on on_damage(amount) {
+    if game_over {
+        return
+    }
+
+    health = math.max(0, health - amount)
+
+
+    // Tell every listener that the authoritative health value changed.
+    //
+    // The HUD listens for this event and updates its text.
+    event.fire("on_health_changed", health, max_health)
+
+    if health <= 0 {
+        game_over = true
+
+        // The Player Manager announces the game-over state.
+        //
+        // The HUD listens for this event and displays the
+        // game-over screen.
+        event.fire("on_game_over")
+    }
+}
+
+
+// -----------------------------------------------------------------------------
+// GAME OVER / RESPAWN
+// -----------------------------------------------------------------------------
+//
+// "on_game_over" begins the respawn flow.
+//
+// The Player Manager waits, moves the player back to the saved spawn
+// position, restores the game state, and then tells other systems
+// that the level state has been reset.
+
+on on_game_over() {
+    // Wait for the game-over countdown.
+    wait(3)
+
+    // Move the player back to the saved spawn position.
+    player.set_position(
+        spawn_position[0],
+        spawn_position[1],
+        spawn_position[2]
+    )
+
+    // Restore the player's game state.
+    health = max_health
+    gold = 0
+    game_over = false
+
+    // "on_lvl_reset" is a broadcast to gameplay systems.
+    //
+    // The Coin script listens for this event and restores collected coins.
+    event.fire("on_lvl_reset")
+
+    // Tell the HUD that the player's gold was reset.
+    event.fire("on_gold_changed", 0)
+
+    // Tell the HUD that health was restored.
+    event.fire("on_health_changed", health, max_health)
+}
+
+
+// -----------------------------------------------------------------------------
+// PLAYER COLLECTED GOLD
+// -----------------------------------------------------------------------------
+//
+// Coins do not own the player's gold total.
+//
+// A Coin sends:
+//
+//     event.fire("on_gold", value)
+//
+// The Player Manager receives the event and updates gold and score.
+//
+// Then it broadcasts the new total:
+//
+//     "on_gold_changed"
+//
+// The HUD listens for that event and displays the new amount.
+//
+// The Player Manager also sends:
+//
+//     "on_coin"
+//
+// The Environment script listens for that event and plays the
+// collection sound.
+//
+// So one gameplay action can travel through several systems:
+//
+//     Coin
+//       |
+//       | on_gold
+//       v
+//     Player Manager
+//       |
+//       +----> on_gold_changed ---> HUD
+//       |
+//       +----> on_coin -----------> Environment sound
+
+on on_gold(amount) {
+    if game_over {
+        return
+    }
+
+    gold += amount
+    score += amount * 10
+
+    // Tell the sound system that a coin was collected.
+    event.fire("on_coin")
+
+    // Tell the HUD the new total.
+    event.fire("on_gold_changed", gold)
+}
+
+
+// -----------------------------------------------------------------------------
+// PLAYER ENTERED A NEW ROOM  (PLACEHOLDER)
+// -----------------------------------------------------------------------------
+//
+// Gameplay systems can announce things that happen in the world.
+//
+// The Player Manager can then update the game's state in response.
+//
+// This event currently only stores the room number.
+
+on on_room_entered(room_number) {
+    if game_over {
+        return
+    }
+
+    room = room_number
+
+    debug.log("Entered room:", room)
+}
+
+
+// -----------------------------------------------------------------------------
+// PLAYER REACHED THE EXIT (PLACEHOLDER)
+// -----------------------------------------------------------------------------
+//
+// An exit or trigger can send:
+//
+//     event.fire("on_exit_reached")
+//
+// The Player Manager decides what that means for the current game.
+
+on on_exit_reached() {
+    if game_over {
+        return
+    }
+
+    debug.log("Exit reached")
+
+    event.fire("on_room_complete")
+}
+
+
+// -----------------------------------------------------------------------------
+// ROOM FINISHED (PLACEHOLDER)
+// -----------------------------------------------------------------------------
+//
+// This is another example of event-driven game flow.
+//
+// One system announces that the room is complete.
+// The Player Manager updates the game state.
+
+on on_room_complete() {
+    if game_over {
+        return
+    }
+
+    room += 1
+
+    debug.log("Room complete:", room)
+}

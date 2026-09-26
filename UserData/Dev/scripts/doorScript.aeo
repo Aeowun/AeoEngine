@@ -1,0 +1,25 @@
+// Find every Door in the level.
+const doors = find("Doors")
+
+// Give every Door the same touch behavior.
+for door in doors {
+
+    door.on_touch = fn(c) {
+
+        debug.log("Door touched:", c.id)
+
+        // React to every Door at once.
+        for target in doors {
+            target.visible = false
+            target.solid = false
+        }
+
+        wait(1)
+
+        // Restore every Door together.
+        for target in doors {
+            target.visible = true
+            target.solid = true
+        }
+    }
+}

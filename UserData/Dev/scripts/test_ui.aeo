@@ -1,0 +1,67 @@
+on run_test() {
+    debug.log("[TEST] test_ui START")
+    ok: bool = true
+
+    const panel = ui.new("Panel")
+    if panel == nil {
+        ok = false
+    }
+    panel.position = [100, 150]
+    panel.size = [300, 200]
+    panel.visible = true
+    panel.enabled = true
+    panel.color = [0.2, 0.4, 0.6, 1.0]
+
+    const p_pos = panel.position
+    if p_pos[0] != 100 || p_pos[1] != 150 {
+        ok = false
+    }
+    const p_size = panel.size
+    if p_size[0] != 300 || p_size[1] != 200 {
+        ok = false
+    }
+    if !panel.visible {
+        ok = false
+    }
+    if !panel.enabled {
+        ok = false
+    }
+
+    const title = ui.new("Text")
+    if title == nil {
+        ok = false
+    }
+    title.text = "Runtime UI Title"
+    title.position = [120, 170]
+    if title.text != "Runtime UI Title" {
+        ok = false
+    }
+
+    const button = ui.new("Button")
+    if button == nil {
+        ok = false
+    }
+    button.text = "Click Me"
+    button.position = [120, 220]
+    button.size = [100, 40]
+
+    button.on_click = fn() {
+        debug.log("button clicked")
+    }
+
+    if button.text != "Click Me" {
+        ok = false
+    }
+
+    ui.delete(panel)
+    ui.delete(title)
+    ui.delete(button)
+
+    if ok {
+        debug.log("[TEST] test_ui PASS")
+    } else {
+        debug.log("[TEST] test_ui FAIL")
+    }
+
+    test.complete("ui", ok)
+}

@@ -1,0 +1,33 @@
+// ENEMY COMBAT
+//
+// Handles actual melee contact.
+// Chase range is completely separate from attack contact.
+
+on enemy_touch(enemy) {
+    if !enemy.is_valid() || !enemy.alive {
+        return
+    }
+
+    const player = get_entity("Player")
+
+    if !player.is_valid() || !player.alive {
+        return
+    }
+
+    const enemy_position = enemy.position
+    const player_position = player.position
+
+    const x_difference = math.abs( player_position[0] - enemy_position[0]  )
+
+    const y_difference = math.abs(  player_position[1] - enemy_position[1] )
+
+    const z_difference = math.abs( player_position[2] - enemy_position[2]  )
+
+    // Character-sized contact box.
+    const horizontal_contact = 1.0
+    const vertical_contact = 1.5
+
+    if x_difference <= horizontal_contact &&  y_difference <= vertical_contact && z_difference <= horizontal_contact {
+   event.fire("on_damage", 10)    }
+}
+
