@@ -20,13 +20,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::CString;
 
-use glam::Vec3;
-
 use crate::editor::GridPlane;
 use crate::engine::EditorMode;
-use crate::world::{ChunkCoord, WorldCoord};
+use crate::world::ChunkCoord;
 
-use self::chunk::ChunkMesh;
+use self::chunk::{ChunkMesh, GhostChunkMesh};
 use self::resources::{
     create_anchor_marker, create_axes, create_billboard_vao, create_character_vao_vbo,
     create_grid_plane_vao, create_highlight_box, get_uniform_location, load_texture_from_file,
@@ -39,14 +37,6 @@ pub(super) struct PointLightUniformLocations {
     pub(super) color: i32,
     pub(super) intensity: i32,
     pub(super) range: i32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct GhostRenderCell {
-    pub(super) coord: WorldCoord,
-    pub(super) mask: u8,
-    pub(super) color: Vec3,
-    pub(super) visual_offset: Vec3,
 }
 
 /// Owns the OpenGL resources required by the engine renderer.
@@ -113,7 +103,7 @@ pub struct Renderer {
     pub(super) last_render_revision: RefCell<u64>,
     pub(super) last_render_mode: RefCell<Option<EditorMode>>,
 
-    pub(super) ghost_cache: RefCell<Vec<GhostRenderCell>>,
+    pub(super) ghost_cache: RefCell<HashMap<ChunkCoord, GhostChunkMesh>>,
     pub(super) last_ghost_revision: RefCell<u64>,
     pub(super) last_ghost_mode: RefCell<Option<EditorMode>>,
 
@@ -392,7 +382,7 @@ impl Renderer {
             last_render_revision: RefCell::new(0),
             last_render_mode: RefCell::new(None),
 
-            ghost_cache: RefCell::new(Vec::new()),
+            ghost_cache: RefCell::new(HashMap::new()),
             last_ghost_revision: RefCell::new(0),
             last_ghost_mode: RefCell::new(None),
 
@@ -505,7 +495,7 @@ impl Renderer {
             last_render_revision: RefCell::new(0),
             last_render_mode: RefCell::new(None),
 
-            ghost_cache: RefCell::new(Vec::new()),
+            ghost_cache: RefCell::new(HashMap::new()),
             last_ghost_revision: RefCell::new(0),
             last_ghost_mode: RefCell::new(None),
 
@@ -557,6 +547,10 @@ impl Drop for Renderer {
         unsafe {
             for chunk_mesh in self.chunk_cache.borrow_mut().values_mut() {
                 chunk_mesh.free_gl_resources();
+            }
+
+            for ghost_mesh in self.ghost_cache.borrow_mut().values_mut() {
+                ghost_mesh.free_gl_resources();
             }
 
             if self.grid_program != 0 {
@@ -668,20 +662,27 @@ const GHOST_VERTEX_SHADER: &str = r#"
 #version 330 core
 
 layout (location = 0) in vec3 a_position;
+layout (location = 2) in vec4 a_color;
 
 uniform mat4 u_view_projection;
 uniform mat4 u_model;
+
+out vec4 v_color;
 
 void main() {
     gl_Position =
         u_view_projection *
         u_model *
         vec4(a_position, 1.0);
+
+    v_color = a_color;
 }
 "#;
 
 const GHOST_FRAGMENT_SHADER: &str = r#"
 #version 330 core
+
+in vec4 v_color;
 
 uniform vec3 u_color;
 uniform float u_alpha;
@@ -689,7 +690,7 @@ uniform float u_alpha;
 out vec4 FragColor;
 
 void main() {
-    FragColor = vec4(u_color, u_alpha);
+    FragColor = vec4(v_color.rgb * u_color, u_alpha);
 }
 "#;
 

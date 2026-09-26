@@ -56,15 +56,55 @@ impl Drop for ChunkMesh {
     }
 }
 
+pub struct GhostChunkMesh {
+    pub chunk_coord: ChunkCoord,
+    pub vao: u32,
+    pub vbo: u32,
+    pub vertex_count: i32,
+}
+
+impl GhostChunkMesh {
+    pub fn free_gl_resources(&mut self) {
+        unsafe {
+            if self.vao != 0 {
+                gl::DeleteVertexArrays(1, &self.vao);
+                self.vao = 0;
+            }
+
+            if self.vbo != 0 {
+                gl::DeleteBuffers(1, &self.vbo);
+                self.vbo = 0;
+            }
+        }
+    }
+}
+
+impl Drop for GhostChunkMesh {
+    fn drop(&mut self) {
+        self.free_gl_resources();
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct CpuChunkData {
     pub main_texture_vertices: HashMap<String, Vec<f32>>,
     pub shadow_positions: Vec<f32>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct CpuGhostChunkData {
+    pub vertices: Vec<f32>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct MainFaceInfo {
     texture: String,
+    color: Vec3,
+    visual_offset: Vec3,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct GhostFaceInfo {
     color: Vec3,
     visual_offset: Vec3,
 }
@@ -154,6 +194,54 @@ pub fn build_cpu_chunk_data(
         main_texture_vertices,
         shadow_positions,
     }
+}
+
+pub fn build_cpu_ghost_chunk_data(
+    world: &World,
+    _chunk_coord: ChunkCoord,
+    coords_in_chunk: &[WorldCoord],
+) -> CpuGhostChunkData {
+    if coords_in_chunk.is_empty() {
+        return CpuGhostChunkData::default();
+    }
+
+    let mut ghost_grid: Vec<Option<(u8, GhostFaceInfo)>> = vec![None; 4096];
+
+    for &coord in coords_in_chunk {
+        let Some(cell) = world.get_effective_cell(coord) else {
+            continue;
+        };
+
+        if !matches!(cell.cell_type, CellType::Block | CellType::SpawnPoint) {
+            continue;
+        }
+
+        if world.is_cell_visible(coord) {
+            continue;
+        }
+
+        let (lx, ly, lz) = ChunkCoord::local_offset(coord);
+        let idx = chunk_local_index(lx, ly, lz);
+
+        let mask = crate::renderer::mesh::compute_exposed_faces_ghost(world, coord);
+
+        if mask == 0 {
+            continue;
+        }
+
+        let info = GhostFaceInfo {
+            color: world.get_effective_color(coord),
+            visual_offset: world.get_visual_offset(coord),
+        };
+
+        ghost_grid[idx] = Some((mask, info));
+    }
+
+    let mut vertices = Vec::new();
+
+    greedy_mesh_ghost_pass(&ghost_grid, &mut vertices);
+
+    CpuGhostChunkData { vertices }
 }
 
 fn map_uvw_to_local_xyz(face: CubeFace, u: i32, v: i32, w: i32) -> (i32, i32, i32) {
@@ -256,6 +344,168 @@ fn greedy_mesh_main_pass(
 }
 
 fn emit_merged_main_quad(
+    vertices: &mut Vec<f32>,
+    face: CubeFace,
+    u: f32,
+    v: f32,
+    w: f32,
+    width: f32,
+    height: f32,
+    color: Vec3,
+    visual_offset: Vec3,
+) {
+    let (v1, v2, v3, v4, normal) = match face {
+        CubeFace::Top => (
+            Vec3::new(v, u + 1.0, w + height),
+            Vec3::new(v + width, u + 1.0, w + height),
+            Vec3::new(v + width, u + 1.0, w),
+            Vec3::new(v, u + 1.0, w),
+            [0.0, 1.0, 0.0],
+        ),
+        CubeFace::Bottom => (
+            Vec3::new(v, u, w),
+            Vec3::new(v + width, u, w),
+            Vec3::new(v + width, u, w + height),
+            Vec3::new(v, u, w + height),
+            [0.0, -1.0, 0.0],
+        ),
+        CubeFace::Front => (
+            Vec3::new(v, w, u + 1.0),
+            Vec3::new(v + width, w, u + 1.0),
+            Vec3::new(v + width, w + height, u + 1.0),
+            Vec3::new(v, w + height, u + 1.0),
+            [0.0, 0.0, 1.0],
+        ),
+        CubeFace::Back => (
+            Vec3::new(v + width, w, u),
+            Vec3::new(v, w, u),
+            Vec3::new(v, w + height, u),
+            Vec3::new(v + width, w + height, u),
+            [0.0, 0.0, -1.0],
+        ),
+        CubeFace::Left => (
+            Vec3::new(u, w, v),
+            Vec3::new(u, w, v + width),
+            Vec3::new(u, w + height, v + width),
+            Vec3::new(u, w + height, v),
+            [-1.0, 0.0, 0.0],
+        ),
+        CubeFace::Right => (
+            Vec3::new(u + 1.0, w, v + width),
+            Vec3::new(u + 1.0, w, v),
+            Vec3::new(u + 1.0, w + height, v),
+            Vec3::new(u + 1.0, w + height, v + width),
+            [1.0, 0.0, 0.0],
+        ),
+    };
+
+    let o1 = (v1 + visual_offset).to_array();
+    let o2 = (v2 + visual_offset).to_array();
+    let o3 = (v3 + visual_offset).to_array();
+    let o4 = (v4 + visual_offset).to_array();
+
+    let color_arr = [color.x, color.y, color.z, 1.0];
+
+    crate::renderer::mesh::add_merged_block_quad(
+        vertices, o1, o2, o3, o4, color_arr, normal, width, height,
+    );
+}
+
+fn greedy_mesh_ghost_pass(
+    ghost_grid: &[Option<(u8, GhostFaceInfo)>],
+    vertices: &mut Vec<f32>,
+) {
+    for face in &CubeFace::ALL {
+        let mask_bit = face.mask();
+
+        for u in 0..16 {
+            let mut slice: [[Option<GhostFaceInfo>; 16]; 16] = Default::default();
+
+            for w in 0..16 {
+                for v in 0..16 {
+                    let (lx, ly, lz) = map_uvw_to_local_xyz(*face, u, v, w);
+                    let idx = chunk_local_index(lx, ly, lz);
+
+                    if let Some((mask, info)) = &ghost_grid[idx] {
+                        if (mask & mask_bit) != 0 {
+                            slice[w as usize][v as usize] = Some(info.clone());
+                        }
+                    }
+                }
+            }
+
+            let mut visited = [[false; 16]; 16];
+
+            for w in 0..16 {
+                for v in 0..16 {
+                    if visited[w][v] {
+                        continue;
+                    }
+
+                    let Some(info) = &slice[w][v] else {
+                        continue;
+                    };
+
+                    let mut width = 1;
+
+                    while v + width < 16 && !visited[w][v + width] {
+                        if let Some(other) = &slice[w][v + width] {
+                            if other == info {
+                                width += 1;
+                                continue;
+                            }
+                        }
+
+                        break;
+                    }
+
+                    let mut height = 1;
+
+                    'outer: while w + height < 16 {
+                        for dw in 0..width {
+                            let cur_v = v + dw;
+                            let cur_w = w + height;
+
+                            if visited[cur_w][cur_v] {
+                                break 'outer;
+                            }
+
+                            if let Some(other) = &slice[cur_w][cur_v] {
+                                if other != info {
+                                    break 'outer;
+                                }
+                            } else {
+                                break 'outer;
+                            }
+                        }
+
+                        height += 1;
+                    }
+
+                    for dw in 0..height {
+                        for dv in 0..width {
+                            visited[w + dw][v + dv] = true;
+                        }
+                    }
+
+                    emit_merged_ghost_quad(
+                        vertices,
+                        *face,
+                        u as f32,
+                        v as f32,
+                        w as f32,
+                        width as f32,
+                        height as f32,
+                        info.color,
+                        info.visual_offset,
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn emit_merged_ghost_quad(
     vertices: &mut Vec<f32>,
     face: CubeFace,
     u: f32,
@@ -690,8 +940,8 @@ mod tests {
         let c1 = WorldCoord::new(0, 0, 0);
         let c2 = WorldCoord::new(1, 0, 0);
 
-        let id1 = world.set_cell(c1, CellType::Block);
-        let id2 = world.set_cell(c2, CellType::Block);
+        world.set_cell(c1, CellType::Block);
+        world.set_cell(c2, CellType::Block);
 
         world.get_mut(c1).unwrap().texture = "Block_tx".to_string();
         world.get_mut(c2).unwrap().texture = "brick".to_string();
@@ -723,6 +973,49 @@ mod tests {
         // c1 and c2 are adjacent along X axis.
         // Greedy meshing merges Top, Bottom, Front, Back faces into 4 quads of 2x1, plus 2 end quads (Left, Right) -> 6 quads * 6 vertices * 3 floats = 108 floats.
         assert_eq!(cpu_data.shadow_positions.len(), 108);
+    }
+
+    #[test]
+    fn test_ghost_chunk_data_is_generated_for_invisible_cells() {
+        let mut world = World::new();
+
+        let coord = WorldCoord::new(0, 0, 0);
+
+        world.set_cell(coord, CellType::Block);
+        world.set_cell_visible_runtime(coord, false);
+
+        let chunk_coord = ChunkCoord::new(0, 0, 0);
+        let cpu_data = build_cpu_ghost_chunk_data(&world, chunk_coord, &[coord]);
+
+        assert_eq!(
+            cpu_data.vertices.len(),
+            36 * BLOCK_VERTEX_FLOATS
+        );
+    }
+
+    #[test]
+    fn test_ghost_greedy_meshing_2x2_plane() {
+        let mut world = World::new();
+        let mut coords = Vec::new();
+
+        for x in 0..2 {
+            for z in 0..2 {
+                let coord = WorldCoord::new(x, 0, z);
+
+                world.set_cell(coord, CellType::Block);
+                world.set_cell_visible_runtime(coord, false);
+
+                coords.push(coord);
+            }
+        }
+
+        let chunk_coord = ChunkCoord::new(0, 0, 0);
+        let cpu_data = build_cpu_ghost_chunk_data(&world, chunk_coord, &coords);
+
+        assert_eq!(
+            cpu_data.vertices.len(),
+            36 * BLOCK_VERTEX_FLOATS
+        );
     }
 
     #[test]

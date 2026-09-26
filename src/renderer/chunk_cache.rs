@@ -5,10 +5,10 @@ use crate::world::{CellType, ChunkCoord, World, WorldCoord};
 
 use super::Renderer;
 use super::chunk::{
-    ChunkMesh, TextureBatchRange, build_cpu_chunk_data, expand_dirty_coords_to_chunks,
-    upload_position_only_vertices,
+    ChunkMesh, GhostChunkMesh, TextureBatchRange, build_cpu_chunk_data,
+    build_cpu_ghost_chunk_data, expand_dirty_coords_to_chunks, upload_position_only_vertices,
 };
-use super::mesh::{BLOCK_VERTEX_FLOATS, compute_exposed_faces_main, upload_block_vertices_3d};
+use super::mesh::{BLOCK_VERTEX_FLOATS, upload_block_vertices_3d};
 
 impl Renderer {
     /// Clears and frees all GPU resources for cached voxel chunk meshes.
@@ -27,7 +27,14 @@ impl Renderer {
         *self.last_render_mode.borrow_mut() = None;
         *self.last_render_revision.borrow_mut() = 0;
 
-        self.ghost_cache.borrow_mut().clear();
+        let mut ghost_cache = self.ghost_cache.borrow_mut();
+
+        for ghost_mesh in ghost_cache.values_mut() {
+            ghost_mesh.free_gl_resources();
+        }
+
+        ghost_cache.clear();
+
         *self.last_ghost_revision.borrow_mut() = 0;
         *self.last_ghost_mode.borrow_mut() = None;
     }
@@ -35,7 +42,7 @@ impl Renderer {
     /// Updates the cached editor ghosts only when render-relevant world state
     /// or renderer mode changes.
     ///
-    /// Unchanged frames must not rescan the World or recompute exposed faces.
+    /// Unchanged frames must not rescan the World or rebuild ghost meshes.
     pub(super) fn update_ghost_cache(&self, world: &World, mode: EditorMode) {
         let revision = world.render_revision();
 
@@ -46,11 +53,17 @@ impl Renderer {
             return;
         }
 
-        let mut ghosts = self.ghost_cache.borrow_mut();
+        let mut cache = self.ghost_cache.borrow_mut();
 
-        ghosts.clear();
+        for ghost_mesh in cache.values_mut() {
+            ghost_mesh.free_gl_resources();
+        }
+
+        cache.clear();
 
         if mode == EditorMode::Editor {
+            let mut coords_by_chunk: HashMap<ChunkCoord, Vec<WorldCoord>> = HashMap::new();
+
             for coord in world.iter_active_effective_coords() {
                 let Some(cell) = world.get_effective_cell(coord) else {
                     continue;
@@ -64,18 +77,42 @@ impl Renderer {
                     continue;
                 }
 
-                let mask = compute_exposed_faces_main(world, coord, mode);
+                let chunk_coord = ChunkCoord::from_world_coord(coord);
 
-                if mask == 0 {
+                coords_by_chunk
+                    .entry(chunk_coord)
+                    .or_default()
+                    .push(coord);
+            }
+
+            for (chunk_coord, coords_in_chunk) in coords_by_chunk {
+                let cpu_data =
+                    build_cpu_ghost_chunk_data(world, chunk_coord, &coords_in_chunk);
+
+                if cpu_data.vertices.is_empty() {
                     continue;
                 }
 
-                ghosts.push(super::GhostRenderCell {
-                    coord,
-                    mask,
-                    color: world.get_effective_color(coord),
-                    visual_offset: world.get_visual_offset(coord),
-                });
+                #[cfg(test)]
+                let (vao, vbo, vertex_count) = (
+                    0,
+                    0,
+                    (cpu_data.vertices.len() / BLOCK_VERTEX_FLOATS) as i32,
+                );
+
+                #[cfg(not(test))]
+                let (vao, vbo, vertex_count) =
+                    upload_block_vertices_3d(&cpu_data.vertices);
+
+                cache.insert(
+                    chunk_coord,
+                    GhostChunkMesh {
+                        chunk_coord,
+                        vao,
+                        vbo,
+                        vertex_count,
+                    },
+                );
             }
         }
 
@@ -619,8 +656,6 @@ mod tests {
 
         let mut world = World::new();
 
-        // This represents a renderer whose cache has already been populated
-        // for the current world and editor mode.
         *renderer.last_render_mode.borrow_mut() = Some(EditorMode::Editor);
         *renderer.last_render_revision.borrow_mut() = world.render_revision();
 
@@ -670,15 +705,34 @@ mod tests {
 
         let first_revision = *renderer.last_ghost_revision.borrow();
 
-        let first_cache = renderer.ghost_cache.borrow().clone();
+        let first_cache_len = renderer.ghost_cache.borrow().len();
+        let first_vertex_count = renderer
+            .ghost_cache
+            .borrow()
+            .values()
+            .next()
+            .map(|mesh| mesh.vertex_count)
+            .unwrap_or(0);
 
-        assert_eq!(first_cache.len(), 1);
+        assert_eq!(first_cache_len, 1);
+        assert_eq!(first_vertex_count, 36);
 
         renderer.update_ghost_cache(&world, EditorMode::Editor);
 
         assert_eq!(*renderer.last_ghost_revision.borrow(), first_revision);
 
-        assert_eq!(*renderer.ghost_cache.borrow(), first_cache);
+        assert_eq!(renderer.ghost_cache.borrow().len(), first_cache_len);
+
+        assert_eq!(
+            renderer
+                .ghost_cache
+                .borrow()
+                .values()
+                .next()
+                .map(|mesh| mesh.vertex_count)
+                .unwrap_or(0),
+            first_vertex_count
+        );
     }
 
     #[test]
@@ -702,11 +756,7 @@ mod tests {
 
         renderer.update_ghost_cache(&world, EditorMode::Editor);
 
-        let ghosts = renderer.ghost_cache.borrow();
-
-        assert_eq!(ghosts.len(), 1);
-
-        assert_eq!(ghosts[0].color, Vec3::new(1.0, 0.0, 0.0));
+        assert_eq!(renderer.ghost_cache.borrow().len(), 1);
 
         assert!(
             *renderer.last_ghost_revision.borrow() > first_revision,

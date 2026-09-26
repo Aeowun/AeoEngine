@@ -488,6 +488,18 @@ fn main_neighbor_occludes(world: &World, neighbor_coord: WorldCoord, mode: Edito
 }
 
 #[inline(always)]
+fn ghost_neighbor_occludes(world: &World, neighbor_coord: WorldCoord) -> bool {
+    let Some(neighbor_cell) = world.get_effective_cell(neighbor_coord) else {
+        return false;
+    };
+
+    matches!(
+        neighbor_cell.cell_type,
+        CellType::Block | CellType::SpawnPoint
+    ) && !world.is_cell_visible(neighbor_coord)
+}
+
+#[inline(always)]
 fn shadow_neighbor_occludes(world: &World, neighbor_coord: WorldCoord, mode: EditorMode) -> bool {
     let Some(neighbor_cell) = world.get_effective_cell(neighbor_coord) else {
         return false;
@@ -524,6 +536,21 @@ pub fn compute_exposed_faces_main(world: &World, coord: WorldCoord, mode: Editor
         let neighbor_coord = face.neighbor_coord(coord);
 
         if !main_neighbor_occludes(world, neighbor_coord, mode) {
+            mask |= face.mask();
+        }
+    }
+
+    mask
+}
+
+#[inline(always)]
+pub fn compute_exposed_faces_ghost(world: &World, coord: WorldCoord) -> u8 {
+    let mut mask = 0u8;
+
+    for &face in &CubeFace::ALL {
+        let neighbor_coord = face.neighbor_coord(coord);
+
+        if !ghost_neighbor_occludes(world, neighbor_coord) {
             mask |= face.mask();
         }
     }
@@ -803,6 +830,41 @@ mod tests {
         let mask = compute_exposed_faces_main(&world, c1, EditorMode::Editor);
 
         assert_eq!(mask, 63);
+    }
+
+    #[test]
+    fn test_ghost_next_to_visible_block_keeps_shared_face() {
+        let mut world = World::new();
+
+        let ghost = WorldCoord::new(0, 0, 0);
+        let real = WorldCoord::new(0, 1, 0);
+
+        world.set_cell(ghost, CellType::Block);
+        world.set_cell(real, CellType::Block);
+
+        world.set_cell_visible_runtime(ghost, false);
+
+        let mask = compute_exposed_faces_ghost(&world, ghost);
+
+        assert_ne!(mask & CubeFace::Top.mask(), 0);
+    }
+
+    #[test]
+    fn test_ghost_next_to_ghost_hides_shared_face() {
+        let mut world = World::new();
+
+        let ghost_a = WorldCoord::new(0, 0, 0);
+        let ghost_b = WorldCoord::new(0, 1, 0);
+
+        world.set_cell(ghost_a, CellType::Block);
+        world.set_cell(ghost_b, CellType::Block);
+
+        world.set_cell_visible_runtime(ghost_a, false);
+        world.set_cell_visible_runtime(ghost_b, false);
+
+        let mask = compute_exposed_faces_ghost(&world, ghost_a);
+
+        assert_eq!(mask & CubeFace::Top.mask(), 0);
     }
 
     #[test]
