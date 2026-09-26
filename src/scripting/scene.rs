@@ -131,6 +131,109 @@ fn load_aeo_files_recursively(
     Ok(())
 }
 
+fn load_package_aeo_files(
+    dir: &Path,
+    logical_root: &str,
+    loaded_scripts: &mut HashMap<String, Program>,
+) -> Result<(), String> {
+    if !dir.exists() || !dir.is_dir() {
+        return Ok(());
+    }
+
+    for entry in std::fs::read_dir(dir)
+        .map_err(|e| format!("Failed to read directory {:?}: {}", dir, e))?
+        .flatten()
+    {
+        let path = entry.path();
+
+        if path.is_dir() {
+            let relative = path
+                .strip_prefix(dir)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace("\\", "/");
+
+            let next_root = if relative.is_empty() {
+                logical_root.to_string()
+            } else {
+                format!("{}/{}", logical_root, relative)
+            };
+
+            load_package_aeo_files(&path, &next_root, loaded_scripts)?;
+            continue;
+        }
+
+        if !path.is_file() || path.extension().map_or(true, |ext| ext != "aeo") {
+            continue;
+        }
+
+        let source = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read script {:?}: {}", path, e))?;
+
+        let tokens = Lexer::new(&source)
+            .tokenize()
+            .map_err(|e| format!("Lexer error in {:?}: {:?}", path, e))?;
+
+        let program = Parser::new(tokens)
+            .parse()
+            .map_err(|e| format!("Parser error in {:?}: {:?}", path, e))?;
+
+        let relative = path
+            .strip_prefix(dir)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace("\\", "/");
+
+        let logical_path = if relative.is_empty() {
+            logical_root.to_string()
+        } else {
+            format!("{}/{}", logical_root, relative)
+        };
+
+        loaded_scripts.insert(logical_path, program);
+    }
+
+    Ok(())
+}
+
+fn load_asset_script_packages(
+    assets_root: &Path,
+    category: &str,
+    loaded_scripts: &mut HashMap<String, Program>,
+) -> Result<(), String> {
+    let category_dir = assets_root.join(category);
+
+    if !category_dir.exists() {
+        return Ok(());
+    }
+
+    let mut packages = Vec::new();
+
+    for entry in std::fs::read_dir(&category_dir)
+        .map_err(|e| format!("Failed to read directory {:?}: {}", category_dir, e))?
+        .flatten()
+    {
+        if entry.path().is_dir() {
+            packages.push(entry.path());
+        }
+    }
+
+    packages.sort();
+
+    for package_dir in packages {
+        let package_name = package_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| format!("Invalid package directory {:?}", package_dir))?;
+
+        let logical_root = format!("{}/{}", category, package_name);
+
+        load_package_aeo_files(&package_dir, &logical_root, loaded_scripts)?;
+    }
+
+    Ok(())
+}
+
 impl ScriptScene {
     /// Loads and parses scripts from the project's scripts directory and applies explicit bindings.
     pub fn load_from_bindings(
@@ -169,22 +272,26 @@ impl ScriptScene {
 
         let mut loaded_scripts: HashMap<String, Program> = HashMap::new();
 
-        // Load all scripts from scripts, controllers, and cameras directories.
         load_aeo_files_recursively(
             &project_path.join("scripts"),
             project_path,
             &mut loaded_scripts,
         )?;
-        load_aeo_files_recursively(
-            &project_path.join("controllers"),
-            project_path,
-            &mut loaded_scripts,
-        )?;
-        load_aeo_files_recursively(
-            &project_path.join("cameras"),
-            project_path,
-            &mut loaded_scripts,
-        )?;
+
+        let engine_assets = crate::project::engine_assets_dir();
+
+        // Built-in packages first.
+        load_asset_script_packages(&engine_assets, "controllers", &mut loaded_scripts)?;
+
+        load_asset_script_packages(&engine_assets, "cameras", &mut loaded_scripts)?;
+
+        // Project packages second so the project can provide its own
+        // package with the same virtual package path.
+        let project_assets = project_path.join(".assets");
+
+        load_asset_script_packages(&project_assets, "controllers", &mut loaded_scripts)?;
+
+        load_asset_script_packages(&project_assets, "cameras", &mut loaded_scripts)?;
 
         // 2. Validate explicit bindings.
         for binding in &valid_bindings {
@@ -526,6 +633,46 @@ impl ScriptScene {
             &[],
             None,
         )
+    }
+
+    pub fn instantiate_package_object(
+        &mut self,
+        category: &str,
+        package_name: &str,
+        args: Vec<Value>,
+        host: &mut HostContext,
+    ) -> Result<Value, String> {
+        let prefix = format!("{}/{}", category, package_name);
+
+        let mut paths: Vec<String> = self
+            .loaded_scripts
+            .keys()
+            .filter(|path| path.starts_with(&(prefix.clone() + "/")))
+            .cloned()
+            .collect();
+
+        paths.sort();
+
+        for path in paths {
+            let entity_name = self.loaded_scripts.get(&path).and_then(|program| {
+                program.declarations.iter().find_map(|decl| {
+                    if let Declaration::Entity(entity) = decl {
+                        Some(entity.name.clone())
+                    } else {
+                        None
+                    }
+                })
+            });
+
+            if let Some(entity_name) = entity_name {
+                return self.instantiate_script_object(&entity_name, args, host);
+            }
+        }
+
+        Err(format!(
+            "Package '{}' '{}' has no entity declaration",
+            category, package_name
+        ))
     }
 
     pub fn call_object_method(
@@ -1014,11 +1161,19 @@ pub(crate) mod tests {
             self.valid_entity_declarations = decls;
         }
 
-        fn spawn_character(&mut self, entity_name: &str, position: Vec3) -> Result<u64, String> {
+        fn spawn_character(
+            &mut self,
+            entity_name: &str,
+            position: Vec3,
+            character_package: Option<&str>,
+        ) -> Result<u64, String> {
             if !self.is_entity_declaration_valid(entity_name) {
                 return Err("Entity name cannot be empty".to_string());
             }
-            let character_id = self.character_system.spawn_character(position, None);
+            let package_name = character_package.unwrap_or("character_robot");
+            let character_id = self
+                .character_system
+                .spawn_character(position, Some(package_name));
             let entity_id = self.entity_manager.create_entity(entity_name);
             self.entity_manager.set_position(entity_id, position);
             self.character_system
@@ -5146,6 +5301,40 @@ entity Spawner {
         }
         let output = scene.output();
         assert!(output.iter().any(|r| r.message == "Villager on_spawn"));
+    }
+
+    #[test]
+    fn test_script_spawn_npc_uses_requested_character_package() {
+        let source = r#"
+entity Spawner {
+    fn on_spawn() {
+        spawn("HeroNPC", [10, 1, 5], "character_hero")
+    }
+}
+"#;
+
+        let mut th = test_host();
+
+        let mut host = HostContext {
+            delta_time: 0.1,
+            engine: &mut th,
+        };
+
+        let mut scene = create_scene(source, &mut host);
+        scene.start(&mut host).unwrap();
+        scene.update(0.1, &mut host).unwrap();
+
+        let npc_id = th
+            .entity_manager
+            .lookup_entity("HeroNPC")
+            .expect("HeroNPC entity created");
+
+        let character = th
+            .character_system
+            .get_character_for_entity(npc_id)
+            .expect("HeroNPC has a runtime character");
+
+        assert_eq!(character.package_name, "character_hero");
     }
 
     #[test]

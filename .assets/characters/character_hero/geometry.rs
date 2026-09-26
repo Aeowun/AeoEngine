@@ -59,11 +59,7 @@ pub fn generate_character_mesh(
     // ------------------------------------------------------------
 
     let add_cube =
-        |vertices: &mut Vec<f32>,
-         joint_idx: usize,
-         min: Vec3,
-         max: Vec3,
-         color: [f32; 4]| {
+        |vertices: &mut Vec<f32>, joint_idx: usize, min: Vec3, max: Vec3, color: [f32; 4]| {
             if joint_idx >= pose.matrices.len() {
                 return;
             }
@@ -125,8 +121,7 @@ pub fn generate_character_mesh(
                 let transformed_normal =
                     mat.transform_vector3(Vec3::from_slice(&normal)).normalize();
 
-                let points = [v1, v2, v3, v4]
-                    .map(|p| mat.transform_point3(Vec3::from_slice(&p)));
+                let points = [v1, v2, v3, v4].map(|p| mat.transform_point3(Vec3::from_slice(&p)));
 
                 push_vertex(vertices, points[0], transformed_normal, color);
                 push_vertex(vertices, points[1], transformed_normal, color);
@@ -162,11 +157,9 @@ pub fn generate_character_mesh(
 
         for ring in 0..rings {
             let phi0 =
-                -std::f32::consts::FRAC_PI_2
-                    + (ring as f32 / rings as f32) * std::f32::consts::PI;
-            let phi1 =
-                -std::f32::consts::FRAC_PI_2
-                    + ((ring + 1) as f32 / rings as f32) * std::f32::consts::PI;
+                -std::f32::consts::FRAC_PI_2 + (ring as f32 / rings as f32) * std::f32::consts::PI;
+            let phi1 = -std::f32::consts::FRAC_PI_2
+                + ((ring + 1) as f32 / rings as f32) * std::f32::consts::PI;
 
             let y0 = phi0.sin();
             let y1 = phi1.sin();
@@ -175,10 +168,8 @@ pub fn generate_character_mesh(
             let r1 = phi1.cos();
 
             for segment in 0..segments {
-                let a0 =
-                    (segment as f32 / segments as f32) * std::f32::consts::TAU;
-                let a1 =
-                    ((segment + 1) as f32 / segments as f32) * std::f32::consts::TAU;
+                let a0 = (segment as f32 / segments as f32) * std::f32::consts::TAU;
+                let a1 = ((segment + 1) as f32 / segments as f32) * std::f32::consts::TAU;
 
                 let p00 = Vec3::new(
                     center.x + a0.cos() * radius_x * r0,
@@ -204,33 +195,13 @@ pub fn generate_character_mesh(
                     center.z + a1.sin() * radius_z * r1,
                 );
 
-                let n00 = Vec3::new(
-                    a0.cos() * r0,
-                    y0,
-                    a0.sin() * r0,
-                )
-                .normalize();
+                let n00 = Vec3::new(a0.cos() * r0, y0, a0.sin() * r0).normalize();
 
-                let n01 = Vec3::new(
-                    a1.cos() * r0,
-                    y0,
-                    a1.sin() * r0,
-                )
-                .normalize();
+                let n01 = Vec3::new(a1.cos() * r0, y0, a1.sin() * r0).normalize();
 
-                let n10 = Vec3::new(
-                    a0.cos() * r1,
-                    y1,
-                    a0.sin() * r1,
-                )
-                .normalize();
+                let n10 = Vec3::new(a0.cos() * r1, y1, a0.sin() * r1).normalize();
 
-                let n11 = Vec3::new(
-                    a1.cos() * r1,
-                    y1,
-                    a1.sin() * r1,
-                )
-                .normalize();
+                let n11 = Vec3::new(a1.cos() * r1, y1, a1.sin() * r1).normalize();
 
                 let tp00 = mat.transform_point3(p00);
                 let tp01 = mat.transform_point3(p01);
@@ -277,23 +248,14 @@ pub fn generate_character_mesh(
         let mut top = Vec::with_capacity(segments);
 
         for i in 0..segments {
-            let angle =
-                (i as f32 / segments as f32) * std::f32::consts::TAU;
+            let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
 
             let x = angle.cos();
             let z = angle.sin();
 
-            bottom.push(Vec3::new(
-                x * radius_x,
-                min_y,
-                z * radius_z,
-            ));
+            bottom.push(Vec3::new(x * radius_x, min_y, z * radius_z));
 
-            top.push(Vec3::new(
-                x * radius_x,
-                max_y,
-                z * radius_z,
-            ));
+            top.push(Vec3::new(x * radius_x, max_y, z * radius_z));
         }
 
         // Side walls.
@@ -305,15 +267,9 @@ pub fn generate_character_mesh(
             let t1 = top[next];
             let t0 = top[i];
 
-            let normal = Vec3::new(
-                b0.x / radius_x,
-                0.0,
-                b0.z / radius_z,
-            )
-            .normalize();
+            let normal = Vec3::new(b0.x / radius_x, 0.0, b0.z / radius_z).normalize();
 
-            let transformed_normal =
-                mat.transform_vector3(normal).normalize();
+            let transformed_normal = mat.transform_vector3(normal).normalize();
 
             let p0 = mat.transform_point3(b0);
             let p1 = mat.transform_point3(b1);
@@ -331,11 +287,9 @@ pub fn generate_character_mesh(
 
         // Top cap.
         {
-            let normal =
-                mat.transform_vector3(Vec3::Y).normalize();
+            let normal = mat.transform_vector3(Vec3::Y).normalize();
 
-            let center =
-                mat.transform_point3(Vec3::new(0.0, max_y, 0.0));
+            let center = mat.transform_point3(Vec3::new(0.0, max_y, 0.0));
 
             for i in 0..segments {
                 let next = (i + 1) % segments;
@@ -351,11 +305,9 @@ pub fn generate_character_mesh(
 
         // Bottom cap.
         {
-            let normal =
-                mat.transform_vector3(-Vec3::Y).normalize();
+            let normal = mat.transform_vector3(-Vec3::Y).normalize();
 
-            let center =
-                mat.transform_point3(Vec3::new(0.0, min_y, 0.0));
+            let center = mat.transform_point3(Vec3::new(0.0, min_y, 0.0));
 
             for i in 0..segments {
                 let next = (i + 1) % segments;
@@ -379,28 +331,10 @@ pub fn generate_character_mesh(
     // ------------------------------------------------------------
 
     // Small rounded hip section.
-    add_cylinder(
-        &mut vertices,
-        1,
-        0.23,
-        0.17,
-        -0.12,
-        0.10,
-        8,
-        PANTS,
-    );
+    add_cylinder(&mut vertices, 1, 0.23, 0.17, -0.12, 0.10, 8, PANTS);
 
     // Belt around the waist.
-    add_cylinder(
-        &mut vertices,
-        1,
-        0.245,
-        0.18,
-        0.00,
-        0.075,
-        8,
-        BELT,
-    );
+    add_cylinder(&mut vertices, 1, 0.245, 0.18, 0.00, 0.075, 8, BELT);
 
     // Belt buckle.
     add_cube(
@@ -456,16 +390,7 @@ pub fn generate_character_mesh(
     // ------------------------------------------------------------
 
     // Left upper/lower leg.
-    add_cylinder(
-        &mut vertices,
-        4,
-        0.105,
-        0.105,
-        -0.72,
-        0.03,
-        8,
-        PANTS,
-    );
+    add_cylinder(&mut vertices, 4, 0.105, 0.105, -0.72, 0.03, 8, PANTS);
 
     // Left boot attached to the animated foot joint.
     add_cube(
@@ -485,16 +410,7 @@ pub fn generate_character_mesh(
     );
 
     // Right leg.
-    add_cylinder(
-        &mut vertices,
-        6,
-        0.105,
-        0.105,
-        -0.72,
-        0.03,
-        8,
-        PANTS,
-    );
+    add_cylinder(&mut vertices, 6, 0.105, 0.105, -0.72, 0.03, 8, PANTS);
 
     // Right boot.
     add_cube(
@@ -517,16 +433,7 @@ pub fn generate_character_mesh(
     // 4. LEFT ARM
     // ------------------------------------------------------------
 
-    add_cylinder(
-        &mut vertices,
-        8,
-        0.10,
-        0.10,
-        -0.38,
-        0.12,
-        8,
-        TUNIC,
-    );
+    add_cylinder(&mut vertices, 8, 0.10, 0.10, -0.38, 0.12, 8, TUNIC);
 
     // Hand.
     add_ellipsoid(
@@ -545,16 +452,7 @@ pub fn generate_character_mesh(
     // 5. RIGHT ARM
     // ------------------------------------------------------------
 
-    add_cylinder(
-        &mut vertices,
-        9,
-        0.10,
-        0.10,
-        -0.38,
-        0.12,
-        8,
-        TUNIC,
-    );
+    add_cylinder(&mut vertices, 9, 0.10, 0.10, -0.38, 0.12, 8, TUNIC);
 
     // Hand.
     add_ellipsoid(
@@ -612,11 +510,7 @@ pub fn generate_character_mesh(
         0.18,
         0.29,
         10,
-        if appearance.show_accessory {
-            CAP
-        } else {
-            HAIR
-        },
+        if appearance.show_accessory { CAP } else { HAIR },
     );
 
     // Cap highlight.
@@ -749,22 +643,8 @@ pub fn generate_character_mesh(
     vertices
 }
 
-fn push_vertex(
-    buffer: &mut Vec<f32>,
-    pos: Vec3,
-    normal: Vec3,
-    color: [f32; 4],
-) {
+fn push_vertex(buffer: &mut Vec<f32>, pos: Vec3, normal: Vec3, color: [f32; 4]) {
     buffer.extend_from_slice(&[
-        pos.x,
-        pos.y,
-        pos.z,
-        normal.x,
-        normal.y,
-        normal.z,
-        color[0],
-        color[1],
-        color[2],
-        color[3],
+        pos.x, pos.y, pos.z, normal.x, normal.y, normal.z, color[0], color[1], color[2], color[3],
     ]);
 }

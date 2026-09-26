@@ -411,10 +411,7 @@ fn emit_merged_main_quad(
     );
 }
 
-fn greedy_mesh_ghost_pass(
-    ghost_grid: &[Option<(u8, GhostFaceInfo)>],
-    vertices: &mut Vec<f32>,
-) {
+fn greedy_mesh_ghost_pass(ghost_grid: &[Option<(u8, GhostFaceInfo)>], vertices: &mut Vec<f32>) {
     for face in &CubeFace::ALL {
         let mask_bit = face.mask();
 
@@ -987,10 +984,7 @@ mod tests {
         let chunk_coord = ChunkCoord::new(0, 0, 0);
         let cpu_data = build_cpu_ghost_chunk_data(&world, chunk_coord, &[coord]);
 
-        assert_eq!(
-            cpu_data.vertices.len(),
-            36 * BLOCK_VERTEX_FLOATS
-        );
+        assert_eq!(cpu_data.vertices.len(), 36 * BLOCK_VERTEX_FLOATS);
     }
 
     #[test]
@@ -1012,10 +1006,7 @@ mod tests {
         let chunk_coord = ChunkCoord::new(0, 0, 0);
         let cpu_data = build_cpu_ghost_chunk_data(&world, chunk_coord, &coords);
 
-        assert_eq!(
-            cpu_data.vertices.len(),
-            36 * BLOCK_VERTEX_FLOATS
-        );
+        assert_eq!(cpu_data.vertices.len(), 36 * BLOCK_VERTEX_FLOATS);
     }
 
     #[test]

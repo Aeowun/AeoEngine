@@ -1,7 +1,9 @@
 use super::physics_body::{CollisionRecord, PhysicsBody, PhysicsBodyId, PhysicsIdGenerator};
 use crate::world::{CellType, ChunkCoord, World, WorldCoord};
 use glam::Vec3;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+pub(crate) const DYNAMIC_BROADPHASE_CELL_SIZE: f32 = 2.0;
 
 pub struct PhysicsWorld {
     pub bodies: Vec<PhysicsBody>,
@@ -10,6 +12,12 @@ pub struct PhysicsWorld {
     // They are stored with their effective runtime position.
     pub static_colliders: Vec<(u64, Vec3)>,
     pub static_colliders_by_chunk: HashMap<ChunkCoord, Vec<(u64, Vec3)>>,
+
+    /// Broad-phase index for dynamic physics bodies.
+    ///
+    /// The index is rebuilt once per simulation step after dynamic bodies
+    /// have been integrated and resolved.
+    pub(crate) dynamic_bodies_by_cell: HashMap<(i32, i32, i32), Vec<usize>>,
 
     pub(crate) id_gen: PhysicsIdGenerator,
 
@@ -23,6 +31,7 @@ impl PhysicsWorld {
             bodies: Vec::new(),
             static_colliders: Vec::new(),
             static_colliders_by_chunk: HashMap::new(),
+            dynamic_bodies_by_cell: HashMap::new(),
             id_gen: PhysicsIdGenerator::new(),
             step_count: 0,
         }
@@ -42,11 +51,7 @@ impl PhysicsWorld {
         }
     }
 
-    pub fn query_static_colliders_in_aabb(
-        &self,
-        min_pos: Vec3,
-        max_pos: Vec3,
-    ) -> Vec<(u64, Vec3)> {
+    pub fn query_static_colliders_in_aabb(&self, min_pos: Vec3, max_pos: Vec3) -> Vec<(u64, Vec3)> {
         let min_coord = WorldCoord::from_vec3(min_pos);
         let max_coord = WorldCoord::from_vec3(max_pos);
 
@@ -80,6 +85,78 @@ impl PhysicsWorld {
         results
     }
 
+    fn dynamic_grid_coord(value: f32) -> i32 {
+        (value / DYNAMIC_BROADPHASE_CELL_SIZE).floor() as i32
+    }
+
+    /// Rebuilds the dynamic-body broad-phase index.
+    ///
+    /// This is intentionally rebuilt once per simulation step rather than
+    /// maintained incrementally while bodies move.
+    pub fn rebuild_dynamic_body_index(&mut self) {
+        self.dynamic_bodies_by_cell.clear();
+
+        for (body_index, body) in self.bodies.iter().enumerate() {
+            let min = body.min_corner();
+            let max = body.max_corner();
+
+            let min_x = Self::dynamic_grid_coord(min.x);
+            let max_x = Self::dynamic_grid_coord(max.x);
+            let min_y = Self::dynamic_grid_coord(min.y);
+            let max_y = Self::dynamic_grid_coord(max.y);
+            let min_z = Self::dynamic_grid_coord(min.z);
+            let max_z = Self::dynamic_grid_coord(max.z);
+
+            for x in min_x..=max_x {
+                for y in min_y..=max_y {
+                    for z in min_z..=max_z {
+                        self.dynamic_bodies_by_cell
+                            .entry((x, y, z))
+                            .or_default()
+                            .push(body_index);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Returns dynamic bodies whose broad-phase cells overlap an AABB.
+    ///
+    /// Exact geometric overlap is still checked by the caller.
+    pub fn query_dynamic_bodies_in_aabb(
+        &self,
+        min_pos: Vec3,
+        max_pos: Vec3,
+    ) -> Vec<usize> {
+        let min_x = Self::dynamic_grid_coord(min_pos.x);
+        let max_x = Self::dynamic_grid_coord(max_pos.x);
+        let min_y = Self::dynamic_grid_coord(min_pos.y);
+        let max_y = Self::dynamic_grid_coord(max_pos.y);
+        let min_z = Self::dynamic_grid_coord(min_pos.z);
+        let max_z = Self::dynamic_grid_coord(max_pos.z);
+
+        let mut seen = HashSet::new();
+        let mut results = Vec::new();
+
+        for x in min_x..=max_x {
+            for y in min_y..=max_y {
+                for z in min_z..=max_z {
+                    let Some(indices) = self.dynamic_bodies_by_cell.get(&(x, y, z)) else {
+                        continue;
+                    };
+
+                    for &index in indices {
+                        if seen.insert(index) {
+                            results.push(index);
+                        }
+                    }
+                }
+            }
+        }
+
+        results
+    }
+
     // Touching helper for dynamic bodies. normal_other_to_body points from other to body.
     pub(crate) fn check_body_touching_dynamic(
         &self,
@@ -92,20 +169,11 @@ impl PhysicsWorld {
         let test_min = body.min_corner() - normal_other_to_body * epsilon;
         let test_max = body.max_corner() - normal_other_to_body * epsilon;
 
-        Self::aabb_overlap_static(
-            test_min,
-            test_max,
-            other.min_corner(),
-            other.max_corner(),
-        )
+        Self::aabb_overlap_static(test_min, test_max, other.min_corner(), other.max_corner())
     }
 
     // Touching helper for static blocks.
-    pub(crate) fn check_body_touching_static(
-        &self,
-        body: &PhysicsBody,
-        normal: Vec3,
-    ) -> bool {
+    pub(crate) fn check_body_touching_static(&self, body: &PhysicsBody, normal: Vec3) -> bool {
         let epsilon = 0.01;
 
         let test_min = body.min_corner() - normal * epsilon;
@@ -132,22 +200,21 @@ impl PhysicsWorld {
                 continue;
             }
 
-            let min = body.min_corner();
-            let max = body.max_corner();
+            let candidates =
+                self.query_static_colliders_in_aabb(body.min_corner(), body.max_corner());
 
-            let candidates = self.query_static_colliders_in_aabb(min, max);
+            for (_cell_id, v_min) in candidates {
+                let v_max = v_min + Vec3::ONE;
 
-            for (_cell_id, v_min) in &candidates {
-                let voxel_max = v_min + Vec3::ONE;
-
-                if Self::aabb_overlap_static(min, max, *v_min, voxel_max) {
+                if Self::aabb_overlap_static(
+                    body.min_corner(),
+                    body.max_corner(),
+                    v_min,
+                    v_max,
+                ) {
                     collisions.push(CollisionRecord {
                         body_id: body.id,
-                        block_coord: WorldCoord::new(
-                            v_min.x.round() as i32,
-                            v_min.y.round() as i32,
-                            v_min.z.round() as i32,
-                        ),
+                        block_coord: WorldCoord::from_vec3(v_min),
                     });
                 }
             }
@@ -157,63 +224,54 @@ impl PhysicsWorld {
     }
 
     pub(crate) fn aabb_overlap_static(
-        a_min: Vec3,
-        a_max: Vec3,
-        b_min: Vec3,
-        b_max: Vec3,
+        min_a: Vec3,
+        max_a: Vec3,
+        min_b: Vec3,
+        max_b: Vec3,
     ) -> bool {
-        a_min.x < b_max.x
-            && a_max.x > b_min.x
-            && a_min.y < b_max.y
-            && a_max.y > b_min.y
-            && a_min.z < b_max.z
-            && a_max.z > b_min.z
+        min_a.x < max_b.x
+            && max_a.x > min_b.x
+            && min_a.y < max_b.y
+            && max_a.y > min_b.y
+            && min_a.z < max_b.z
+            && max_a.z > min_b.z
     }
 
+    /// Populate static colliders and dynamic bodies from World data.
     pub fn register_from_world(&mut self, world: &World) {
         self.bodies.clear();
         self.static_colliders.clear();
         self.static_colliders_by_chunk.clear();
+        self.dynamic_bodies_by_cell.clear();
 
         self.id_gen = PhysicsIdGenerator::new();
         self.step_count = 0;
 
-        for coord in world.iter_active_effective_coords() {
-            if let Some(cell) = world.get_effective_cell(coord) {
-                if cell.cell_type == CellType::Light {
-                    continue;
-                }
+        for coord in world.active_blocks() {
+            let Some(cell) = world.get(coord) else {
+                continue;
+            };
 
+            if cell.cell_type == CellType::Light {
+                continue;
+            }
+
+            let solid = world.is_cell_solid(coord);
+
+            if solid {
                 let anchored = world.is_cell_anchored(coord);
-                let solid = world.is_cell_solid(coord);
 
                 if anchored {
-                    if solid {
-                        let pos = Vec3::new(
-                            coord.x as f32,
-                            coord.y as f32,
-                            coord.z as f32,
-                        ) + world.get_visual_offset(coord);
+                    let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32)
+                        + world.get_visual_offset(coord);
 
-                        // Registration is a bulk rebuild. Do not rebuild the
-                        // entire static chunk index once per Cell.
-                        self.static_colliders.push((cell.id, pos));
-                    }
+                    self.static_colliders.push((cell.id, pos));
                 } else {
                     let id = self.id_gen.next();
 
-                    let pos = Vec3::new(
-                        coord.x as f32,
-                        coord.y as f32,
-                        coord.z as f32,
-                    );
+                    let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32);
 
-                    let mut body = PhysicsBody::new(
-                        id,
-                        cell.id,
-                        pos,
-                        Vec3::ONE,
-                    );
+                    let mut body = PhysicsBody::new(id, cell.id, pos, Vec3::ONE);
 
                     // Authoritative Property Transfer
                     body.cell_type = cell.cell_type;
@@ -230,6 +288,7 @@ impl PhysicsWorld {
 
         // One bulk rebuild after all static colliders have been registered.
         self.rebuild_static_chunk_index();
+        self.rebuild_dynamic_body_index();
 
         println!(
             "Physics: Registered {} dynamic bodies and {} static colliders.",
@@ -271,11 +330,8 @@ impl PhysicsWorld {
                         self.bodies.retain(|b| b.cell_id != cell_id);
 
                         if solid {
-                            let pos = Vec3::new(
-                                coord.x as f32,
-                                coord.y as f32,
-                                coord.z as f32,
-                            ) + world.get_visual_offset(coord);
+                            let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32)
+                                + world.get_visual_offset(coord);
 
                             if let Some(existing) = self
                                 .static_colliders
@@ -287,19 +343,15 @@ impl PhysicsWorld {
                                 self.static_colliders.push((cell_id, pos));
                             }
                         } else {
-                            self.static_colliders
-                                .retain(|(id, _)| *id != cell_id);
+                            self.static_colliders.retain(|(id, _)| *id != cell_id);
                         }
                     } else {
                         // Transition/Reconcile Dynamic
-                        self.static_colliders
-                            .retain(|(id, _)| *id != cell_id);
+                        self.static_colliders.retain(|(id, _)| *id != cell_id);
 
                         if solid {
-                            if let Some(body) = self
-                                .bodies
-                                .iter_mut()
-                                .find(|b| b.cell_id == cell_id)
+                            if let Some(body) =
+                                self.bodies.iter_mut().find(|b| b.cell_id == cell_id)
                             {
                                 body.solid = true;
                                 body.visible = world.is_cell_visible(coord);
@@ -307,18 +359,9 @@ impl PhysicsWorld {
                             } else {
                                 let id = self.id_gen.next();
 
-                                let pos = Vec3::new(
-                                    coord.x as f32,
-                                    coord.y as f32,
-                                    coord.z as f32,
-                                );
+                                let pos = Vec3::new(coord.x as f32, coord.y as f32, coord.z as f32);
 
-                                let mut body = PhysicsBody::new(
-                                    id,
-                                    cell_id,
-                                    pos,
-                                    Vec3::ONE,
-                                );
+                                let mut body = PhysicsBody::new(id, cell_id, pos, Vec3::ONE);
 
                                 body.cell_type = cell.cell_type;
                                 body.visible = world.is_cell_visible(coord);
@@ -336,18 +379,17 @@ impl PhysicsWorld {
                 } else {
                     // ID no longer resolves to a cell
                     // (e.g. Empty or removed runtime cell).
-                    self.static_colliders
-                        .retain(|(id, _)| *id != cell_id);
+                    self.static_colliders.retain(|(id, _)| *id != cell_id);
                     self.bodies.retain(|b| b.cell_id != cell_id);
                 }
             } else {
                 // Cell was deleted.
-                self.static_colliders
-                    .retain(|(id, _)| *id != cell_id);
+                self.static_colliders.retain(|(id, _)| *id != cell_id);
                 self.bodies.retain(|b| b.cell_id != cell_id);
             }
         }
 
         self.rebuild_static_chunk_index();
+        self.rebuild_dynamic_body_index();
     }
 }

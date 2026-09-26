@@ -74,6 +74,8 @@ impl Renderer {
 
         let view_segment = target - camera_pos;
 
+        const CHARACTER_CAMERA_HIDE_DISTANCE: f32 = 2.0;
+
         let shadow_center = if view_segment.length_squared() > 0.000001 {
             camera_pos + view_segment * 0.5
         } else {
@@ -437,12 +439,16 @@ impl Renderer {
                 }
 
                 for character in character_system.get_active_characters() {
-                    let vertices = crate::character_custom::generate_character_mesh(
-                        &character.current_pose,
-                        &character.appearance,
-                        character.has_gun,
-                        &character.mesh_type,
-                    );
+                    let camera_distance_squared = character
+                        .transform
+                        .position
+                        .distance_squared(gameplay_camera.current_position);
+
+                    if camera_distance_squared < CHARACTER_CAMERA_HIDE_DISTANCE.powi(2) {
+                        continue;
+                    }
+
+                    let vertices = crate::character::generate_character_mesh(character);
 
                     let model = Mat4::from_scale_rotation_translation(
                         character.transform.scale,
@@ -694,12 +700,7 @@ impl Renderer {
 
                 gl::Uniform1f(self.ghost_alpha_location, 0.4);
 
-                gl::Uniform3f(
-                    self.ghost_color_location,
-                    1.0,
-                    1.0,
-                    1.0,
-                );
+                gl::Uniform3f(self.ghost_color_location, 1.0, 1.0, 1.0);
 
                 gl::Enable(gl::BLEND);
                 gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
@@ -713,8 +714,7 @@ impl Renderer {
                         continue;
                     }
 
-                    let model =
-                        Mat4::from_translation(ghost_mesh.chunk_coord.world_origin());
+                    let model = Mat4::from_translation(ghost_mesh.chunk_coord.world_origin());
 
                     gl::UniformMatrix4fv(
                         self.ghost_model_location,
@@ -725,11 +725,7 @@ impl Renderer {
 
                     gl::BindVertexArray(ghost_mesh.vao);
 
-                    gl::DrawArrays(
-                        gl::TRIANGLES,
-                        0,
-                        ghost_mesh.vertex_count,
-                    );
+                    gl::DrawArrays(gl::TRIANGLES, 0, ghost_mesh.vertex_count);
                 }
 
                 drop(ghost_chunks);
@@ -783,9 +779,7 @@ impl Renderer {
                                     for y in y_min..=y_max {
                                         for z in z_min..=z_max {
                                             let model = Mat4::from_translation(Vec3::new(
-                                                x as f32,
-                                                y as f32,
-                                                z as f32,
+                                                x as f32, y as f32, z as f32,
                                             ));
 
                                             gl::UniformMatrix4fv(
@@ -818,9 +812,7 @@ impl Renderer {
                                     for y in y_min..=y_max {
                                         for z in z_min..=z_max {
                                             let model = Mat4::from_translation(Vec3::new(
-                                                x as f32,
-                                                y as f32,
-                                                z as f32,
+                                                x as f32, y as f32, z as f32,
                                             ));
 
                                             gl::UniformMatrix4fv(
@@ -846,9 +838,7 @@ impl Renderer {
                                 for y in y_min..=y_max {
                                     for z in z_min..=z_max {
                                         let model = Mat4::from_translation(Vec3::new(
-                                            x as f32,
-                                            y as f32,
-                                            z as f32,
+                                            x as f32, y as f32, z as f32,
                                         ));
 
                                         gl::UniformMatrix4fv(
@@ -858,11 +848,7 @@ impl Renderer {
                                             model.to_cols_array().as_ptr(),
                                         );
 
-                                        gl::DrawArrays(
-                                            gl::LINES,
-                                            0,
-                                            self.highlight_vertex_count,
-                                        );
+                                        gl::DrawArrays(gl::LINES, 0, self.highlight_vertex_count);
                                     }
                                 }
                             }

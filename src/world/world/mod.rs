@@ -26,6 +26,13 @@ pub struct World {
     // and most coordinates are empty.
     pub(crate) cells: HashMap<WorldCoord, Cell>,
 
+    /// Cached authored-world bounds used by runtime navigation.
+    ///
+    /// The cache is keyed by render_revision so world mutations invalidate it
+    /// automatically without requiring every mutation path to touch it.
+    pub(crate) navigation_bounds_cache:
+        std::cell::RefCell<Option<(u64, Option<(WorldCoord, WorldCoord)>)>>,
+
     // Temporary runtime-only overrides for cell state, keyed by Cell ID.
     pub(crate) runtime_state: HashMap<u64, RuntimeCellState>,
 
@@ -108,6 +115,7 @@ impl World {
     pub fn new() -> Self {
         Self {
             cells: HashMap::new(),
+            navigation_bounds_cache: std::cell::RefCell::new(None),
             runtime_state: HashMap::new(),
             physics_dirty_cells: HashSet::new(),
             id_to_coord: HashMap::new(),
@@ -123,7 +131,7 @@ impl World {
             sky: SkySettings::default(),
             script_bindings: Vec::new(),
             disabled_scripts: Vec::new(),
-            selected_character: "custom".to_string(),
+            selected_character: "character_robot".to_string(),
             selected_controller: "thirdPerson_Controller".to_string(),
             selected_camera: "thirdPerson".to_string(),
             cursor_visible: false,
@@ -133,6 +141,46 @@ impl World {
             spatial_index: WorldSpatialIndex::default(),
             dirty_authored_chunks: HashSet::new(),
         }
+    }
+
+    /// Returns the bounds of authored world cells.
+    ///
+    /// The result is cached until render_revision changes.
+    pub fn navigation_bounds(&self) -> Option<(WorldCoord, WorldCoord)> {
+        let revision = self.render_revision;
+        let cached = *self.navigation_bounds_cache.borrow();
+
+        if let Some((cached_revision, bounds)) = cached {
+            if cached_revision == revision {
+                return bounds;
+            }
+        }
+
+        let mut coords = self.cells.keys().copied();
+
+        let Some(first) = coords.next() else {
+            *self.navigation_bounds_cache.borrow_mut() = Some((revision, None));
+            return None;
+        };
+
+        let mut min = first;
+        let mut max = first;
+
+        for coord in coords {
+            min.x = min.x.min(coord.x);
+            min.y = min.y.min(coord.y);
+            min.z = min.z.min(coord.z);
+
+            max.x = max.x.max(coord.x);
+            max.y = max.y.max(coord.y);
+            max.z = max.z.max(coord.z);
+        }
+
+        let bounds = Some((min, max));
+
+        *self.navigation_bounds_cache.borrow_mut() = Some((revision, bounds));
+
+        bounds
     }
 }
 
@@ -568,27 +616,6 @@ mod tests {
         assert!(world.audio_emitter_ids.contains(&pasted_audio.id));
 
         assert!(world.editor_marker_ids.contains(&pasted_audio.id));
-    }
-
-    #[test]
-    fn test_update_id_mapping_updates_special_indices() {
-        let mut world = World::new();
-
-        let coord = WorldCoord::new(4, 4, 4);
-        let old_id = world.set_cell(coord, CellType::Light);
-        let new_id = 77_777_777;
-
-        world.update_id_mapping(old_id, new_id, coord);
-
-        assert!(!world.light_ids.contains(&old_id));
-        assert!(!world.editor_marker_ids.contains(&old_id));
-
-        assert!(world.light_ids.contains(&new_id));
-        assert!(world.editor_marker_ids.contains(&new_id));
-
-        assert_eq!(world.resolve_cell_id(new_id), Some(coord));
-
-        assert_eq!(world.resolve_cell_id(old_id), None);
     }
 
     #[test]

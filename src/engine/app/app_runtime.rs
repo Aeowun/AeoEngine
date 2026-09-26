@@ -76,13 +76,9 @@ impl App {
                     let camera_value = Value::Namespace("camera".to_string());
                     let input_value = Value::Namespace("input".to_string());
 
-                    let controller_class = match controller_name.as_str() {
-                        "thirdPerson_Controller" => "ThirdPersonController",
-                        other => other,
-                    };
-
-                    if let Ok(object) = scene.instantiate_script_object(
-                        controller_class,
+                    if let Ok(object) = scene.instantiate_package_object(
+                        "controllers",
+                        &controller_name,
                         vec![
                             player_value.clone(),
                             camera_value.clone(),
@@ -93,15 +89,9 @@ impl App {
                         self.controller_object = Some(object);
                     }
 
-                    let camera_class = match camera_name.as_str() {
-                        "thirdPerson" => "ThirdPersonCamera",
-                        "firstPerson" => "FirstPersonCamera",
-                        "topDown" => "TopDownCamera",
-                        other => other,
-                    };
-
-                    if let Ok(object) = scene.instantiate_script_object(
-                        camera_class,
+                    if let Ok(object) = scene.instantiate_package_object(
+                        "cameras",
+                        &camera_name,
                         vec![player_value],
                         &mut context,
                     ) {
@@ -524,6 +514,7 @@ impl App {
             p_world.resolve_static_collisions();
             p_world.refresh_dynamic_support();
             p_world.update_sleeping(gravity);
+            p_world.rebuild_dynamic_body_index();
 
             let contacted = character_system.update_scripted(world, p_world, dt);
 
@@ -673,8 +664,10 @@ impl App {
 
         self.script_contacted_last_frame = contacted_this_frame;
 
-        if let Some(player) = self.character_system.get_active_player() {
-            self.gameplay_camera.update(player, &self.world);
+        if self.camera_object.is_none() {
+            if let Some(player) = self.character_system.get_active_player() {
+                self.gameplay_camera.update(player, &self.world);
+            }
         }
 
         self.jump_requested = false;

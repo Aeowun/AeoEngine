@@ -3,6 +3,12 @@ use crate::engine::physics::PhysicsWorld;
 use glam::Vec3;
 use std::collections::{HashMap, HashSet};
 
+const CHARACTER_BROADPHASE_CELL_SIZE: f32 = 1.0;
+
+fn character_grid_coord(value: f32) -> i32 {
+    (value / CHARACTER_BROADPHASE_CELL_SIZE).floor() as i32
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CharacterCollision {
     pub radius: f32,
@@ -21,6 +27,17 @@ impl Default for CharacterCollision {
 impl CharacterCollision {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn for_package(package_name: &str) -> Self {
+        match package_name {
+            "character_hero" => Self {
+                radius: 0.35,
+                height: 1.8,
+            },
+
+            _ => Self::default(),
+        }
     }
 }
 
@@ -120,11 +137,25 @@ pub fn resolve_dynamic_body_collisions(
     contacted_cells: &mut HashSet<u64>,
     previous_position: Vec3,
 ) {
-    let radius = character.collision.radius;
+    if physics_world.dynamic_bodies_by_cell.is_empty() && !physics_world.bodies.is_empty() {
+        physics_world.rebuild_dynamic_body_index();
+    }
 
+    let radius = character.collision.radius;
     let height = character.collision.height;
 
-    for body in &mut physics_world.bodies {
+    let min_pos =
+        character.transform.position - Vec3::new(radius + 1.0, 0.5, radius + 1.0);
+    let max_pos =
+        character.transform.position + Vec3::new(radius + 1.0, height + 1.0, radius + 1.0);
+
+    let candidates = physics_world.query_dynamic_bodies_in_aabb(min_pos, max_pos);
+
+    for body_index in candidates {
+        let Some(body) = physics_world.bodies.get_mut(body_index) else {
+            continue;
+        };
+
         if body.anchored || !body.solid {
             continue;
         }
@@ -228,99 +259,146 @@ pub fn resolve_character_collisions(characters: &mut HashMap<u64, Character>) {
             })
             .collect();
 
-        let mut position_corrections: HashMap<u64, Vec3> = HashMap::new();
+        if snapshots.len() < 2 {
+            return;
+        }
 
+        let max_radius = snapshots
+            .iter()
+            .map(|(_, _, radius, _, _)| *radius)
+            .fold(0.0_f32, f32::max);
+
+        let max_height = snapshots
+            .iter()
+            .map(|(_, _, _, height, _)| *height)
+            .fold(0.0_f32, f32::max);
+
+        let mut spatial_grid: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::new();
+
+        for (index, (_, position, _, _, _)) in snapshots.iter().enumerate() {
+            let key = (
+                character_grid_coord(position.x),
+                character_grid_coord(position.y),
+                character_grid_coord(position.z),
+            );
+
+            spatial_grid.entry(key).or_default().push(index);
+        }
+
+        let mut position_corrections: HashMap<u64, Vec3> = HashMap::new();
         let mut velocity_corrections: HashMap<u64, Vec3> = HashMap::new();
 
         for i in 0..snapshots.len() {
-            for j in (i + 1)..snapshots.len() {
-                let (id_a, position_a, radius_a, height_a, velocity_a) = snapshots[i];
+            let (id_a, position_a, radius_a, height_a, velocity_a) = snapshots[i];
 
-                let (id_b, position_b, radius_b, height_b, velocity_b) = snapshots[j];
+            let grid_x = character_grid_coord(position_a.x);
+            let grid_y = character_grid_coord(position_a.y);
+            let grid_z = character_grid_coord(position_a.z);
 
-                let vertical_overlap = (position_a.y + height_a).min(position_b.y + height_b)
-                    - position_a.y.max(position_b.y);
+            let horizontal_range =
+                ((radius_a + max_radius) / CHARACTER_BROADPHASE_CELL_SIZE).ceil() as i32;
 
-                if vertical_overlap <= EPSILON {
-                    continue;
-                }
+            let vertical_range =
+                (height_a.max(max_height) / CHARACTER_BROADPHASE_CELL_SIZE).ceil() as i32;
 
-                let delta_x = position_b.x - position_a.x;
+            for gx in (grid_x - horizontal_range)..=(grid_x + horizontal_range) {
+                for gy in (grid_y - vertical_range)..=(grid_y + vertical_range) {
+                    for gz in (grid_z - horizontal_range)..=(grid_z + horizontal_range) {
+                        let Some(candidates) = spatial_grid.get(&(gx, gy, gz)) else {
+                            continue;
+                        };
 
-                let delta_z = position_b.z - position_a.z;
+                        for &j in candidates {
+                            if j <= i {
+                                continue;
+                            }
 
-                let distance_squared = delta_x * delta_x + delta_z * delta_z;
+                            let (id_b, position_b, radius_b, height_b, velocity_b) =
+                                snapshots[j];
 
-                let combined_radius = radius_a + radius_b;
+                            let vertical_overlap = (position_a.y + height_a).min(position_b.y + height_b)
+                                - position_a.y.max(position_b.y);
 
-                if distance_squared >= combined_radius * combined_radius {
-                    continue;
-                }
+                            if vertical_overlap <= EPSILON {
+                                continue;
+                            }
 
-                let (normal_x, normal_z, distance) = if distance_squared > 0.000001 {
-                    let distance = distance_squared.sqrt();
+                            let delta_x = position_b.x - position_a.x;
+                            let delta_z = position_b.z - position_a.z;
 
-                    (delta_x / distance, delta_z / distance, distance)
-                } else if id_a < id_b {
-                    (1.0, 0.0, 0.0)
-                } else {
-                    (-1.0, 0.0, 0.0)
-                };
+                            let distance_squared = delta_x * delta_x + delta_z * delta_z;
+                            let combined_radius = radius_a + radius_b;
 
-                let penetration = combined_radius - distance;
+                            if distance_squared >= combined_radius * combined_radius {
+                                continue;
+                            }
 
-                if penetration <= EPSILON {
-                    continue;
-                }
+                            let (normal_x, normal_z, distance) = if distance_squared > 0.000001 {
+                                let distance = distance_squared.sqrt();
+                                (delta_x / distance, delta_z / distance, distance)
+                            } else if id_a < id_b {
+                                (1.0, 0.0, 0.0)
+                            } else {
+                                (-1.0, 0.0, 0.0)
+                            };
 
-                let correction = Vec3::new(normal_x, 0.0, normal_z) * (penetration * 0.5);
+                            let penetration = combined_radius - distance;
 
-                position_corrections
-                    .entry(id_a)
-                    .and_modify(|value| {
-                        *value -= correction;
-                    })
-                    .or_insert(-correction);
+                            if penetration <= EPSILON {
+                                continue;
+                            }
 
-                position_corrections
-                    .entry(id_b)
-                    .and_modify(|value| {
-                        *value += correction;
-                    })
-                    .or_insert(correction);
+                            let correction = Vec3::new(normal_x, 0.0, normal_z) * (penetration * 0.5);
 
-                let velocity_a_normal = velocity_a.x * normal_x + velocity_a.z * normal_z;
+                            position_corrections
+                                .entry(id_a)
+                                .and_modify(|value| {
+                                    *value -= correction;
+                                })
+                                .or_insert(-correction);
 
-                if velocity_a_normal > 0.0 {
-                    let correction_velocity = Vec3::new(
-                        -normal_x * velocity_a_normal,
-                        0.0,
-                        -normal_z * velocity_a_normal,
-                    );
+                            position_corrections
+                                .entry(id_b)
+                                .and_modify(|value| {
+                                    *value += correction;
+                                })
+                                .or_insert(correction);
 
-                    velocity_corrections
-                        .entry(id_a)
-                        .and_modify(|value| {
-                            *value += correction_velocity;
-                        })
-                        .or_insert(correction_velocity);
-                }
+                            let velocity_a_normal = velocity_a.x * normal_x + velocity_a.z * normal_z;
 
-                let velocity_b_normal = velocity_b.x * normal_x + velocity_b.z * normal_z;
+                            if velocity_a_normal > 0.0 {
+                                let correction_velocity = Vec3::new(
+                                    -normal_x * velocity_a_normal,
+                                    0.0,
+                                    -normal_z * velocity_a_normal,
+                                );
 
-                if velocity_b_normal < 0.0 {
-                    let correction_velocity = Vec3::new(
-                        -normal_x * velocity_b_normal,
-                        0.0,
-                        -normal_z * velocity_b_normal,
-                    );
+                                velocity_corrections
+                                    .entry(id_a)
+                                    .and_modify(|value| {
+                                        *value += correction_velocity;
+                                    })
+                                    .or_insert(correction_velocity);
+                            }
 
-                    velocity_corrections
-                        .entry(id_b)
-                        .and_modify(|value| {
-                            *value += correction_velocity;
-                        })
-                        .or_insert(correction_velocity);
+                            let velocity_b_normal = velocity_b.x * normal_x + velocity_b.z * normal_z;
+
+                            if velocity_b_normal < 0.0 {
+                                let correction_velocity = Vec3::new(
+                                    -normal_x * velocity_b_normal,
+                                    0.0,
+                                    -normal_z * velocity_b_normal,
+                                );
+
+                                velocity_corrections
+                                    .entry(id_b)
+                                    .and_modify(|value| {
+                                        *value += correction_velocity;
+                                    })
+                                    .or_insert(correction_velocity);
+                            }
+                        }
+                    }
                 }
             }
         }

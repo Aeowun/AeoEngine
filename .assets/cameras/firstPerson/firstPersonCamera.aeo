@@ -3,7 +3,7 @@ entity FirstPersonCamera {
 
     yaw = 0.0
     pitch = 0.0
-    eye_height = 15.5
+    eye_height = 1.6
 
     fn constructor(player_object) {
         player = player_object
@@ -17,7 +17,11 @@ entity FirstPersonCamera {
         pitch = math.clamp(pitch - orbit_delta[1] * 0.005, -1.4, 1.4)
 
         const char_pos = player.position
-        const eye_pos = [char_pos[0], char_pos[1] + eye_height, char_pos[2]]
+        const eye_pos = [
+            char_pos[0],
+            char_pos[1] + eye_height,
+            char_pos[2]
+        ]
 
         const cos_pitch = math.cos(pitch)
         const forward = [
@@ -32,8 +36,18 @@ entity FirstPersonCamera {
             eye_pos[2] + forward[2]
         ]
 
-        camera.set_position(eye_pos[0], eye_pos[1], eye_pos[2])
-        camera.set_target(target[0], target[1], target[2])
+        camera.set_position(
+            eye_pos[0],
+            eye_pos[1],
+            eye_pos[2]
+        )
+
+        camera.set_target(
+            target[0],
+            target[1],
+            target[2]
+        )
+
         camera.set_orientation(yaw, pitch)
     }
 }

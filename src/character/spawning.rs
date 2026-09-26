@@ -3,12 +3,11 @@ use super::collision::CharacterCollision;
 use super::system::CharacterSystem;
 use crate::world::{CellType, World, WorldCoord};
 use glam::Vec3;
-use std::path::Path;
 
 impl CharacterSystem {
     /// Spawns a player character at a valid world spawn point.
-    pub fn spawn_player(&mut self, world: &World, project_path: Option<&Path>) -> Option<u64> {
-        let character = spawn_at_random_point(world, self.next_id, project_path)?;
+    pub fn spawn_player(&mut self, world: &World, package_name: Option<&str>) -> Option<u64> {
+        let character = spawn_at_random_point(world, self.next_id, package_name)?;
 
         let id = character.id;
 
@@ -25,7 +24,7 @@ impl CharacterSystem {
 pub fn spawn_at_random_point(
     world: &World,
     next_id: u64,
-    package_dir: Option<&Path>,
+    package_name: Option<&str>,
 ) -> Option<Character> {
     let spawn_points: Vec<WorldCoord> = world
         .active_blocks()
@@ -62,7 +61,7 @@ pub fn spawn_at_random_point(
         return Some(Character::new_from_package(
             next_id,
             base_position,
-            package_dir,
+            package_name.unwrap_or("character_robot"),
         ));
     }
 
@@ -82,7 +81,11 @@ pub fn spawn_at_random_point(
                 );
 
                 if has_character_clearance(world, candidate, &collision) {
-                    return Some(Character::new_from_package(next_id, candidate, package_dir));
+                    return Some(Character::new_from_package(
+                        next_id,
+                        candidate,
+                        package_name.unwrap_or("character_robot"),
+                    ));
                 }
             }
         }

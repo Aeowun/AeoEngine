@@ -141,7 +141,11 @@ pub fn load_world(world: &mut World, path: &Path) -> std::io::Result<()> {
         }
 
         if parts[0] == "SELECTED_CHARACTER" && parts.len() >= 2 {
-            world.selected_character = parts[1].to_string();
+            world.selected_character = match parts[1] {
+                "custom" => "character_robot".to_string(),
+                "custom_soldier" => "character_hero".to_string(),
+                other => other.to_string(),
+            };
             continue;
         }
 

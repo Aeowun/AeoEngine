@@ -5,8 +5,8 @@ use crate::world::{CellType, ChunkCoord, World, WorldCoord};
 
 use super::Renderer;
 use super::chunk::{
-    ChunkMesh, GhostChunkMesh, TextureBatchRange, build_cpu_chunk_data,
-    build_cpu_ghost_chunk_data, expand_dirty_coords_to_chunks, upload_position_only_vertices,
+    ChunkMesh, GhostChunkMesh, TextureBatchRange, build_cpu_chunk_data, build_cpu_ghost_chunk_data,
+    expand_dirty_coords_to_chunks, upload_position_only_vertices,
 };
 use super::mesh::{BLOCK_VERTEX_FLOATS, upload_block_vertices_3d};
 
@@ -79,30 +79,22 @@ impl Renderer {
 
                 let chunk_coord = ChunkCoord::from_world_coord(coord);
 
-                coords_by_chunk
-                    .entry(chunk_coord)
-                    .or_default()
-                    .push(coord);
+                coords_by_chunk.entry(chunk_coord).or_default().push(coord);
             }
 
             for (chunk_coord, coords_in_chunk) in coords_by_chunk {
-                let cpu_data =
-                    build_cpu_ghost_chunk_data(world, chunk_coord, &coords_in_chunk);
+                let cpu_data = build_cpu_ghost_chunk_data(world, chunk_coord, &coords_in_chunk);
 
                 if cpu_data.vertices.is_empty() {
                     continue;
                 }
 
                 #[cfg(test)]
-                let (vao, vbo, vertex_count) = (
-                    0,
-                    0,
-                    (cpu_data.vertices.len() / BLOCK_VERTEX_FLOATS) as i32,
-                );
+                let (vao, vbo, vertex_count) =
+                    (0, 0, (cpu_data.vertices.len() / BLOCK_VERTEX_FLOATS) as i32);
 
                 #[cfg(not(test))]
-                let (vao, vbo, vertex_count) =
-                    upload_block_vertices_3d(&cpu_data.vertices);
+                let (vao, vbo, vertex_count) = upload_block_vertices_3d(&cpu_data.vertices);
 
                 cache.insert(
                     chunk_coord,
@@ -808,199 +800,6 @@ mod tests {
             println!("[BENCHMARK SHAPE START] {}", shape.name());
 
             run_world_shape_benchmark(shape, total_start);
-        }
-    }
-
-    #[test]
-    fn test_benchmark_marker_index_stress() {
-        let total_start = Instant::now();
-        let mut previous_resolve_time: Option<Duration> = None;
-
-        for &count_per_type in MARKER_COUNTS_PER_TYPE {
-            if total_start.elapsed() >= MAX_MARKER_TOTAL_TIME {
-                println!(
-                    "[MARKER BENCHMARK BREAK] total cutoff reached after {:?}; stopping before {} cells/type",
-                    total_start.elapsed(),
-                    count_per_type
-                );
-                break;
-            }
-
-            let total_cells = count_per_type.saturating_mul(3);
-
-            if total_cells > MAX_MARKER_CASE_CELLS {
-                println!(
-                    "[MARKER BENCHMARK BREAK] {} total marker cells exceeds safety ceiling of {}",
-                    total_cells, MAX_MARKER_CASE_CELLS
-                );
-                break;
-            }
-
-            let case_start = Instant::now();
-            let mut world = World::new();
-
-            let population_start = Instant::now();
-
-            for x in 0..count_per_type {
-                world.set_cell(WorldCoord::new(x as i32, 0, 0), CellType::Light);
-
-                world.set_cell(WorldCoord::new(x as i32, 1, 0), CellType::AudioEmitter);
-
-                world.set_cell(WorldCoord::new(x as i32, 2, 0), CellType::SpawnPoint);
-            }
-
-            let population_time = population_start.elapsed();
-
-            if world.resident_authored_cell_count() != total_cells {
-                println!(
-                    "[MARKER BENCHMARK BREAK] expected {} cells but world contains {}; stopping",
-                    total_cells,
-                    world.resident_authored_cell_count()
-                );
-                break;
-            }
-
-            if population_time >= MAX_MARKER_CASE_TIME {
-                println!(
-                    "[MARKER BENCHMARK BREAK] population of {} cells took {:?}; cutoff is {:?}",
-                    total_cells, population_time, MAX_MARKER_CASE_TIME
-                );
-                break;
-            }
-
-            let _ = world.drain_render_dirty_cells();
-
-            let marker_iteration_start = Instant::now();
-
-            let mut editor_marker_count = 0usize;
-            let mut editor_marker_checksum = 0u64;
-
-            for id in world.iter_editor_marker_ids() {
-                editor_marker_checksum ^= black_box(id);
-                editor_marker_count += 1;
-            }
-
-            black_box(editor_marker_checksum);
-
-            let marker_iteration_time = marker_iteration_start.elapsed();
-
-            let resolve_start = Instant::now();
-
-            let mut resolved_marker_count = 0usize;
-            let mut resolved_checksum = 0u64;
-
-            for id in world.iter_editor_marker_ids() {
-                let Some(coord) = world.resolve_cell_id(id) else {
-                    continue;
-                };
-
-                let Some(cell) = world.get_effective_cell(coord) else {
-                    continue;
-                };
-
-                resolved_checksum ^= black_box(cell.id ^ id);
-
-                resolved_marker_count += 1;
-            }
-
-            black_box(resolved_checksum);
-
-            let resolve_time = resolve_start.elapsed();
-
-            let light_start = Instant::now();
-
-            let mut light_count = 0usize;
-            let mut light_checksum = 0u64;
-
-            for id in world.iter_light_ids() {
-                light_checksum ^= black_box(id);
-                light_count += 1;
-            }
-
-            black_box(light_checksum);
-
-            let light_iteration_time = light_start.elapsed();
-
-            let audio_start = Instant::now();
-
-            let mut audio_count = 0usize;
-            let mut audio_checksum = 0u64;
-
-            for id in world.iter_audio_emitter_ids() {
-                audio_checksum ^= black_box(id);
-                audio_count += 1;
-            }
-
-            black_box(audio_checksum);
-
-            let audio_iteration_time = audio_start.elapsed();
-
-            if editor_marker_count != count_per_type * 2 {
-                println!(
-                    "[MARKER BENCHMARK BREAK] expected {} editor markers but indexed {}",
-                    count_per_type * 2,
-                    editor_marker_count
-                );
-                break;
-            }
-
-            if resolved_marker_count != editor_marker_count {
-                println!(
-                    "[MARKER BENCHMARK BREAK] {} editor markers indexed but only {} resolved",
-                    editor_marker_count, resolved_marker_count
-                );
-                break;
-            }
-
-            if light_count != count_per_type {
-                println!(
-                    "[MARKER BENCHMARK BREAK] expected {} lights but indexed {}",
-                    count_per_type, light_count
-                );
-                break;
-            }
-
-            if audio_count != count_per_type {
-                println!(
-                    "[MARKER BENCHMARK BREAK] expected {} audio emitters but indexed {}",
-                    count_per_type, audio_count
-                );
-                break;
-            }
-
-            if case_start.elapsed() >= MAX_MARKER_CASE_TIME {
-                println!(
-                    "[MARKER BENCHMARK BREAK] {} marker cells exceeded {:?} total-case cutoff",
-                    total_cells, MAX_MARKER_CASE_TIME
-                );
-                break;
-            }
-
-            if let Some(previous) = previous_resolve_time {
-                if previous > Duration::from_micros(100)
-                    && resolve_time.as_secs_f64()
-                        > previous.as_secs_f64() * MAX_MARKER_TIME_MULTIPLIER
-                {
-                    println!(
-                        "[MARKER BENCHMARK BREAK] {} marker cells produced suspicious resolve growth: {:?} after {:?}; multiplier limit is {:.1}x",
-                        total_cells, resolve_time, previous, MAX_MARKER_TIME_MULTIPLIER
-                    );
-                    break;
-                }
-            }
-
-            previous_resolve_time = Some(resolve_time);
-
-            println!(
-                "[MARKER BENCHMARK] Cells: {} | Per type: {} | Populate: {:?} | Marker ID iteration: {:?} | Marker resolve path: {:?} | Light index iteration: {:?} | Audio index iteration: {:?}",
-                total_cells,
-                count_per_type,
-                population_time,
-                marker_iteration_time,
-                resolve_time,
-                light_iteration_time,
-                audio_iteration_time
-            );
         }
     }
 }

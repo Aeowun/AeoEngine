@@ -73,7 +73,12 @@ pub trait EngineHost {
     fn delete_cell(&mut self, id: u64) -> Result<(), String>;
 
     // Runtime NPC / Character spawning
-    fn spawn_character(&mut self, _entity_name: &str, _position: Vec3) -> Result<u64, String> {
+    fn spawn_character(
+        &mut self,
+        _entity_name: &str,
+        _position: Vec3,
+        _character_package: Option<&str>,
+    ) -> Result<u64, String> {
         Err("spawn_character is not supported on this host".to_string())
     }
     fn is_entity_declaration_valid(&self, _entity_name: &str) -> bool {
@@ -309,8 +314,11 @@ pub fn call_host_function(
         }
 
         "spawn" => {
-            if arguments.len() != 2 {
-                return Err("spawn expects 2 arguments: (entity_name, position)".to_string());
+            if arguments.len() != 2 && arguments.len() != 3 {
+                return Err(
+                    "spawn expects 2 or 3 arguments: (entity_name, position [, character_package])"
+                        .to_string(),
+                );
             }
 
             let entity_name = arguments[0].as_string()?;
@@ -326,7 +334,17 @@ pub fn call_host_function(
             let z = borrowed.elements[2].as_number()? as f32;
             let position = Vec3::new(x, y, z);
 
-            let entity_id = context.engine.spawn_character(entity_name, position)?;
+            let character_package = if arguments.len() == 3 {
+                Some(arguments[2].as_string()?)
+            } else {
+                None
+            };
+
+            let entity_id = context.engine.spawn_character(
+                entity_name,
+                position,
+                character_package.as_deref(),
+            )?;
 
             Ok(Some(Value::Handle {
                 kind: HandleKind::Entity,

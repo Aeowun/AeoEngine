@@ -7,12 +7,12 @@ pub mod pathfinding;
 mod system_tests;
 
 use super::animation::AnimationState;
+use super::animation::TargetAnimation;
 use super::character::Character;
 use super::collision::{
     resolve_character_collisions, resolve_dynamic_body_collisions, resolve_static_voxel_collisions,
 };
 use super::movement::{JUMP_IMPULSE, MOVE_SPEED, MovementState};
-use crate::character_custom::TargetAnimation;
 use crate::engine::entity::EntityId;
 use crate::world::World;
 use glam::{Quat, Vec2};

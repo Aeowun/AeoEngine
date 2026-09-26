@@ -11,9 +11,9 @@ shelf/
 
 # Local development projects / assets
 /Dev/
-/UserData/
-.assets/
-
+/UserData/Starter World/chunks
+.assets/audio/misc
+chunks
 # OS junk
 .DS_Store
 Thumbs.db

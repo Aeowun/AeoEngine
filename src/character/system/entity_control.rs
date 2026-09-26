@@ -1,7 +1,6 @@
 use super::CharacterSystem;
-use crate::character::animation::AnimationState;
+use crate::character::animation::{AnimationState, TargetAnimation};
 use crate::character::character::Character;
-use crate::character_custom::TargetAnimation;
 use crate::engine::entity::{EntityId, EntityManager};
 use glam::{Quat, Vec2, Vec3};
 

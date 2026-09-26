@@ -3,13 +3,19 @@ use std::sync::Arc;
 use glam::Vec3;
 
 use super::ScriptHostBridge;
+use crate::character::TargetAnimation;
 
 impl<'a> ScriptHostBridge<'a> {
     pub fn is_entity_declaration_valid(&self, entity_name: &str) -> bool {
         !entity_name.trim().is_empty()
     }
 
-    pub fn spawn_character(&mut self, entity_name: &str, position: Vec3) -> Result<u64, String> {
+    pub fn spawn_character(
+        &mut self,
+        entity_name: &str,
+        position: Vec3,
+        character_package: Option<&str>,
+    ) -> Result<u64, String> {
         if !self.is_entity_declaration_valid(entity_name) {
             return Err("Entity name cannot be empty".to_string());
         }
@@ -18,12 +24,10 @@ impl<'a> ScriptHostBridge<'a> {
             return Err("CharacterSystem not available for spawning".to_string());
         };
 
-        let custom_dir = self
-            .project_path
-            .map(|p| p.join("characters").join("custom"));
-        let package_dir = custom_dir.as_deref().filter(|p| p.exists());
+        let package_name = character_package.unwrap_or("character_robot");
 
-        let character_id = character_system.spawn_character(position, package_dir);
+        let character_id =
+            character_system.spawn_character(position, Some(package_name));
         let entity_id = self.entity_manager.create_entity(entity_name);
         self.entity_manager.set_position(entity_id, position);
         character_system.associate_entity(entity_id, character_id);
@@ -74,8 +78,8 @@ impl<'a> ScriptHostBridge<'a> {
         if let Some(system) = self.character_system.as_deref_mut() {
             if let Some(player) = system.get_active_player_mut() {
                 let target_animation = match animation {
-                    "Walk" => crate::character_custom::TargetAnimation::Walk,
-                    _ => crate::character_custom::TargetAnimation::Idle,
+                    "Walk" => TargetAnimation::Walk,
+                    _ => TargetAnimation::Idle,
                 };
 
                 player

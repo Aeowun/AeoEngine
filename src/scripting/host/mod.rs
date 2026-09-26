@@ -1090,8 +1090,18 @@ impl<'a> EngineHost for ScriptHostBridge<'a> {
         ScriptHostBridge::is_entity_declaration_valid(self, entity_name)
     }
 
-    fn spawn_character(&mut self, entity_name: &str, position: Vec3) -> Result<u64, String> {
-        ScriptHostBridge::spawn_character(self, entity_name, position)
+    fn spawn_character(
+        &mut self,
+        entity_name: &str,
+        position: Vec3,
+        character_package: Option<&str>,
+    ) -> Result<u64, String> {
+        ScriptHostBridge::spawn_character(
+            self,
+            entity_name,
+            position,
+            character_package,
+        )
     }
 
     fn set_valid_entity_declarations(&mut self, decls: Arc<std::collections::HashSet<String>>) {

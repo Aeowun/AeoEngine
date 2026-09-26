@@ -1,7 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod character;
-mod character_custom;
 mod editor;
 mod engine;
 mod project;

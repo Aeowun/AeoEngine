@@ -1,3 +1,9 @@
+#[path = "../../.assets/characters/character_robot/mod.rs"]
+pub(crate) mod builtin_robot;
+
+#[path = "../../.assets/characters/character_hero/mod.rs"]
+pub(crate) mod builtin_hero;
+
 pub mod animation;
 pub mod character;
 pub mod collision;
@@ -6,8 +12,11 @@ pub mod spawning;
 pub mod system;
 pub mod transform;
 
-pub use animation::{AnimationState, CharacterAnimation};
-pub use character::Character;
+pub use animation::{
+    AnimationState, CharacterAnimation, CharacterAnimationController, EvaluatedPose,
+    TargetAnimation,
+};
+pub use character::{AppearanceCustomization, Character, MaterialSlot, generate_character_mesh};
 pub use collision::CharacterCollision;
 pub use movement::{CharacterMovement, MovementState};
 pub use spawning::spawn_at_random_point;

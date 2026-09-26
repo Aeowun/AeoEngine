@@ -1,6 +1,7 @@
 use super::recent::RecentProjects;
+use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct ProjectManager {
     pub user_data_dir: PathBuf,
@@ -119,156 +120,87 @@ impl ProjectManager {
     }
 }
 
+pub fn engine_assets_dir() -> PathBuf {
+    if let Ok(current_dir) = std::env::current_dir() {
+        let assets = current_dir.join(".assets");
+
+        if assets.is_dir() {
+            return assets;
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let assets = parent.join(".assets");
+
+            if assets.is_dir() {
+                return assets;
+            }
+        }
+    }
+
+    PathBuf::from(".assets")
+}
+
+fn discover_asset_packages(project_path: &Path, category: &str) -> Vec<String> {
+    let mut names = HashSet::new();
+
+    let roots = [
+        engine_assets_dir().join(category),
+        project_path.join(".assets").join(category),
+    ];
+
+    for root in roots {
+        let Ok(entries) = fs::read_dir(root) else {
+            continue;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+
+            if !path.is_dir() {
+                continue;
+            }
+
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                names.insert(name.to_string());
+            }
+        }
+    }
+
+    let mut names: Vec<String> = names.into_iter().collect();
+    names.sort();
+    names
+}
+
 pub fn ensure_project_characters(project_path: &std::path::Path) {
-    let chars_dir = project_path.join("characters");
-    if !chars_dir.exists() {
-        let _ = fs::create_dir_all(&chars_dir);
-    }
-
-    let custom_dir = chars_dir.join("custom");
-    if !custom_dir.exists() {
-        let _ = fs::create_dir_all(&custom_dir);
-        let pkg = r#"{
-  "name": "custom",
-  "mesh_type": "robot",
-  "has_gun": false,
-  "appearance": {
-    "skin_color": [0.70, 0.71, 0.70, 1.0],
-    "armor_color": [0.46, 0.47, 0.45, 1.0],
-    "cloth_color": [0.10, 0.10, 0.10, 1.0],
-    "detail_color": [0.12, 0.13, 0.15, 1.0],
-    "accessory_color": [0.08, 0.30, 0.34, 1.0],
-    "show_accessory": true
-  }
-}"#;
-        let _ = fs::write(custom_dir.join("package.json"), pkg);
-    }
-
-    let soldier_dir = chars_dir.join("custom_soldier");
-    if !soldier_dir.exists() {
-        let _ = fs::create_dir_all(&soldier_dir);
-        let pkg = r#"{
-  "name": "custom_soldier",
-  "mesh_type": "soldier",
-  "has_gun": true,
-  "appearance": {
-    "skin_color": [0.90, 0.70, 0.10, 1.0],
-    "armor_color": [0.22, 0.35, 0.20, 1.0],
-    "cloth_color": [0.08, 0.08, 0.09, 1.0],
-    "detail_color": [0.15, 0.18, 0.16, 1.0],
-    "accessory_color": [0.80, 0.30, 0.00, 1.0],
-    "show_accessory": true
-  }
-}"#;
-        let _ = fs::write(soldier_dir.join("package.json"), pkg);
-    }
+    let chars_dir = project_path.join(".assets").join("characters");
+    let _ = fs::create_dir_all(chars_dir);
 }
 
 pub fn discover_characters(project_path: &std::path::Path) -> Vec<String> {
     ensure_project_characters(project_path);
-    let mut names = Vec::new();
-    let chars_dir = project_path.join("characters");
-    if let Ok(entries) = fs::read_dir(&chars_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    names.push(name.to_string());
-                }
-            }
-        }
-    }
-    names.sort();
-    if names.is_empty() {
-        names.push("custom".to_string());
-    }
-    names
+    discover_asset_packages(project_path, "characters")
 }
 
 pub fn ensure_project_controllers(project_path: &std::path::Path) {
-    let ctrl_dir = project_path.join("controllers");
-    if !ctrl_dir.exists() {
-        let _ = fs::create_dir_all(&ctrl_dir);
-    }
-
-    let tp_dir = ctrl_dir.join("thirdPerson_Controller");
-    if !tp_dir.exists() {
-        let _ = fs::create_dir_all(&tp_dir);
-        let pkg = r#"{
-  "name": "thirdPerson_Controller",
-  "type": "third_person"
-}"#;
-        let _ = fs::write(tp_dir.join("package.json"), pkg);
-    }
+    let ctrl_dir = project_path.join(".assets").join("controllers");
+    let _ = fs::create_dir_all(ctrl_dir);
 }
 
 pub fn discover_controllers(project_path: &std::path::Path) -> Vec<String> {
     ensure_project_controllers(project_path);
-    let mut names = Vec::new();
-    let ctrl_dir = project_path.join("controllers");
-    if let Ok(entries) = fs::read_dir(&ctrl_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    names.push(name.to_string());
-                }
-            }
-        }
-    }
-    names.sort();
-    if names.is_empty() {
-        names.push("thirdPerson_Controller".to_string());
-    }
-    names
+    discover_asset_packages(project_path, "controllers")
 }
 
 pub fn ensure_project_cameras(project_path: &std::path::Path) {
-    let cam_dir = project_path.join("cameras");
-    if !cam_dir.exists() {
-        let _ = fs::create_dir_all(&cam_dir);
-    }
-
-    let tp_dir = cam_dir.join("thirdPerson");
-    if !tp_dir.exists() {
-        let _ = fs::create_dir_all(&tp_dir);
-        let pkg = r#"{
-  "name": "thirdPerson",
-  "type": "third_person"
-}"#;
-        let _ = fs::write(tp_dir.join("package.json"), pkg);
-    }
-
-    let fp_dir = cam_dir.join("firstPerson");
-    if !fp_dir.exists() {
-        let _ = fs::create_dir_all(&fp_dir);
-        let pkg = r#"{
-  "name": "firstPerson",
-  "type": "first_person"
-}"#;
-        let _ = fs::write(fp_dir.join("package.json"), pkg);
-    }
+    let cam_dir = project_path.join(".assets").join("cameras");
+    let _ = fs::create_dir_all(cam_dir);
 }
 
 pub fn discover_cameras(project_path: &std::path::Path) -> Vec<String> {
     ensure_project_cameras(project_path);
-    let mut names = Vec::new();
-    let cam_dir = project_path.join("cameras");
-    if let Ok(entries) = fs::read_dir(&cam_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    names.push(name.to_string());
-                }
-            }
-        }
-    }
-    names.sort();
-    if names.is_empty() {
-        names.push("thirdPerson".to_string());
-    }
-    names
+    discover_asset_packages(project_path, "cameras")
 }
 
 pub fn ensure_project_audio(project_path: &std::path::Path) {

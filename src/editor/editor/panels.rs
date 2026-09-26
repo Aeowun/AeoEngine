@@ -18,8 +18,7 @@ impl Editor {
                 .default_width(260.0)
                 .show(ctx, |ui| {
                     ui.style_mut().visuals.window_rounding = egui::Rounding::ZERO;
-                    ui.style_mut().visuals.widgets.noninteractive.rounding =
-                        egui::Rounding::ZERO;
+                    ui.style_mut().visuals.widgets.noninteractive.rounding = egui::Rounding::ZERO;
                     ui.style_mut().visuals.widgets.inactive.rounding = egui::Rounding::ZERO;
                     ui.style_mut().visuals.widgets.hovered.rounding = egui::Rounding::ZERO;
                     ui.style_mut().visuals.widgets.active.rounding = egui::Rounding::ZERO;
@@ -63,9 +62,7 @@ impl Editor {
                             );
 
                             if ui.rect_contains_pointer(sep_rect) {
-                                ui.output_mut(|o| {
-                                    o.cursor_icon = egui::CursorIcon::ResizeVertical
-                                });
+                                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ResizeVertical);
                             }
 
                             if sep_resp.dragged() {
@@ -205,8 +202,7 @@ impl Editor {
                 .default_width(260.0)
                 .show(ctx, |ui| {
                     ui.style_mut().visuals.window_rounding = egui::Rounding::ZERO;
-                    ui.style_mut().visuals.widgets.noninteractive.rounding =
-                        egui::Rounding::ZERO;
+                    ui.style_mut().visuals.widgets.noninteractive.rounding = egui::Rounding::ZERO;
                     ui.style_mut().visuals.widgets.inactive.rounding = egui::Rounding::ZERO;
                     ui.style_mut().visuals.widgets.hovered.rounding = egui::Rounding::ZERO;
                     ui.style_mut().visuals.widgets.active.rounding = egui::Rounding::ZERO;
@@ -214,14 +210,11 @@ impl Editor {
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
                         ui.heading("WORLD");
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                if ui.button("X").clicked() {
-                                    self.show_world_window = false;
-                                }
-                            },
-                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button("X").clicked() {
+                                self.show_world_window = false;
+                            }
+                        });
                     });
                     ui.separator();
 
@@ -256,9 +249,7 @@ impl Editor {
                 crate::world::CellType::AudioEmitter => {
                     self.world_hierarchy_audio_emitters.push(coord)
                 }
-                crate::world::CellType::SpawnPoint => {
-                    self.world_hierarchy_spawn_points.push(coord)
-                }
+                crate::world::CellType::SpawnPoint => self.world_hierarchy_spawn_points.push(coord),
                 crate::world::CellType::FxBlock => self.world_hierarchy_fx_blocks.push(coord),
                 crate::world::CellType::Player => self.world_hierarchy_players.push(coord),
                 crate::world::CellType::NPC => self.world_hierarchy_npcs.push(coord),
@@ -286,84 +277,87 @@ impl Editor {
         world: &mut crate::world::World,
         project_path: &Option<std::path::PathBuf>,
     ) {
-        ui.label("STREAMING");
+            // --- STREAMING ---
+            egui::CollapsingHeader::new("STREAMING")
+                .default_open(false)
+                .show(ui, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut self.editor_max_distance_chunks)
+                            .range(0..=64)
+                            .prefix("Editor max: ")
+                            .suffix(" chunks"),
+                    );
 
-        ui.add(
-            egui::DragValue::new(&mut self.editor_max_distance_chunks)
-                .range(0..=64)
-                .prefix("Editor max: ")
-                .suffix(" chunks"),
-        );
-
-        ui.add(
-            egui::DragValue::new(&mut self.play_max_distance_chunks)
-                .range(0..=64)
-                .prefix("Play max: ")
-                .suffix(" chunks"),
-        );
-
-        ui.separator();
-
-        self.ensure_world_hierarchy_cache(world);
-
-        let selected_coord = self.selected_coord;
-        let mut clicked_coord = None;
-
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            // --- HIERARCHY ---
-            //
-            // Blocks are intentionally count-only. Rendering one UI row per
-            // block makes the editor frame cost scale with world size.
-            ui.horizontal(|ui| {
-                ui.label(format!("BLOCKS ({})", self.world_hierarchy_blocks.len()));
-            });
-
-            ui.add_space(6.0);
-
-            clicked_coord = clicked_coord.or(draw_world_category_navigator(
-                ui,
-                "LIGHTS",
-                &self.world_hierarchy_lights,
-                selected_coord,
-            ));
-
-            clicked_coord = clicked_coord.or(draw_world_category_navigator(
-                ui,
-                "AUDIO EMITTERS",
-                &self.world_hierarchy_audio_emitters,
-                selected_coord,
-            ));
-
-            clicked_coord = clicked_coord.or(draw_world_category_navigator(
-                ui,
-                "SPAWN POINTS",
-                &self.world_hierarchy_spawn_points,
-                selected_coord,
-            ));
-
-            clicked_coord = clicked_coord.or(draw_world_category_navigator(
-                ui,
-                "FX BLOCKS",
-                &self.world_hierarchy_fx_blocks,
-                selected_coord,
-            ));
-
-            clicked_coord = clicked_coord.or(draw_world_category_navigator(
-                ui,
-                "PLAYERS",
-                &self.world_hierarchy_players,
-                selected_coord,
-            ));
-
-            clicked_coord = clicked_coord.or(draw_world_category_navigator(
-                ui,
-                "NPCs",
-                &self.world_hierarchy_npcs,
-                selected_coord,
-            ));
+                    ui.add(
+                        egui::DragValue::new(&mut self.play_max_distance_chunks)
+                            .range(0..=64)
+                            .prefix("Play max: ")
+                            .suffix(" chunks"),
+                    );
+                });
 
             ui.separator();
-        });
+
+            self.ensure_world_hierarchy_cache(world);
+
+            let selected_coord = self.selected_coord;
+            let mut clicked_coord = None;
+
+            // --- WORLD HIERARCHY ---
+            //
+            // BLOCKS is the parent header for the complete hierarchy category list.
+            // Expanding it reveals LIGHTS through NPCs.
+            egui::CollapsingHeader::new(format!(
+                "BLOCKS ({})",
+                self.world_hierarchy_blocks.len()
+            ))
+            .default_open(false)
+            .show(ui, |ui| {
+                clicked_coord = clicked_coord.or(draw_world_category_navigator(
+                    ui,
+                    "LIGHTS",
+                    &self.world_hierarchy_lights,
+                    selected_coord,
+                ));
+
+                clicked_coord = clicked_coord.or(draw_world_category_navigator(
+                    ui,
+                    "AUDIO EMITTERS",
+                    &self.world_hierarchy_audio_emitters,
+                    selected_coord,
+                ));
+
+                clicked_coord = clicked_coord.or(draw_world_category_navigator(
+                    ui,
+                    "SPAWN POINTS",
+                    &self.world_hierarchy_spawn_points,
+                    selected_coord,
+                ));
+
+                clicked_coord = clicked_coord.or(draw_world_category_navigator(
+                    ui,
+                    "FX BLOCKS",
+                    &self.world_hierarchy_fx_blocks,
+                    selected_coord,
+                ));
+
+                clicked_coord = clicked_coord.or(draw_world_category_navigator(
+                    ui,
+                    "PLAYERS",
+                    &self.world_hierarchy_players,
+                    selected_coord,
+                ));
+
+                clicked_coord = clicked_coord.or(draw_world_category_navigator(
+                    ui,
+                    "NPCs",
+                    &self.world_hierarchy_npcs,
+                    selected_coord,
+                ));
+            });
+
+            ui.separator();
+
 
         if let Some(coord) = clicked_coord {
             self.selected_coord = Some(coord);
@@ -372,7 +366,7 @@ impl Editor {
 
         // --- LIGHTING ---
         egui::CollapsingHeader::new("LIGHTING")
-            .default_open(true)
+            .default_open(false)
             .show(ui, |ui| {
                 ui.checkbox(&mut world.lighting.shadows_enabled, "Shadows Enabled");
                 ui.checkbox(
@@ -468,7 +462,7 @@ impl Editor {
 
         // --- PHYSICS ---
         egui::CollapsingHeader::new("PHYSICS")
-            .default_open(true)
+            .default_open(false)
             .show(ui, |ui| {
                 ui.label("Gravity");
 
@@ -486,7 +480,7 @@ impl Editor {
 
         // --- MOUSE ---
         egui::CollapsingHeader::new("MOUSE")
-            .default_open(true)
+            .default_open(false)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Cursor:");
@@ -559,12 +553,12 @@ impl Editor {
 
         // --- CHARACTER ---
         egui::CollapsingHeader::new("CHARACTER")
-            .default_open(true)
+            .default_open(false)
             .show(ui, |ui| {
                 let available = if let Some(path) = project_path {
                     crate::project::discover_characters(path)
                 } else {
-                    vec!["custom".to_string()]
+                    vec!["character_hero".to_string(), "character_robot".to_string()]
                 };
 
                 ui.horizontal(|ui| {
@@ -578,11 +572,7 @@ impl Editor {
                         .show_ui(ui, |ui| {
                             for char_name in available {
                                 if ui
-                                    .selectable_value(
-                                        &mut current,
-                                        char_name.clone(),
-                                        &char_name,
-                                    )
+                                    .selectable_value(&mut current, char_name.clone(), &char_name)
                                     .clicked()
                                 {
                                     changed = true;
@@ -606,8 +596,10 @@ impl Editor {
                                 .and_then(|n| n.to_str())
                                 .unwrap_or("imported_char");
 
-                            let dest_dir =
-                                project_dir.join("characters").join(char_name);
+                            let dest_dir = project_dir
+                                .join(".assets")
+                                .join("characters")
+                                .join(char_name);
 
                             if let Err(e) = copy_dir_all(&folder, &dest_dir) {
                                 eprintln!("Failed to import character: {}", e);
@@ -622,7 +614,7 @@ impl Editor {
 
         // --- CONTROLLER ---
         egui::CollapsingHeader::new("CONTROLLER")
-            .default_open(true)
+            .default_open(false)
             .show(ui, |ui| {
                 let available = if let Some(path) = project_path {
                     crate::project::discover_controllers(path)
@@ -641,11 +633,7 @@ impl Editor {
                         .show_ui(ui, |ui| {
                             for ctrl_name in available {
                                 if ui
-                                    .selectable_value(
-                                        &mut current,
-                                        ctrl_name.clone(),
-                                        &ctrl_name,
-                                    )
+                                    .selectable_value(&mut current, ctrl_name.clone(), &ctrl_name)
                                     .clicked()
                                 {
                                     changed = true;
@@ -662,12 +650,16 @@ impl Editor {
 
         // --- CAMERA ---
         egui::CollapsingHeader::new("CAMERA")
-            .default_open(true)
+            .default_open(false)
             .show(ui, |ui| {
                 let available = if let Some(path) = project_path {
                     crate::project::discover_cameras(path)
                 } else {
-                    vec!["thirdPerson".to_string(), "firstPerson".to_string()]
+                    vec![
+                        "firstPerson".to_string(),
+                        "thirdPerson".to_string(),
+                        "topDown".to_string(),
+                    ]
                 };
 
                 ui.horizontal(|ui| {
@@ -681,11 +673,7 @@ impl Editor {
                         .show_ui(ui, |ui| {
                             for cam_name in available {
                                 if ui
-                                    .selectable_value(
-                                        &mut current,
-                                        cam_name.clone(),
-                                        &cam_name,
-                                    )
+                                    .selectable_value(&mut current, cam_name.clone(), &cam_name)
                                     .clicked()
                                 {
                                     changed = true;
@@ -710,47 +698,49 @@ fn draw_world_category_navigator(
 ) -> Option<WorldCoord> {
     let mut clicked_coord = None;
 
-    ui.horizontal(|ui| {
-        ui.label(format!("{} ({})", name, list.len()));
+    egui::CollapsingHeader::new(format!("{} ({})", name, list.len()))
+        .default_open(false)
+        .show(ui, |ui| {
+            let has_entries = !list.is_empty();
 
-        let has_entries = !list.is_empty();
+            let current_index = if has_entries {
+                selected_coord.and_then(|coord| list.iter().position(|entry| *entry == coord))
+            } else {
+                None
+            };
 
-        let current_index = if has_entries {
-            selected_coord.and_then(|coord| list.iter().position(|entry| *entry == coord))
-        } else {
-            None
-        };
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(has_entries, egui::Button::new("< PREV"))
+                    .clicked()
+                {
+                    let index = match current_index {
+                        Some(index) => {
+                            if index == 0 {
+                                list.len() - 1
+                            } else {
+                                index - 1
+                            }
+                        }
+                        None => list.len() - 1,
+                    };
 
-        if ui
-            .add_enabled(has_entries, egui::Button::new("< PREV"))
-            .clicked()
-        {
-            let index = match current_index {
-                Some(index) => {
-                    if index == 0 {
-                        list.len() - 1
-                    } else {
-                        index - 1
-                    }
+                    clicked_coord = Some(list[index]);
                 }
-                None => list.len() - 1,
-            };
 
-            clicked_coord = Some(list[index]);
-        }
+                if ui
+                    .add_enabled(has_entries, egui::Button::new("NEXT >"))
+                    .clicked()
+                {
+                    let index = match current_index {
+                        Some(index) => (index + 1) % list.len(),
+                        None => 0,
+                    };
 
-        if ui
-            .add_enabled(has_entries, egui::Button::new("NEXT >"))
-            .clicked()
-        {
-            let index = match current_index {
-                Some(index) => (index + 1) % list.len(),
-                None => 0,
-            };
-
-            clicked_coord = Some(list[index]);
-        }
-    });
+                    clicked_coord = Some(list[index]);
+                }
+            });
+        });
 
     clicked_coord
 }

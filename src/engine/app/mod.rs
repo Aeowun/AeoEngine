@@ -254,7 +254,7 @@ impl App {
 
                 let spawned_id = self
                     .character_system
-                    .spawn_player(&self.world, self.project_manager.current_project.as_deref());
+                    .spawn_player(&self.world, Some(self.world.selected_character.as_str()));
 
                 self.mouse
                     .apply_world_defaults(self.world.cursor_visible, self.world.screen_locked);

@@ -1,7 +1,7 @@
-#[path = "../src/character_custom/mod.rs"]
-pub mod character_custom;
+#[path = "../.assets/characters/character_robot/mod.rs"]
+pub mod character_robot;
 
-use character_custom::{
+use character_robot::{
     AppearanceCustomization, CharacterAnimationController, CharacterCollision, MaterialSlot,
     TargetAnimation, generate_character_mesh,
 };

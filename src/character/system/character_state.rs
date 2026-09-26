@@ -1,15 +1,15 @@
 use super::CharacterSystem;
 use crate::character::character::Character;
 use glam::Vec3;
-use std::path::Path;
 
 impl CharacterSystem {
     /// Spawns a generic character at an explicitly supplied world position.
-    pub fn spawn_character(&mut self, position: Vec3, package_dir: Option<&Path>) -> u64 {
+    pub fn spawn_character(&mut self, position: Vec3, package_name: Option<&str>) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
 
-        let character = Character::new_from_package(id, position, package_dir);
+        let character =
+            Character::new_from_package(id, position, package_name.unwrap_or("character_robot"));
 
         self.characters.insert(id, character);
 

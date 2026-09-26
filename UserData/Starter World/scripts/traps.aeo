@@ -2,42 +2,24 @@
 //
 // Every object named "Trap" becomes a damage source.
 //
-// A Trap does not own the player's health.
-//
-// It only reports what happened:
-//
-//     player touched Trap
-//          |
-//          +----> "on_hurt"
-//          |
-//          +----> "on_damage", 10
-//
-// Two different systems can respond to those events.
-//
-// "on_hurt" is used by the Environment script to play the hurt sound.
-//
-// "on_damage" is used by the Player Manager to actually reduce health.
-//
-// So one interaction can notify multiple independent systems.
-//
-// This is the core event-driven pattern used throughout the example:
-// one system announces something happened, and any interested system
-// can listen and respond.
+// on_touch is a PLAYER touch event.
+// The callback argument c is the Trap cell that was touched.
 
 const traps = find("Trap")
 
 for trap in traps {
 
     trap.on_touch = fn(c) {
+        const player = get_entity("Player")
+
+        if !player.is_valid() || !player.alive {
+            return
+        }
 
         // Presentation event.
-        //
-        // Environment listens for this and plays the hurt sound.
         event.fire("on_hurt")
 
         // Gameplay event.
-        //
-        // Player Manager listens for this and changes health.
         event.fire("on_damage", 10)
     }
 }

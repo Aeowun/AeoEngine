@@ -34,27 +34,16 @@ impl CharacterSystem {
             return Some(Vec::new());
         }
 
-        let active = world.active_blocks();
-
-        if active.is_empty() {
+        let Some((world_min, world_max)) = world.navigation_bounds() else {
             return None;
-        }
+        };
 
-        let mut min_x = start.0.min(goal.0);
-        let mut max_x = start.0.max(goal.0);
-        let mut min_y = start.1.min(goal.1);
-        let mut max_y = start.1.max(goal.1);
-        let mut min_z = start.2.min(goal.2);
-        let mut max_z = start.2.max(goal.2);
-
-        for coord in active {
-            min_x = min_x.min(coord.x);
-            max_x = max_x.max(coord.x);
-            min_y = min_y.min(coord.y);
-            max_y = max_y.max(coord.y);
-            min_z = min_z.min(coord.z);
-            max_z = max_z.max(coord.z);
-        }
+        let mut min_x = start.0.min(goal.0).min(world_min.x);
+        let mut max_x = start.0.max(goal.0).max(world_max.x);
+        let mut min_y = start.1.min(goal.1).min(world_min.y);
+        let mut max_y = start.1.max(goal.1).max(world_max.y);
+        let mut min_z = start.2.min(goal.2).min(world_min.z);
+        let mut max_z = start.2.max(goal.2).max(world_max.z);
 
         const PADDING: i32 = 2;
         const MAX_NODES: usize = 8192;
