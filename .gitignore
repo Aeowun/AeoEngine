@@ -11,7 +11,11 @@ shelf/
 
 # Local development projects / assets
 /Dev/
+**/*.wav
+**/*.mp3
+**/.assets/audio/
 /UserData/Starter World/chunks
+/UserData/Starter World/.assets
 .assets/audio/misc
 chunks
 # OS junk
