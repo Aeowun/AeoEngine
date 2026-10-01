@@ -148,13 +148,19 @@ AeoEngine currently targets Windows but is planning to release on multiple platf
 [**Download AeoEngine →**](https://aeowun.com/downloads/)
 
 A release can also be downloaded directly from the repository's **Releases** tab.
+---
+## Support AeoEngine
+---
+
 ## Support AeoEngine
 
 AeoEngine is independently developed.
 
 If you want to support continued development:
 
-[Support AeoEngine on Ko-fi](https://ko-fi.com/aeowun)
+[Support AeoEngine on Ko-fi](https://ko-fi.com/aeowun/tip)
+
+
 [Documentation](https://aeowun.com/docs/) · [Getting Started](https://aeowun.com/aeoengine/getting-started/) · [AeoScript](https://aeowun.com/aeoscript/)
 
 ---
