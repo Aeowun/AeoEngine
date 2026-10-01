@@ -6,6 +6,10 @@
 >
 > Public releases are provided for testing and experimentation. All releases should be treated as **beta software** and may contain bugs, incomplete features, breaking changes, or platform-specific issues. A release is not a promise that every feature or project will work correctly.
 
+
+[Support AeoEngine on Ko-fi](https://ko-fi.com/aeowun/tip)
+
+
 **Build a voxel world, make it playable, and turn it into a standalone game.**
 
 AeoEngine is a Rust/OpenGL game engine and editor for building voxel worlds, creating gameplay with Actors and AeoScript, testing projects in Play mode, and packaging them as standalone games.
