@@ -1,5 +1,11 @@
 # AeoEngine
 
+> ## COMING SOON
+>
+> **AeoEngine is in active beta development.**
+>
+> Public releases are provided for testing and experimentation. All releases should be treated as **beta software** and may contain bugs, incomplete features, breaking changes, or platform-specific issues. A release is not a promise that every feature or project will work correctly.
+
 **Build a voxel world, make it playable, and turn it into a standalone game.**
 
 AeoEngine is a Rust/OpenGL game engine and editor for building voxel worlds, creating gameplay with Actors and AeoScript, testing projects in Play mode, and packaging them as standalone games.
@@ -34,6 +40,14 @@ On first launch, AeoEngine installs its required files under:
 Projects are stored under `UserData/` by default.
 
 The current public download is **AeoEngine 0.7.5 Beta**. The **0.8.x** development series is currently in development and is not yet offered as the public Windows download.
+
+### Beta software
+
+Every AeoEngine release is currently a **beta release**.
+
+Beta builds are made available to test the engine as it develops. They may contain known or unknown bugs, unfinished systems, compatibility problems, performance issues, or changes that affect existing projects.
+
+No beta release is guaranteed to work correctly on every system or with every project. Projects that matter should be backed up before being opened in a newer build.
 
 ## Project structure
 
@@ -71,7 +85,9 @@ It supports Actor and entity interaction, input, events, runtime UI, audio, anim
 
 ## Development status
 
-AeoEngine is under active development. Features, APIs, editor behavior, and file formats may continue to change.
+AeoEngine is under active development.
+
+Features, APIs, editor behavior, project formats, and runtime behavior may change between releases. Compatibility between beta versions is not guaranteed.
 
 For current usage and behavior, use the [documentation hub](https://aeowun.com/docs/).
 
