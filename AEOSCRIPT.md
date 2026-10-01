@@ -1,9 +1,10 @@
 # AeoScript Language Overview
 
-> **AeoEngine:** v0.8.0  
-> **AeoScript:** v1.1.2
+> **Worldkiln:** v0.8.0  
+> **AeoScript:** v1.1.2  
+> **Former engine name:** AeoEngine
 
-AeoScript is AeoEngine's gameplay scripting language.
+AeoScript is Worldkiln's gameplay scripting language.
 
 It can control gameplay objects, input, UI, audio, cameras, events, player behavior, and other game systems directly from `.aeo` files.
 
@@ -411,7 +412,7 @@ Not every Entity script needs every lifecycle function.
 
 # 13. Cells, Actors, and Entities
 
-AeoEngine exposes several kinds of game objects to AeoScript.
+Worldkiln exposes several kinds of game objects to AeoScript.
 
 ## Cells
 
@@ -468,7 +469,7 @@ Entities can represent:
 - The Player.
 - Spawned characters.
 - Actors currently in the game.
-- Other game objects managed by AeoEngine.
+- Other game objects managed by Worldkiln.
 
 Common Entity properties include:
 
@@ -729,7 +730,7 @@ player.set_facing_direction(1, 0)
 player.select_animation("Walk")
 ```
 
-AeoEngine continues handling Character physics and collision.
+Worldkiln continues handling Character physics and collision.
 
 ---
 
@@ -894,7 +895,7 @@ See `AeoScript_API.md` and `AeoScript_STDLIB.md` for complete API references.
 
 # 29. Engine Handles
 
-AeoScript uses handles for objects owned by AeoEngine.
+AeoScript uses handles for objects owned by Worldkiln.
 
 Current handle types include:
 
@@ -941,7 +942,7 @@ AeoScript is intended to remain:
 
 - Small enough to learn.
 - General enough for gameplay.
-- Closely integrated with AeoEngine.
+- Closely integrated with Worldkiln.
 - Useful for both simple scripts and larger gameplay systems.
 - Safe when working with engine-managed objects.
 - Capable of pausing and resuming gameplay logic with `wait()`.
@@ -952,4 +953,4 @@ Entity scripts are available when behavior needs dedicated per-object state and 
 
 Modules provide reusable logic without requiring specialized APIs for every type of game system.
 
-The language should grow around real AeoEngine workflows rather than accumulating APIs without a clear use.
+The language should grow around real Worldkiln workflows rather than accumulating APIs without a clear use.
