@@ -1,18 +1,18 @@
-# AeoEngine
+# Worldkiln
 
-> ## COMING SOON
+> ## ACTIVE BETA
 >
-> **AeoEngine is in active beta development.**
+> **Worldkiln (formerly AeoEngine) is in active beta development.**
 >
 > Public releases are available for testing and experimentation. Features, APIs, project formats, and behavior may change between releases.
 
-[Support AeoEngine on Ko-fi](https://ko-fi.com/aeowun/tip)
+[Support Worldkiln on Ko-fi](https://ko-fi.com/aeowun/tip)
 
 **Build a voxel world, make it playable, and turn it into a standalone game.**
 
-AeoEngine is a Rust/OpenGL game engine and editor for building voxel worlds, creating gameplay with Actors and AeoScript, testing projects in Play mode, and building standalone games.
+Worldkiln is a Rust/OpenGL game engine and editor for building voxel worlds, creating gameplay with Actors and AeoScript, testing projects in Play mode, and building standalone games.
 
-[Download AeoEngine](https://aeowun.com/downloads/) · [AeoEngine](https://aeowun.com/aeoengine/) · [Documentation](https://aeowun.com/docs/) · [Getting Started](https://aeowun.com/aeoengine/getting-started/)
+[Download Worldkiln](https://aeowun.com/downloads/) · [Worldkiln](https://aeowun.com/worldkiln/) · [Documentation](https://aeowun.com/docs/) · [Getting Started](https://aeowun.com/worldkiln/getting-started/)
 
 ---
 
@@ -33,23 +33,23 @@ AeoEngine is a Rust/OpenGL game engine and editor for building voxel worlds, cre
 
 ## Install
 
-AeoEngine currently supports Windows 10 and 11.
+Worldkiln currently supports Windows 10 and 11.
 
-Download `AeoEngine.exe` from the [AeoEngine download page](https://aeowun.com/downloads/) or from the repository's Releases page.
+Download `Worldkiln.exe` from the [Worldkiln download page](https://aeowun.com/downloads/) or from the repository's Releases page.
 
-On first launch, AeoEngine installs itself under:
+On first launch, Worldkiln installs itself under:
 
 ```text
 %LOCALAPPDATA%\Aeowun\
 ├── .assets\
 ├── UserData\
-├── AeoEngine.exe
+├── Worldkiln.exe
 └── LICENSE
 ```
 
 Projects are stored under `UserData/` by default.
 
-AeoEngine can repair missing installation files without replacing existing projects or assets.
+Worldkiln can repair missing installation files without replacing existing projects or assets.
 
 ---
 
@@ -93,7 +93,7 @@ During Play mode, Actors become active game objects that scripts, physics, anima
 
 ## AeoScript
 
-AeoScript is the gameplay scripting language built for AeoEngine.
+AeoScript is the gameplay scripting language built for Worldkiln.
 
 ```aeoscript
 debug.log("Game loaded")
@@ -130,7 +130,7 @@ Scripts can run as standalone gameplay systems or be attached to Actors and othe
 
 ## UI
 
-AeoEngine includes UI authoring for game interfaces.
+Worldkiln includes UI authoring for game interfaces.
 
 UI controls can use responsive anchors and can be accessed from AeoScript using script keys.
 
@@ -144,7 +144,7 @@ Scripts can also create Panels, Text, and Buttons during Play mode.
 
 ## Play Mode
 
-Play mode runs the current project directly inside AeoEngine.
+Play mode runs the current project directly inside Worldkiln.
 
 Gameplay can use:
 
@@ -165,7 +165,7 @@ Changes made by ordinary gameplay scripts during Play mode are temporary and do 
 
 ## Build a Game
 
-AeoEngine can package a project as a standalone Windows game.
+Worldkiln can package a project as a standalone Windows game.
 
 ```text
 Create project
@@ -187,7 +187,7 @@ Completed builds are stored under:
 UserData/Builds/
 ```
 
-Built games can also be discovered and launched from the AeoEngine Home screen.
+Built games can also be discovered and launched from the Worldkiln Home screen.
 
 ---
 
@@ -205,7 +205,7 @@ Built games can also be discovered and launched from the AeoEngine Home screen.
 
 ## Beta Software
 
-AeoEngine is still under active development.
+Worldkiln is still under active development.
 
 Beta releases may contain bugs, unfinished features, compatibility issues, or breaking changes.
 
@@ -217,6 +217,6 @@ For current behavior and documentation, see the [documentation hub](https://aeow
 
 ## License
 
-AeoEngine is **source-available software** and is not released under an open-source license.
+Worldkiln is **source-available software** and is not released under an open-source license.
 
 See [LICENSE](LICENSE) for the complete terms.
