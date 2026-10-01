@@ -25,8 +25,7 @@ AeoEngine is a Rust/OpenGL game engine and editor for building voxel worlds, cre
 
 AeoEngine currently targets Windows 10 and 11.
 
-Download the current Windows build from the [AeoEngine download page](https://aeowun.com/downloads/) and launch `AeoEngine.exe`.
-
+Download the current Windows build from the AeoEngine download page, or download a release directly from the repository's Releases tab, then launch AeoEngine.exe.
 On first launch, AeoEngine installs its required files under:
 
 ```text
@@ -38,8 +37,6 @@ On first launch, AeoEngine installs its required files under:
 ```
 
 Projects are stored under `UserData/` by default.
-
-The current public download is **AeoEngine 0.7.5 Beta**. The **0.8.x** development series is currently in development and is not yet offered as the public Windows download.
 
 ### Beta software
 
