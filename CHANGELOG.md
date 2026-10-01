@@ -1,6 +1,8 @@
-# AeoEngine Changelog
+# Worldkiln Changelog
 
-Development history for AeoEngine and AeoScript.
+Development history for Worldkiln (formerly AeoEngine) and AeoScript.
+
+> Worldkiln is the current product name. Historical release entries retain AeoEngine where that was the product name at the time.
 
 ## Contents
 
