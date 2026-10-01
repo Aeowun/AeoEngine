@@ -4,33 +4,40 @@
 >
 > **AeoEngine is in active beta development.**
 >
-> Public releases are provided for testing and experimentation. All releases should be treated as **beta software** and may contain bugs, incomplete features, breaking changes, or platform-specific issues. A release is not a promise that every feature or project will work correctly.
-
+> Public releases are available for testing and experimentation. Features, APIs, project formats, and behavior may change between releases.
 
 [Support AeoEngine on Ko-fi](https://ko-fi.com/aeowun/tip)
 
-
 **Build a voxel world, make it playable, and turn it into a standalone game.**
 
-AeoEngine is a Rust/OpenGL game engine and editor for building voxel worlds, creating gameplay with Actors and AeoScript, testing projects in Play mode, and packaging them as standalone games.
+AeoEngine is a Rust/OpenGL game engine and editor for building voxel worlds, creating gameplay with Actors and AeoScript, testing projects in Play mode, and building standalone games.
 
 [Download AeoEngine](https://aeowun.com/downloads/) · [AeoEngine](https://aeowun.com/aeoengine/) · [Documentation](https://aeowun.com/docs/) · [Getting Started](https://aeowun.com/aeoengine/getting-started/)
 
+---
+
 ## Features
 
-- **Voxel world editing** — build, erase, paint, select, copy, paste, and organize worlds.
-- **Actors** — add packaged characters and objects with transforms, physics, attributes, and scripts.
-- **AeoScript** — write gameplay logic for input, events, UI, audio, animation, attachments, and runtime behavior.
-- **Play mode** — test projects directly inside the editor.
-- **Project assets** — use project-owned textures, audio, character packages, cameras, and controllers.
-- **Standalone builds** — package projects for the separate `aeogame` runtime.
+- **Voxel world editing** — build, erase, paint, select, move, copy, paste, and organize worlds.
+- **Actors** — add characters, props, interactive objects, and other packaged game objects with transforms, physics, Attributes, and scripts.
+- **AeoScript** — create gameplay with input, events, UI, audio, animation, attachments, Modules, and game objects.
+- **UI authoring** — build interface layouts with Panels, Text, Buttons, anchors, resizing, script keys, and responsive positioning.
+- **Physics** — gravity, collision, moving objects, Characters, contact events, and Play-mode simulation.
+- **Animation** — character animation, layered actions, and attachment points.
+- **Audio** — import WAV files, place Audio Emitters, and control sounds through AeoScript.
+- **Play mode** — run and test the game directly inside the editor.
+- **Project assets** — manage textures, audio, character packages, scripts, UI, and other project files.
+- **Standalone games** — package projects into games that can run separately from the editor.
+
+---
 
 ## Install
 
-AeoEngine currently targets Windows 10 and 11.
+AeoEngine currently supports Windows 10 and 11.
 
-Download the current Windows build from the AeoEngine download page, or download a release directly from the repository's Releases tab, then launch AeoEngine.exe.
-On first launch, AeoEngine installs its required files under:
+Download `AeoEngine.exe` from the [AeoEngine download page](https://aeowun.com/downloads/) or from the repository's Releases page.
+
+On first launch, AeoEngine installs itself under:
 
 ```text
 %LOCALAPPDATA%\Aeowun\
@@ -42,15 +49,11 @@ On first launch, AeoEngine installs its required files under:
 
 Projects are stored under `UserData/` by default.
 
-### Beta software
+AeoEngine can repair missing installation files without replacing existing projects or assets.
 
-Every AeoEngine release is currently a **beta release**.
+---
 
-Beta builds are made available to test the engine as it develops. They may contain known or unknown bugs, unfinished systems, compatibility problems, performance issues, or changes that affect existing projects.
-
-No beta release is guaranteed to work correctly on every system or with every project. Projects that matter should be backed up before being opened in a newer build.
-
-## Project structure
+## Project Structure
 
 A typical project contains:
 
@@ -62,35 +65,155 @@ MyProject/
 └── .assets/
 ```
 
-- `scripts/` contains reusable and standalone AeoScript Modules.
-- `playerscripts/` contains Modules attached to the runtime Player Actor.
-- `.assets/` contains project-owned textures, audio, packages, and other resources.
+- `world.dat` stores the project World and its objects.
+- `scripts/` contains standalone and reusable AeoScript Modules.
+- `playerscripts/` contains scripts attached to the Player.
+- `.assets/` contains textures, audio, packages, and other project assets.
+
+---
+
+## Actors
+
+Actors are game objects that exist alongside the voxel World.
+
+They can represent:
+
+- Characters.
+- Props.
+- Weapons and items.
+- Switches.
+- Interactive objects.
+- Other packaged game objects.
+
+Actors can have their own transform, physics settings, Attributes, package, and AeoScript Modules.
+
+During Play mode, Actors become active game objects that scripts, physics, animation, and other systems can interact with.
+
+---
 
 ## AeoScript
 
-AeoScript is AeoEngine's gameplay scripting language.
+AeoScript is the gameplay scripting language built for AeoEngine.
 
-It supports Actor and entity interaction, input, events, runtime UI, audio, animation, attachments, Modules, and engine handles.
+```aeoscript
+debug.log("Game loaded")
 
-- [AeoScript documentation](https://aeowun.com/aeoscript/)
-- [Documentation hub](https://aeowun.com/docs/)
-- [Developer reference](https://aeowun.com/docs/reference/)
+gold: number = 0
+
+on on_gold(amount) {
+    gold += amount
+}
+```
+
+AeoScript supports:
+
+- Variables and functions.
+- Events.
+- Closures.
+- `wait()`.
+- Reusable Modules.
+- Input.
+- Actors and Entities.
+- UI.
+- Audio.
+- Animation.
+- Attachments.
+- Collision events.
+- Player and camera control.
+- Creating and removing game objects during Play mode.
+
+Scripts can run as standalone gameplay systems or be attached to Actors and other supported objects.
+
+[AeoScript Documentation](https://aeowun.com/aeoscript/) · [Developer Reference](https://aeowun.com/docs/reference/)
+
+---
+
+## UI
+
+AeoEngine includes UI authoring for game interfaces.
+
+UI controls can use responsive anchors and can be accessed from AeoScript using script keys.
+
+```aeoscript
+const health_text = ui.find("health_text")
+```
+
+Scripts can also create Panels, Text, and Buttons during Play mode.
+
+---
+
+## Play Mode
+
+Play mode runs the current project directly inside AeoEngine.
+
+Gameplay can use:
+
+- Character movement.
+- Physics.
+- Scripts.
+- UI.
+- Audio.
+- Animation.
+- Attachments.
+- Collision events.
+- Cameras.
+- Input.
+
+Changes made by ordinary gameplay scripts during Play mode are temporary and do not overwrite the saved project.
+
+---
+
+## Build a Game
+
+AeoEngine can package a project as a standalone Windows game.
+
+```text
+Create project
+      ↓
+Build world
+      ↓
+Add Actors
+      ↓
+Write gameplay
+      ↓
+Play
+      ↓
+Build game
+```
+
+Completed builds are stored under:
+
+```text
+UserData/Builds/
+```
+
+Built games can also be discovered and launched from the AeoEngine Home screen.
+
+---
 
 ## Workflow
 
 1. Create or open a project.
-2. Build the world and add Actors.
-3. Attach AeoScript Modules or create standalone scripts.
-4. Test the project in Play mode.
-5. Refine the project and build the standalone game.
+2. Build the World.
+3. Add Actors and assets.
+4. Create UI where needed.
+5. Write gameplay with AeoScript.
+6. Test the game in Play mode.
+7. Build the standalone game.
 
-## Development status
+---
 
-AeoEngine is under active development.
+## Beta Software
 
-Features, APIs, editor behavior, project formats, and runtime behavior may change between releases. Compatibility between beta versions is not guaranteed.
+AeoEngine is still under active development.
 
-For current usage and behavior, use the [documentation hub](https://aeowun.com/docs/).
+Beta releases may contain bugs, unfinished features, compatibility issues, or breaking changes.
+
+Back up important projects before opening them in a newer release.
+
+For current behavior and documentation, see the [documentation hub](https://aeowun.com/docs/).
+
+---
 
 ## License
 

@@ -1,160 +1,57 @@
-# AeoScript Language Overview 
->AeoEng. Vers: v0.7.5
-> 
->AeoScript Vers: v1.1.2
+# AeoScript Language Overview
 
-````markdown
-AeoScript supports three closely related scripting mechanisms:
+> **AeoEngine:** v0.8.0  
+> **AeoScript:** v1.1.2
+
+AeoScript is AeoEngine's gameplay scripting language.
+
+It can control gameplay objects, input, UI, audio, cameras, events, player behavior, and other game systems directly from `.aeo` files.
+
+AeoScript supports three main scripting styles:
 
 ```text
 Top-level scripts
-      ↓
-file-level gameplay logic
-events / functions / shared state
+    ↓
+game systems, events, shared state, setup
 
 Entity scripts
-      ↓
-object-bound runtime script instances
-persistent per-instance fields
-lifecycle functions
+    ↓
+object-specific state and lifecycle behavior
 
-Script modules
-      ↓
-reusable .aeo script instances
-persistent module state
-callable module functions
-````
-
-Top-level scripting is suitable for systems such as:
-
-* Game state.
-* HUD logic.
-* Coins.
-* Traps.
-* Enemy orchestration.
-* Event-driven gameplay.
-* Runtime setup.
-* Spawning.
-* World-wide systems.
-
-`entity` declarations provide a structured object-bound model when a gameplay object needs persistent per-instance fields and lifecycle functions.
-
-Script modules provide generic script-to-script communication without introducing gameplay-specific module APIs. Script roots are organized within project directories (`proj`) under `scripts/` and `playerscripts/`.
+Modules
+    ↓
+reusable scripts and shared functionality
+```
 
 Learn more at [AEOWUN](https://aeowun.com).
 
 ---
-````markdown
-# Script Modules
 
-AeoScript files can be loaded as reusable runtime modules from project paths. `scripts/` Modules are referenced through `scripts`; `playerscripts/` files are attached to the runtime Player Actor and accessed through `player.controller` or `player.find(...)`.
+# 1. Top-Level Scripts
 
-```aeoscript
-const helper = scripts.game_helpers.aeo
-const controller = player.controller
-const result = helper.some_function(10)
-````
-
-The `.aeo` reference resolves to a module instance.
-
-Module functions use normal AeoScript function-call semantics:
-
-```aeoscript
-const math = scripts.math_helpers.aeo
-
-const result = math.add(10, 20)
-```
-
-Module instances maintain persistent top-level state for the lifetime of the current scripting runtime.
-
-```text
-scripts/example.aeo (or playerscripts/...)
-      ↓
-module instance
-      ↓
-module scope
-      ↓
-module functions
-```
-
-Different module paths have isolated state.
-
-Modules can:
-
-* Receive arguments.
-* Return values.
-* Call other modules.
-* Use normal functions.
-* Use closures.
-* Yield through `wait()`.
-* Participate in event-driven execution.
-* Maintain persistent runtime module state.
-
-Modules are generic.
-
-They are not specific to Actors, Cells, Entities, Characters, doors, switches, NPCs, UI, or other gameplay systems.
-
-For the complete module reference, see [AeoScript Modules](./AeoScript_Modules.md).
-
-A complete gameplay chain can therefore be:
-
-```text
-Actor / Entity
-  ↓
-AeoScript
-  ↓
-event
-  ↓
-function
-  ↓
-AeoScript module
-  ↓
-module function
-```
-
-# 1. Top-Level Scripting
-
-AeoScript files can contain executable statements directly at the top level.
-
-Top-level code runs once when the script is initialized.
+AeoScript files can contain executable code directly at the top level.
 
 ```aeoscript
 debug.log("Game script loaded")
 
-const starting_gold = 100
-const max_enemies = 20
+gold: number = 0
+max_enemies: number = 20
 ```
 
-Top-level scripts do not require an `entity` declaration.
+Top-level code runs when the script starts.
 
-This makes them useful for gameplay systems that coordinate multiple engine objects rather than representing one specific runtime object.
+It is useful for:
 
-For example:
+- Game state.
+- HUD logic.
+- Spawning.
+- Enemy orchestration.
+- Coins and pickups.
+- Traps.
+- Events.
+- World-wide gameplay systems.
 
-```aeoscript
-const coins = find("Coin") // legacy global lookup; prefer a scoped API for Actors
-
-for coin in coins {
-    coin.visible = true
-}
-```
-
-Top-level scripts can use:
-
-* Global functions.
-* Engine handles.
-* Functions.
-* Closures.
-* Events.
-* `wait()`.
-* Runtime UI.
-* Input.
-* Camera APIs.
-* Player APIs.
-* Entity APIs.
-* World, Cell, and Actor APIs.
-
-Top-level scripts also have persistent script-level state.
+A top-level script does not need an `entity` declaration.
 
 ```aeoscript
 gold: number = 0
@@ -164,35 +61,241 @@ on on_gold(amount) {
 }
 ```
 
-The `gold` variable belongs to the top-level script's persistent scope.
-
-An event handler declared by the same script can access and modify that state.
+Variables declared at the top level remain available to functions and event handlers in the same script.
 
 ---
 
-# 2. Top-Level Event Handlers
+# 2. Script Modules
 
-Top-level scripts can declare event handlers using `on`.
+AeoScript files can be used as reusable modules.
+
+Modules under `scripts/` are referenced through `scripts`:
 
 ```aeoscript
-on on_gold(amount) {
-    gold += amount
+const helper = scripts.game_helpers.aeo
+
+const result = helper.some_function(10)
+```
+
+Module functions use normal function arguments and return values:
+
+```aeoscript
+const math = scripts.math_helpers.aeo
+
+const result = math.add(10, 20)
+```
+
+Modules can:
+
+- Receive arguments.
+- Return values.
+- Call other modules.
+- Use normal functions.
+- Use closures.
+- Use `wait()`.
+- Listen for and fire events.
+- Keep their own state.
+
+Different module files keep separate state.
+
+The same Module can also be attached to multiple Actors without those Actors sharing Module state.
+
+PlayerScripts are available through:
+
+```aeoscript
+const controller = player.controller
+```
+
+and:
+
+```aeoscript
+const script = player.find("SomeScript")
+```
+
+Modules are general-purpose. They are not tied to a particular gameplay system.
+
+---
+
+# 3. Values
+
+AeoScript's main value types are:
+
+```text
+number
+bool
+string
+nil
+basket
+map
+engine handles
+functions
+```
+
+## Numbers
+
+Numbers are 64-bit floating-point values.
+
+```aeoscript
+health: number = 100
+speed = 4.5
+```
+
+## Booleans
+
+```aeoscript
+enabled: bool = true
+```
+
+Boolean values are:
+
+```text
+true
+false
+```
+
+## Strings
+
+```aeoscript
+name = "Ghost"
+```
+
+Strings support Unicode text.
+
+## Nil
+
+`nil` represents no value.
+
+```aeoscript
+const missing = nil
+```
+
+Missing Map keys return `nil`.
+
+Assigning `nil` to a Map key removes that key.
+
+---
+
+# 4. Baskets
+
+A `basket` is a zero-indexed sequence.
+
+```aeoscript
+const items = [1, 2, 3]
+```
+
+Baskets use reference semantics:
+
+```aeoscript
+const a = [1, 2]
+const b = a
+
+b[0] = 99
+```
+
+Both variables now refer to the same basket.
+
+Use `basket.clone()` when a separate shallow copy is required.
+
+Use `basket.freeze()` to make a basket read-only.
+
+---
+
+# 5. Maps
+
+Maps store key/value pairs.
+
+```aeoscript
+const values = {}
+
+values["name"] = "Ghost"
+values[1] = "numeric key"
+```
+
+String and numeric keys are distinct.
+
+Missing keys return `nil`.
+
+Assigning `nil` removes a key.
+
+---
+
+# 6. Functions
+
+Functions are declared with `fn`.
+
+```aeoscript
+fn add(a: number, b: number): number {
+    return a + b
 }
 ```
 
-Events are dispatched through the engine event system:
+Functions can:
+
+- Accept parameters.
+- Return values.
+- Call other functions.
+- Be assigned to variables.
+- Be passed as values.
+- Be returned from other functions.
+- Capture surrounding variables through closures.
+
+---
+
+# 7. Closures
+
+Functions can capture state from the scope where they were created.
 
 ```aeoscript
-event.fire("on_gold", 10)
+fn make_counter() {
+    count: number = 0
+
+    return fn() {
+        count += 1
+        return count
+    }
+}
 ```
 
-An event can carry arguments:
+Closures can also be used for callbacks such as UI button actions and object events.
+
+---
+
+# 8. Control Flow
+
+AeoScript supports:
+
+- `if`
+- `else if`
+- `else`
+- `while`
+- `for`
+- `return`
+
+Example:
+
+```aeoscript
+if health <= 0 {
+    dead = true
+}
+
+for item in items {
+    debug.log(item)
+}
+```
+
+---
+
+# 9. Events
+
+Events allow scripts to communicate without directly calling each other.
+
+Fire an event:
 
 ```aeoscript
 event.fire("enemy_killed", enemy)
 ```
 
-The handler receives the supplied values:
+Receive it:
 
 ```aeoscript
 on enemy_killed(enemy) {
@@ -200,9 +303,13 @@ on enemy_killed(enemy) {
 }
 ```
 
-Top-level event handlers are associated with the script file that declared them.
+Events can carry arguments.
 
-Keyboard input can also be consumed through the generic `keypress` event:
+---
+
+# 10. Keyboard Input
+
+AeoScript can react to individual keyboard presses and releases:
 
 ```aeoscript
 on.keypress(key, down) {
@@ -212,17 +319,14 @@ on.keypress(key, down) {
 }
 ```
 
-The event is generated by the engine for a physical keyboard lifecycle:
+The `down` value indicates whether the key was pressed or released.
 
 ```text
-press F   -> keypress("F", true)
-release F -> keypress("F", false)
+press F    → keypress("F", true)
+release F  → keypress("F", false)
 ```
 
-Keyboard auto-repeat does not generate additional `true` events.
-
-The engine only reports the key. The meaning of `"F"` remains entirely in
-AeoScript. Scripts can also poll the same generic state:
+Keyboard state can also be polled:
 
 ```aeoscript
 if input.is_key_down("F") {
@@ -230,28 +334,23 @@ if input.is_key_down("F") {
 }
 ```
 
-The handler uses the same persistent top-level scope as the script's top-level code.
-
-This allows a file to define both its state and the event-driven behavior that operates on that state:
+Common key names include:
 
 ```text
-Top-level code
-      ↓
-Persistent script scope
-      ↑
-      │
-Event handlers
-      ↑
-event.fire(...)
+A
+1
+Space
+ArrowUp
+Escape
 ```
+
+The engine reports the key. The script decides what that key does.
 
 ---
 
-# 3. Top-Level Execution and `wait()`
+# 11. `wait()`
 
-Top-level execution is resumable.
-
-Top-level code can yield with `wait()`:
+AeoScript code can pause and resume with `wait()`.
 
 ```aeoscript
 debug.log("Starting")
@@ -261,87 +360,117 @@ wait(1.0)
 debug.log("One second later")
 ```
 
-The script does not restart after the wait.
+The script continues from where it stopped.
 
-Its execution state is preserved by the runtime fiber and resumed by the script scheduler.
+`wait()` can be used inside functions, Modules, events, and other supported script execution.
 
-This makes top-level scripts suitable for initialization sequences, timed gameplay systems, and long-running logic.
+```aeoscript
+fn delayed_action() {
+    wait(0.5)
+    score += 10
+}
+```
 
 ---
 
-# 4. Top-Level Gameplay Systems
+# 12. Entity Scripts
 
-Top-level scripts can coordinate multiple runtime objects.
-
-For example:
+An `entity` declaration is useful when behavior needs its own persistent per-object state.
 
 ```aeoscript
-const coins = find("Coin") // legacy global lookup; prefer a scoped API for Actors
+entity Counter {
+    count: number = 0
 
-for coin in coins {
-    coin.on_touch = fn(thing) {
-        const player = get_entity("Player")
-
-        if thing != player {
-            return
-        }
-
-        event.fire("on_gold", 1)
-
-        coin.visible = false
-        coin.solid = false
+    fn update(dt) {
+        count += 1
     }
 }
 ```
 
-The script is not attached to one Coin instance.
+Multiple objects can use the same Entity script while keeping separate values.
 
-Instead, the top-level script discovers the relevant objects and assigns behavior to them.
+Entity scripts are useful for:
 
-This pattern is useful when one script defines a shared system for many objects.
+- Object-specific state.
+- Lifecycle functions.
+- Reusable object behavior.
+- Per-instance gameplay logic.
+
+Common lifecycle functions include:
+
+```aeoscript
+fn on_spawn() { }
+fn on_ready() { }
+fn update(dt) { }
+fn on_destroy() { }
+```
+
+Not every Entity script needs every lifecycle function.
 
 ---
 
-# 5. Runtime Entities from Top-Level Scripts
+# 13. Cells, Actors, and Entities
 
-Top-level scripts can work directly with runtime Entity handles.
+AeoEngine exposes several kinds of game objects to AeoScript.
 
-```aeoscript
-const player = get_entity("Player")
-```
+## Cells
 
-AeoScript can create runtime character Entities:
+Cells are voxel World objects.
 
-```aeoscript
-const enemy = spawn("Goblin", [10, 1, 5])
-```
-
-When no package is supplied, `spawn()` uses the default runtime character package, `character_robot`. Supply a character package to select a different character:
+A specific Cell can be found by ID:
 
 ```aeoscript
-const enemy = spawn(
-    "Knight",
-    [15, 1, 10],
-    "character_hero"
-)
+const door = cell.get(12345)
 ```
 
-Top-level scripts can therefore coordinate runtime characters without requiring every gameplay system to be implemented as an Entity declaration.
+Cells can expose properties and custom Attributes.
 
----
+## Actors
 
-# 6. Entity Handles
+Actors are project objects such as Characters, props, switches, items, and other more complex objects.
 
-An `Entity` handle refers to a live runtime Entity.
+Actors have their own IDs and can have:
 
-Entity handles can represent:
+- Transforms.
+- Packages.
+- Physics settings.
+- Attributes.
+- Scripts.
 
-* The Player.
-* Script-spawned runtime characters.
-* Authored Actors resolved into runtime Entities during Play.
-* Other runtime entities owned by the engine.
+Actors can be found through project queries:
 
-Entity handles expose runtime state such as:
+```aeoscript
+const switch_actor = proj.find("Switch_A")
+```
+
+Multiple Actors can share the same name.
+
+Use:
+
+```aeoscript
+proj.find.all("Enemy")
+```
+
+when all matching Actors are needed.
+
+Folder paths can narrow a search:
+
+```aeoscript
+const switch_actor = proj.Dungeon.find("Switch_A")
+```
+
+## Entities
+
+An Entity represents a live game object during Play mode.
+
+Entities can represent:
+
+- The Player.
+- Spawned characters.
+- Actors currently in the game.
+- Other game objects managed by AeoEngine.
+
+Common Entity properties include:
 
 ```text
 position
@@ -367,7 +496,7 @@ enemy.facing = [0, 1]
 enemy.animation = "Walk"
 ```
 
-Entity handles also expose runtime operations such as:
+Common methods include:
 
 ```aeoscript
 enemy.jump()
@@ -376,278 +505,117 @@ enemy.heal(5)
 enemy.destroy()
 ```
 
-Pathfinding is available through:
+Check whether an Entity still exists with:
 
 ```aeoscript
-const path = enemy.find_path([20, 1, 20])
-```
-
-The returned path contains world-space waypoints. AeoScript decides how to follow the path.
-
----
-
-# 7. Core Values
-
-AeoScript's core value model includes:
-
-```text
-number
-bool
-string
-nil
-basket
-map
-engine handles
-function values
+enemy.is_valid()
 ```
 
 ---
 
-# 8. Numbers
+# 14. Spawning Characters
 
-`number` is a 64-bit floating-point value.
+AeoScript can spawn Characters during gameplay.
 
 ```aeoscript
-health: number = 100
-speed = 4.5
+const enemy = spawn("Goblin", [10, 1, 5])
 ```
 
-Numbers are used for gameplay values, timers, coordinates, mathematical calculations, and other numeric state.
+Without a package argument, the default Character package is used.
+
+A specific package can also be supplied:
+
+```aeoscript
+const enemy = spawn(
+    "Knight",
+    [15, 1, 10],
+    "character_hero"
+)
+```
 
 ---
 
-# 9. Booleans
+# 15. Finding Objects
 
-`bool` represents:
+Project Actors should generally be found through `proj`:
 
-```text
-true
-false
+```aeoscript
+const door = proj.find("Door")
 ```
+
+Find every matching Actor:
+
+```aeoscript
+const enemies = proj.find.all("Enemy")
+```
+
+Find something inside a project folder:
+
+```aeoscript
+const switch_actor = proj.Dungeon.find("Switch_A")
+```
+
+`find(name)` also exists as a legacy global lookup:
+
+```aeoscript
+const things = find("Coin")
+```
+
+It is retained for compatibility and is planned for removal.
+
+Player-attached Modules should be found through `player.find(...)`.
+
+---
+
+# 16. Cell Attributes
+
+Cells can contain custom Attributes.
+
+Supported values are:
+
+- Number.
+- Bool.
+- String.
 
 Example:
 
 ```aeoscript
-enabled: bool = true
+const health = cell.attributes["health"]
+
+cell.attributes["locked"] = true
 ```
+
+Changes made to Cell Attributes during Play mode are temporary.
+
+Assigning `nil` removes the temporary value and restores the saved value.
 
 ---
 
-# 10. Strings
+# 17. Play-Mode Changes
 
-`string` represents Unicode text.
-
-```aeoscript
-name = "Ghost"
-```
-
-String operations are Unicode-aware rather than treating individual UTF-8 bytes as characters.
-
----
-
-# 11. Nil
-
-`nil` represents the absence of a value.
-
-```aeoscript
-const missing = nil
-```
-
-Missing map keys return `nil`.
-
-Assigning `nil` to a map key removes the key.
-
----
-
-# 12. Baskets
-
-A `basket` is a zero-indexed, reference-backed sequence.
-
-```aeoscript
-const items = [1, 2, 3]
-```
-
-Baskets use reference semantics.
-
-```aeoscript
-const a = [1, 2]
-const b = a
-
-b[0] = 99
-```
-
-Both variables now refer to a basket whose first element is `99`.
-
-Use `basket.clone()` for a distinct shallow copy.
-
-Use `basket.freeze()` to make a basket read-only.
-
----
-
-# 13. Maps
-
-A `map` is a reference-backed key/value collection.
-
-```aeoscript
-const values = {}
-
-values["name"] = "Ghost"
-values[1] = "numeric key"
-```
-
-Numeric and string keys are distinct.
-
-Missing keys return `nil`.
-
-Assigning `nil` removes a key.
-
-There is no separate map namespace. Maps use indexing and assignment directly.
-
----
-
-# 14. Functions
-
-Functions are declared with `fn`.
-
-```aeoscript
-fn add(a: number, b: number): number {
-    return a + b
-}
-```
-
-Functions can:
-
-* Accept parameters.
-* Return values.
-* Call other functions.
-* Be assigned to variables.
-* Be passed as values.
-* Capture lexical state when created as closures.
-
-Top-level scripts commonly use functions to organize larger gameplay systems.
-
----
-
-# 15. Closures
-
-AeoScript supports function values and lexical closures.
-
-```aeoscript
-fn make_counter() {
-    count: number = 0
-
-    return fn() {
-        count += 1
-        return count
-    }
-}
-```
-
-The returned function can retain access to the captured scope.
-
-Closures are ordinary runtime values and can be stored, passed, returned, or assigned to supported engine properties such as UI callbacks and runtime object callbacks.
-
----
-
-# 16. Control Flow
-
-AeoScript supports:
-
-* `if`.
-* `else if`.
-* `else`.
-* `while`.
-* `for`.
-* `return`.
-
-Example:
-
-```aeoscript
-if health <= 0 {
-    dead = true
-}
-
-for item in items {
-    debug.log(item)
-}
-```
-
----
-
-# 17. Entities and Entity-Bound Scripts
-
-An `entity` declaration provides a more structured script model for object-bound behavior.
-
-```aeoscript
-entity Counter {
-    count: number = 0
-
-    fn update(dt) {
-        count += 1
-    }
-}
-```
-
-Unlike ordinary top-level state, Entity fields belong to a particular running script instance.
-
-This allows multiple runtime objects to use the same declaration while maintaining independent state.
+Ordinary script changes during Play mode do not rewrite the saved project.
 
 For example:
 
-```text
-Entity declaration
-      ↓
-Script instance A → count = 5
-Script instance B → count = 12
+```aeoscript
+cell.visible = false
+cell.solid = false
+cell.color = [1, 0, 0]
 ```
 
-Entity-bound scripts are useful when an object has:
+These changes affect the active game session.
 
-* Persistent per-instance fields.
-* Lifecycle functions.
-* Object-specific behavior.
-* State that must remain associated with one runtime script instance.
+When Play mode ends, temporary changes are discarded.
 
-Function locals belong to the active fiber.
-
-Entity fields belong to the persistent script instance.
+Cells created with AeoScript during Play mode are also temporary unless an explicit project-editing operation says otherwise.
 
 ---
 
-# 18. Entity Lifecycle
+# 18. Collision Events
 
-Common Entity lifecycle functions include:
+Scripts can react to physical contact.
 
-```aeoscript
-fn on_spawn() { }
-fn on_ready() { }
-fn update(dt) { }
-fn on_destroy() { }
-```
-
-`on_spawn()` runs when the runtime creates the scripted object.
-
-`on_ready()` runs after runtime setup reaches the ready stage.
-
-`update(dt)` provides normal per-frame Entity logic.
-
-`on_destroy()` provides lifecycle notification when the scripted runtime object is removed.
-
-Not every Entity script needs every lifecycle function.
-
----
-
-# 19. Collision Events
-
-AeoScript supports collision-driven event behavior.
-
-The primary touch form is:
-
-```aeoscript
-on_touch(thing)
-```
-
-or:
+The main touch callback is:
 
 ```aeoscript
 fn on_touch(thing) {
@@ -655,11 +623,9 @@ fn on_touch(thing) {
 }
 ```
 
-`thing` represents the object that caused the contact.
+`thing` identifies the object that caused the contact.
 
-For character contact, this is an `Entity` handle.
-
-Example:
+For example:
 
 ```aeoscript
 coin.on_touch = fn(thing) {
@@ -673,11 +639,9 @@ coin.on_touch = fn(thing) {
 }
 ```
 
-This allows gameplay scripts to distinguish the Player from other runtime characters.
+This allows a script to distinguish the Player from enemies or other Entities.
 
-Other collision event paths can provide the corresponding engine handle associated with the collision.
-
-Overlap events use:
+Overlap callbacks use:
 
 ```aeoscript
 fn on_overlap(overlapping, cell) {
@@ -685,188 +649,32 @@ fn on_overlap(overlapping, cell) {
 }
 ```
 
-where `overlapping` identifies the overlap state.
-
-Collision event dispatch is controlled by the relevant engine collision-event settings.
-
 ---
 
-# 20. Fibers and `wait()`
+# 19. Path Queries
 
-AeoScript uses cooperative fibers for resumable execution.
+Entities can request a path through the World:
 
 ```aeoscript
-fn delayed_action() {
-    wait(0.5)
-    score += 10
-}
+const path = enemy.find_path([20, 1, 20])
 ```
 
-The fiber preserves:
+The result contains World-space waypoints.
 
-* Current function.
-* Call stack.
-* Local variables.
-* Loop state.
-* Instruction position.
-* Pending wait state.
-
-Execution resumes after the `wait()` rather than starting the function over.
-
-This applies to top-level execution, event handlers, Entity lifecycle functions, and other scheduled script work.
+AeoScript decides how the Entity follows those waypoints.
 
 ---
 
-# 21. Persistent State and Fiber State
+# 20. Gameplay Input
 
-AeoScript separates persistent script state from temporary execution state.
+AeoScript can access common gameplay input such as:
 
-For a top-level script:
-
-```text
-Top-level script
-└── Persistent top-level scope
-    ├── variables
-    └── functions / captured state
-
-Fiber
-├── Call stack
-├── Local scopes
-├── Loop state
-├── Instruction position
-└── Wait state
-```
-
-For an Entity script:
-
-```text
-ScriptInstance
-└── Persistent Entity fields
-
-Fiber
-├── Call stack
-├── Local scopes
-├── Loop state
-├── Instruction position
-└── Wait state
-```
-
-The persistent state belongs to the script or script instance.
-
-The fiber stores the current execution state.
-
----
-
-# 22. Engine Handles
-
-AeoScript uses opaque handles for engine-managed objects.
-
-Current handle categories include:
-
-* `Cell`.
-* `Entity`.
-* `Light`.
-* `Sound`.
-* `Ui`.
-* `Mouse`.
-
-Handles identify engine-owned objects.
-
-The script runtime does not directly own the underlying native object.
-
-Invalid handles are resolved against current engine state rather than becoming raw native pointers.
-
----
-
-# 23. Authored World Interaction
-
-AeoScript can discover and manipulate supported World objects.
-
-Examples:
-
-```aeoscript
-const blocks = find("Wall")
-const lights = getAllCellsOfClass("Light")
-const switch_actor = proj.find("Switch_A")
-```
-
-`find(name)` is retained for compatibility and returns a basket from global lookup. It is legacy and planned for removal. Use `proj.find(name)` for a single authored Actor, `proj.find.all(name)` for all matching Actors, and `player.find(...)` for Player-attached Modules. Folder handles can scope Actor queries, for example `proj.Dungeon.find("Switch_A")`.
-
-A specific Cell can be accessed through its persistent ID:
-
-```aeoscript
-const door = cell.get(12345)
-```
-
-Cell IDs identify a specific authored instance.
-
-Authored Actors persist independently with dedicated Actor IDs and are resolved into runtime Entities during Play via `ActorSystem`.
-
-Cell and Actor names are human-readable and are not required to be unique.
-
-Legacy `find(name)` can also discover runtime Entities by their runtime name.
-
----
-
-# 24. Runtime World State
-
-AeoScript distinguishes between authored World data and runtime state.
-
-During Play:
-
-```aeoscript
-cell.visible = false
-cell.solid = false
-cell.color = [1, 0, 0]
-```
-
-these changes affect runtime behavior.
-
-They do not silently rewrite authored World data.
-
-Runtime-created Cells are also temporary.
-
-When Play mode ends, runtime state is discarded unless an explicit engine operation changes authored project data (`proj`).
-
----
-
-# 25. Attributes
-
-Cells can expose authored custom attributes.
-
-Current attribute value types are:
-
-* Number.
-* Bool.
-* String.
-
-Example:
-
-```aeoscript
-const health = cell.attributes["health"]
-
-cell.attributes["locked"] = true
-```
-
-Runtime attribute writes create temporary overrides.
-
-Assigning `nil` to a runtime attribute removes the override and restores the authored value.
-
----
-
-# 26. Input
-
-AeoScript can access gameplay input.
-
-Current input functionality includes:
-
-* Movement vector.
-* Jump state.
-* Mouse orbit delta.
-* Mouse cursor visibility.
-* Mouse screen locking.
-
-These APIs provide runtime input state rather than editor authoring input.
+- Movement.
+- Jump.
+- Mouse orbit.
+- Cursor visibility.
+- Mouse locking.
+- Generic keyboard state.
 
 Example:
 
@@ -880,17 +688,17 @@ if input.is_jump_pressed() {
 
 ---
 
-# 27. Camera
+# 21. Camera
 
 Scripts can interact with the gameplay camera.
 
-Current operations include:
+Available operations include:
 
-* Horizontal camera basis.
-* Camera position.
-* Camera target.
-* Camera orientation.
-* Camera collision resolution.
+- Camera position.
+- Camera target.
+- Camera orientation.
+- Horizontal camera basis.
+- Camera collision handling.
 
 Example:
 
@@ -898,22 +706,20 @@ Example:
 const basis = camera.get_horizontal_basis()
 ```
 
-The gameplay camera remains a runtime system owned by AeoEngine.
-
 ---
 
-# 28. Player APIs
+# 22. Player Control
 
-AeoScript can control supported player movement behavior.
+AeoScript can control supported Player behavior.
 
-Current APIs include:
+Current operations include:
 
-* Horizontal velocity.
-* Facing direction.
-* Animation selection.
-* Grounded state.
-* Vertical impulse.
-* Player position.
+- Horizontal velocity.
+- Facing direction.
+- Animation.
+- Grounded state.
+- Vertical impulse.
+- Position.
 
 Example:
 
@@ -923,49 +729,13 @@ player.set_facing_direction(1, 0)
 player.select_animation("Walk")
 ```
 
-These APIs express gameplay intent while CharacterSystem remains responsible for character simulation.
+AeoEngine continues handling Character physics and collision.
 
 ---
 
-# 29. Runtime Entity Control
+# 23. UI
 
-Generic Entity APIs provide character-oriented runtime control without requiring specialized NPC namespaces.
-
-Current operations include:
-
-```text
-entity.position
-entity.velocity
-entity.facing
-entity.animation
-entity.health
-entity.max_health
-entity.grounded
-entity.alive
-entity.is_actor
-entity.actor_id
-```
-
-Methods include:
-
-```text
-entity.is_valid()
-entity.set_position(x, y, z)
-entity.translate(x, y, z)
-entity.jump()
-entity.damage(amount)
-entity.heal(amount)
-entity.destroy()
-entity.find_path([x, y, z])
-```
-
-This API is intentionally generic so top-level gameplay systems can control runtime characters and authored Actors without exposing CharacterSystem implementation details.
-
----
-
-# 30. Runtime UI
-
-Scripts can create runtime UI elements:
+Scripts can create UI controls:
 
 ```aeoscript
 const panel = ui.new("Panel")
@@ -975,25 +745,41 @@ const button = ui.new("Button")
 
 Current UI types include:
 
-* `Panel`.
-* `Text`.
-* `Button`.
+- `Panel`
+- `Text`
+- `Button`
 
-UI elements expose runtime properties.
+Buttons can use function callbacks through `on_click`.
 
-Button handles can receive closure callbacks through `on_click`.
-
-The runtime viewport size is available through:
+Viewport dimensions are available through:
 
 ```aeoscript
 ui.get_viewport_size()
 ```
 
+Editor-created UI can also be found by script key:
+
+```aeoscript
+const health = ui.find("health_text")
+```
+
+or:
+
+```aeoscript
+const health = ui.get("health_text")
+```
+
+A specific UI document can also be searched:
+
+```aeoscript
+const health = ui.find("hud", "health_text")
+```
+
 ---
 
-# 31. Audio
+# 24. Audio
 
-AudioEmitter Cells expose runtime sound control.
+AudioEmitter Cells expose sound controls.
 
 ```aeoscript
 const speaker = find("DoorSound")[0]
@@ -1001,41 +787,73 @@ const speaker = find("DoorSound")[0]
 speaker.sound.play()
 ```
 
-Supported sound operations include:
+Current controls include:
 
-* Play.
-* Stop.
-* Pause.
-* Playing state.
-* Looping.
-* Volume.
+- Play.
+- Stop.
+- Pause.
+- Playing state.
+- Looping.
+- Volume.
 
 ---
 
-# 32. Script Control
+# 25. Attachments
 
-Scripts can control the runtime execution state of other scripts across `scripts/` and `playerscripts/` roots.
+Objects can be attached to named Character rig points.
+
+```aeoscript
+attach(...)
+```
+
+and removed with:
+
+```aeoscript
+detach(...)
+```
+
+Attached objects follow the selected rig point as the Character moves and animates.
+
+Their normal physics and movement return after detaching.
+
+---
+
+# 26. Animation Layers
+
+One-shot animations can play over normal Character movement.
+
+```aeoscript
+entity.animation.play_layer(slot, clip, joint_root)
+```
+
+A layer can target part of a rig instead of replacing the Character's complete animation.
+
+This is useful for actions such as attacks, item use, and other upper-body animations while movement continues.
+
+---
+
+# 27. Script Control
+
+Scripts can enable and disable other scripts:
 
 ```aeoscript
 script.disable("scripts/example.aeo")
 script.enable("scripts/example.aeo")
 ```
 
-Current operations include:
+Check state with:
 
-```text
-script.enable(path)
-script.disable(path)
-script.is_enabled(path)
+```aeoscript
+script.is_enabled("scripts/example.aeo")
 ```
 
-Disabling a script affects runtime execution and cancels active fibers associated with that script.
+Disabling a script stops its active execution for the current game session.
 
-The source file and authored script binding remain unchanged.
+It does not delete the script file or its project binding.
 
 ---
 
-# 33. Standard Library
+# 28. Standard Library
 
 Current built-in namespaces include:
 
@@ -1056,7 +874,7 @@ event
 test
 ```
 
-Global functions and properties also include:
+Common global functions and properties include:
 
 ```text
 debug.log(...)
@@ -1064,130 +882,74 @@ find(...)
 getAllCellsOfClass(...)
 get_entity(...)
 spawn(...)
+attach(...)
+detach(...)
 wait(...)
 time.delta
 ```
 
-See `AeoScript_API.md` and `AeoScript_STDLIB.md` for reference details.
+See `AeoScript_API.md` and `AeoScript_STDLIB.md` for complete API references.
 
 ---
 
-# 34. Script Bindings
+# 29. Engine Handles
 
-Scripts can be associated with authored Cells and authored Actors through persistent ID bindings (`scripts/` and `playerscripts/` roots).
+AeoScript uses handles for objects owned by AeoEngine.
+
+Current handle types include:
 
 ```text
-Cell ID / Actor ID → .aeo script
+Cell
+Entity
+Light
+Sound
+Ui
+Mouse
 ```
 
-The binding identifies the specific authored instance.
+Handles can become invalid when the object they refer to is removed.
 
-The human-readable Cell or Actor name is not the persistent binding key.
+Where needed, use APIs such as:
 
-Top-level scripts can exist independently of a particular authored Cell or Actor.
-
-Entity declarations can be instantiated for runtime script objects and bound runtime objects according to the ScriptScene lifecycle.
-
----
-
-# 35. Errors and Diagnostics
-
-AeoScript reports structured runtime diagnostics for invalid operations such as:
-
-* Invalid handles.
-* Invalid arguments.
-* Invalid collection access.
-* Unsupported properties or methods.
-* Runtime execution failures.
-* Execution-budget failures.
-
-Diagnostics can include:
-
-* Script path.
-* Entity context.
-* Function context.
-* Source location.
-* Runtime error information.
-
----
-
-# 36. Execution Model
-
-The language runtime is a single-threaded interpreter with resumable execution state.
-
-The broad execution path is:
-
-```text
-Source
- ↓
-Lexer
- ↓
-Parser
- ↓
-AST
- ↓
-Interpreter
- ↓
-Fiber
- ↓
-Scheduler
- ↓
-ScriptScene
- ↓
-Engine
+```aeoscript
+entity.is_valid()
 ```
 
-Top-level scripts receive their own persistent scope.
-
-Event handlers declared by a script use that script's persistent top-level scope.
-
-Entity declarations are instantiated into object-bound script instances with their own persistent fields.
-
-The scheduler executes both top-level and Entity-bound fibers cooperatively.
-
-The runtime is not a native-code compiler or multithreaded scripting VM.
+before continuing to operate on an object that may have been destroyed.
 
 ---
 
-# 37. Runtime and Authored Boundary
+# 30. Errors and Diagnostics
 
-AeoScript operates primarily against runtime state.
+AeoScript reports errors for problems such as:
 
-```text
-Authored World / Project (proj)
-        ↓
-Runtime initialization
-        ↓
-AeoScript
-        ↓
-Temporary runtime state
-        ↓
-Play mode ends
-        ↓
-Runtime state discarded
-```
+- Invalid handles.
+- Invalid arguments.
+- Invalid collection access.
+- Unsupported properties.
+- Unsupported methods.
+- Script execution failures.
+- Execution-budget failures.
 
-Explicit engine operations can modify authored project data (`proj`) where supported.
-
-Ordinary runtime property changes do not silently rewrite the authored baseline.
+Diagnostics can include the script, function, source location, and related object context.
 
 ---
 
-# 38. Language Design
+# 31. Language Direction
 
 AeoScript is intended to remain:
 
-* Small enough to learn.
-* General enough for gameplay.
-* Closely integrated with AeoEngine.
-* Explicit about engine-owned objects.
-* Safe around engine-managed references.
-* Suitable for resumable gameplay logic.
-* Useful at the top-level before requiring object-bound scripting.
-* Consistent with the authored/runtime boundary.
+- Small enough to learn.
+- General enough for gameplay.
+- Closely integrated with AeoEngine.
+- Useful for both simple scripts and larger gameplay systems.
+- Safe when working with engine-managed objects.
+- Capable of pausing and resuming gameplay logic with `wait()`.
 
-Top-level scripting should remain a straightforward way to build gameplay systems.
+Top-level scripts remain the simplest way to create broad gameplay systems.
 
-Entity-bound scripting provides additional structure when per-object persistent state and lifecycle behavior are actually needed.
+Entity scripts are available when behavior needs dedicated per-object state and lifecycle functions.
 
-The language should grow in response to real engine workflows rather than accumulating specialized APIs without a demonstrated need.
+Modules provide reusable logic without requiring specialized APIs for every type of game system.
+
+The language should grow around real AeoEngine workflows rather than accumulating APIs without a clear use.
