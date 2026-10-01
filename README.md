@@ -65,7 +65,7 @@ Write scripts in the same workspace via built in script editor / IDE setup. (WIP
   <img src="SCREENSHOTS/v%200.8.x%20%20script_editor.png" alt="AeoEngine 0.8 AeoScript editor" width="100%">
 </p>
 
-AeoScript can drive gameplay systems, Actor behavior, input, events, UI, audio, animation, runtime state, and reusable Modules.
+AeoScript can currently drive small gameplay systems, Actor behavior, input, events, UI, audio, animation, runtime state, and reusable Modules.
 
 ```aeoscript
 debug.log("Game script loaded")
