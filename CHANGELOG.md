@@ -1192,5 +1192,5 @@
 ---
 
 > **Current release:** `0.7.5`
-> **Development cycle:** `0.7.x`
-> **Next release:** `0.7.6`
+> **Development cycle:** `0.8.x`
+> **Next release:** `UNDISCLOSED`
