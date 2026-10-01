@@ -30,8 +30,8 @@ Place blocks. Shape spaces. Select and move parts of the world. Organize the pro
 </td>
 </tr>
 <tr>
-<td align="center"><strong>THE EDITOR</strong></td>
-<td align="center"><strong>THE WORLD</strong></td>
+<td align="center"><strong>THE EDTOR</strong></td>
+<td align="center"><strong>VOXELS</strong></td>
 </tr>
 </table>
 
@@ -87,10 +87,6 @@ AeoEngine keeps runtime output visible in the editor so behavior can be tested w
   <img src="SCREENSHOTS/v%200.8.x%20output.png" alt="AeoEngine Output dock" width="100%">
 </p>
 
-Run the scene. Trigger the interaction. Read the output. Change the script. Run it again.
-
-That loop is the point.
-
 ---
 
 ## Then build the game
@@ -125,13 +121,13 @@ AeoEngine began much smaller.
   <img src="SCREENSHOTS/first_world.png" alt="Early AeoEngine world" width="80%">
 </p>
 
-### The first AeoScript editor
+### The first editor
 
 <p align="center">
   <img src="SCREENSHOTS/first_aeoscript.png" alt="Early AeoScript editor" width="100%">
 </p>
 
-And later, the 0.7.x editor:
+And later, the 0.7.x:
 
 <p align="center">
   <img src="SCREENSHOTS/v%200.7.x_menu.png" alt="AeoEngine 0.7.x editor" width="80%">
