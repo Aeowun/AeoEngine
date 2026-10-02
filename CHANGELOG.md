@@ -380,4 +380,257 @@ Development history for Worldkiln (formerly AeoEngine) and AeoScript.
 - Fixed shadows becoming detached from Blocks as the camera moved.
 - Fixed scripted Entity character controls.
 - Fixed gameplay event dispatch.
-- Fixed major World
+
+## 0.7.5 — Runtime and Editor Maturity
+
+### Added
+
+- Configurable editor input bindings for camera navigation, orbit, free look, selection, and deletion.
+- Persistent editor Settings for camera behavior, undo history, Autosave, panel visibility, and editor preferences.
+- Editor Theme controls including light/dark presentation, accent presets, interface scaling, font sizing, panel styling, separators, animations, tooltips, and status-bar visibility.
+- Generic AeoScript keyboard events through `on.keypress(key, down)`.
+- Keyboard polling through `input.is_key_down(key)`.
+- First-class authored Actors with independent IDs, persistence, properties, package selection, physics defaults, attributes, and script bindings.
+- Generic AeoScript Modules for reusable script-to-script communication.
+- Actor-attached Modules with independent per-Actor state and `self.parent`.
+- Project and Player Actor lookup APIs.
+- Standalone game builds with a dedicated runtime executable and packaged project data.
+- Built-game discovery and launching from the Home screen.
+- Resizable Output dock that preserves Play logs after returning to the Editor.
+
+### Changed
+
+- Editor input and appearance settings are now persistent application preferences rather than project data.
+- Actors are formally separated from voxel Cells and become runtime Entities during Play mode.
+- Standalone games run without requiring editor-only systems.
+- AeoScript runtime cleanup and error handling were hardened across scripts, callbacks, events, handles, and runtime objects.
+
+### Fixed
+
+- Fixed destroyed Entity handles causing `entity.is_valid()` failures.
+- Fixed invalid handle types being accepted by `cell.delete()`.
+- Fixed queued script event errors being silently discarded.
+- Fixed callbacks and dynamic properties surviving after their owning script, Entity, or Cell was removed.
+- Fixed `on_destroy()` failures being lost during runtime teardown.
+- Fixed disabled Actor Modules being executed incorrectly.
+- Fixed nested AeoScript Module calls losing caller context across normal and yielding calls.
+- Fixed standalone builds launching without the complete authored World and gameplay runtime setup.
+- Fixed built-game discovery, packaged working directories, and standalone `Escape` handling.
+- Fixed Actor migration and persistence issues when transitioning from the older Actor-as-Cell model.
+- Fixed invalid and stale point-light entries.
+
+---
+
+# 0.8.x — Engine Maturity
+
+## 0.8.0 — UI, Actors, Attachments, and Installation
+
+### Added
+
+- Responsive UI anchors for edges, corners, centers, and stretched layouts with margins.
+- UI Authoring resize handles, editable names, stable script keys, anchor selection, and Undo/Redo.
+- `ui.find()` and `ui.get()` for locating authored UI controls from AeoScript.
+- Shared authored/runtime UI anchor and key properties.
+- Standalone Windows installation and automatic repair of required Worldkiln application files.
+- Runtime rig attachment-point lookup for package-backed Actors.
+- Play-mode attachment system with named attachment points.
+- Generic AeoScript `attach()` and `detach()` operations.
+- Layered one-shot character animations that can play over locomotion.
+- Experimental voxel GI controls and radiance-cache research tools.
+
+### Changed
+
+- Authored and runtime UI layout now resolves against the playable viewport.
+- Actor selection bounds now follow rendered package geometry.
+- Output dock sizing is preserved across editor workspaces and hide/show cycles.
+
+### Fixed
+
+- Authored UI now loads before scripts start, allowing startup scripts to find authored controls.
+- Deleting a UI parent preserves the resolved placement of its children.
+- Moving UI elements no longer changes their parent implicitly.
+- Runtime UI no longer shifts or shrinks beneath editor panels.
+- Actor Module startup failures are isolated so one broken Actor does not stop unrelated gameplay systems.
+- `on_touch` now fires when contact begins instead of every physics step while contact continues.
+- Character-backed Actor transforms and collision bodies remain synchronized.
+- Package aliases allow renamed Actor packages to preserve existing authored references.
+- Unknown package IDs now report an error instead of silently using a fallback Character.
+- Gameplay keys no longer trigger conflicting editor shortcuts during Play mode.
+- Script diagnostics were moved into a resizable, closable Problems window.
+
+---
+
+## 0.8.1 — Navigation
+
+### Added
+
+- Engine-level navigation for static voxel Worlds.
+- Walkable-space extraction based on supported voxel surfaces.
+- Configurable navigation-agent width, height, step-up, and step-down limits.
+- Deterministic A* pathfinding.
+- Navigation diagnostics and viewport visualization.
+- Persistent **Show Navmesh** viewport diagnostic.
+- Engine-owned Actor path following with movement, facing, and locomotion animation.
+- AeoScript Actor navigation:
+  - `navigate_to(position, speed?, stop_distance?)`
+  - `cancel_navigation()`
+  - `is_navigating()`
+- `navigation_finished(actor)` events.
+- `navigation_failed(actor, reason)` events.
+- Actor callbacks for navigation completion and failure.
+- Stuck-route detection.
+
+### Changed
+
+- Existing Character and Entity pathfinding now uses the shared navigation system.
+- Runtime routes are compacted into safe movement waypoints while full paths remain available for diagnostics.
+- Navigation snapshots are reused until World geometry changes.
+- Actor Modules that call `wait()` during startup now resume through the normal script scheduler.
+
+### Fixed
+
+- Fixed path coordinates behaving inconsistently on opposite sides of the World origin.
+- Fixed yielded Actor Modules being discarded during initialization.
+- Fixed completed navigation bypassing Actor Module callbacks.
+- Fixed completed or cancelled navigation leaving forced movement animation or velocity behind.
+- Fixed Project Explorer search expanding the left sidebar while typing.
+- Fixed Actor package selection reverting after reopening editor controls.
+
+---
+
+## 0.8.2 — Save State, Worldkiln Identity, and Actor Physics
+
+### Added
+
+- Project-specific typed save state.
+- AeoScript `save` API:
+  - `save.get()`
+  - `save.set()`
+  - `save.has()`
+  - `save.remove()`
+  - `save.commit()`
+- Persistent `number`, `bool`, and `string` save values.
+- Explicit save commits with atomic file replacement.
+- Project-isolated save-data storage.
+- Canonical Worldkiln executable, package, and installed application identity.
+- Automatic Windows Desktop shortcut creation.
+- Installer completion screen with explicit Launch and Close options.
+- Authored Actor rotation and scale controls.
+- Authored Actor collider size and offset controls.
+- Package-derived default Actor colliders.
+- Solid Actor-to-Character collision.
+- Character grounding on solid Actors.
+- Unified Text and Button typography properties:
+  - font size
+  - horizontal alignment
+  - vertical alignment
+  - wrapping
+  - padding
+  - line spacing
+
+### Changed
+
+- Save changes remain in memory until `save.commit()` succeeds.
+- Play mode and standalone games load project save state independently from authored World data.
+- Worldkiln is now the canonical product identity throughout the executable and installation workflow.
+- UI text uses the same layout behavior in the authoring canvas and game runtime.
+
+### Fixed
+
+- Fixed runtime UI parenting rejecting handles returned by `ui.new()` and `ui.find()`.
+- AeoScript runtime errors now identify the active script, function, and source line where available.
+- Nested Module errors now identify the Module where the failure occurred.
+- Fixed repeated installer launches from an already-installed Worldkiln executable.
+- Fixed installer self-copy and cleanup edge cases.
+- Installer failures now display their underlying error.
+- Fixed Actor colliders ignoring authored or package dimensions.
+- Fixed Characters walking through solid package-backed and custom Actors.
+
+---
+
+## 0.8.3 — UI Authoring Usability
+
+### Added
+
+- Reorganized UI Inspector sections for Identity, Layout, Appearance, Typography, and Interaction.
+- UI preview resolutions for:
+  - `1280x720`
+  - `1600x900`
+  - `1920x1080`
+  - custom dimensions
+- Optional 95% and 90% safe-area guides.
+- Authoring-canvas selection bounds and resize handles.
+- Anchor, parent-bound, and snapping visualization.
+- Center, edge, and sibling snapping with visible guides.
+- Hierarchy drag-and-drop reparenting with cycle prevention.
+- Root reparenting and recovery access for invalid or unattached UI nodes.
+- Undo/Redo coverage for UI document changes.
+- Duplicate, rename, delete, bring-forward, and send-backward actions.
+- Editable UI presets:
+  - Dialogue Panel
+  - Top Bar
+  - Quest Panel
+  - Satchel Panel
+  - Center Prompt
+- Inline validation for invalid or duplicate script keys, dimensions, parents, and hierarchy cycles.
+- Linked and independent margin editing for stretched elements.
+
+### Changed
+
+- UI authoring operations now use the selected preview resolution instead of the current editor-panel dimensions.
+- Legacy Buttons migrate to centered typography where no explicit alignment was authored.
+- UI text is clipped to the padded bounds of its element in both the editor and runtime.
+
+### Fixed
+
+- Fixed dropped UI elements unexpectedly becoming children of the container beneath the cursor.
+- Improved UI parenting errors for invalid handle types.
+- Fixed same-named functions in separate AeoScript Modules sharing compiled state.
+- Fixed nested Module calls and object constructors losing field changes during synchronization.
+
+---
+
+## Unreleased — Hearthvale Expansion
+
+### Added
+
+- Playable **Roots Beneath the Wall** quest with:
+  - Forester Elowen
+  - persistent quest progression
+  - marked-tree inspection
+  - equipped hatchet gathering
+  - tree depletion and respawning
+  - Woodcutting XP
+  - sawbench processing
+  - Carpentry XP
+  - permanent north-postern repair
+- Playable **Catch for the Kettle** side quest with:
+  - Fisher Elowen
+  - Apple Pond fishing marker
+  - equipped fishing rod
+  - timed fishing
+  - cooking interactions
+  - persistent Fishing and Cooking XP
+  - trout delivery rewards
+  - Copper Kettle cooking fire
+- Expanded Hearthvale Actor and asset library including:
+  - forester, guards, storekeeper, fisher, farmer, blacksmith, cook, miner, merchant, and villagers
+  - wolves, boars, deer, rabbits, chickens, cows, and sheep
+  - gathering tools and tool tiers
+  - weapons and shields
+  - forestry and mining resources
+  - crop growth stages and wild plants
+  - crafting stations
+  - town, farm, blacksmith, pond, postern, and wilderness props
+- Expanded Hearthvale terrain and authored regions including routes, skyline terrain, an east-bank tower, ruins, and overlook areas.
+- Editor and Play render-distance controls for voxel chunks.
+
+### Changed
+
+- Hearthvale now exercises a large multi-script gameplay flow spanning Actors, Modules, UI, save state, quests, gathering, processing, and rewards.
+
+### Fixed
+
+- Fixed nested AeoScript Module cache ownership issues.
+- Fixed resumable expressions containing multiple Module calls.
+- Nested Module failures now retain the correct source Module, function, and line information.
