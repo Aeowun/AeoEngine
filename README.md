@@ -336,6 +336,20 @@ There is still a long way to go.
 
 ---
 
+## Founding Developers
+
+Worldkiln is still being shaped by the people building with it before 1.0.
+
+The **Worldkiln Founding Developer Program** recognizes members who meaningfully build with, test, and help improve Worldkiln during its founding era.
+
+Founding Developer status is intended to be permanent. Program benefits and opportunities may evolve as Worldkiln grows.
+
+[**Learn about the Founding Developer Program →**](https://aeowun.com/worldkiln/founders/)
+
+[Program charter](FOUNDING_DEVELOPERS.md)
+
+---
+
 ## Support Worldkiln
 
 Worldkiln is independently developed.
