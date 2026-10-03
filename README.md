@@ -5,7 +5,7 @@
 > **Worldkiln 0.8.0 is the current public beta.**
 
 <p align="center">
-  <img src="SCREENSHOTS/thumbnail.png" alt="Worldkiln" width="100%">
+  <img src="SCREENSHOTS/Worldkiln_%20Build%20Your%20Fantasy%20Fortress.png" alt="Worldkiln 0.8.0 — Make a game. Make it yours." width="100%">
 </p>
 
 Worldkiln is a game engine and development environment for making your own games.
@@ -32,18 +32,22 @@ Place Blocks. Shape spaces. Paint surfaces. Select, move, copy, and organize par
 
 Import textures and other project assets directly into your project.
 
+<p align="center">
+  <img src="SCREENSHOTS/screenshoot_castle.png" alt="A castle and settlement built in Worldkiln" width="100%">
+</p>
+
 <table>
 <tr>
 <td width="50%">
-<img src="SCREENSHOTS/v%200.8.x%20editor.png" alt="Worldkiln editor">
+<img src="SCREENSHOTS/v%200.8.x%20editor.png" alt="Building a World in the Worldkiln editor">
 </td>
 <td width="50%">
-<img src="SCREENSHOTS/v%200.8.x%20block.png" alt="Worldkiln world editing">
+<img src="SCREENSHOTS/Untitled.png" alt="A Worldkiln landscape with a hilltop structure">
 </td>
 </tr>
 <tr>
-<td align="center"><strong>THE EDITOR</strong></td>
-<td align="center"><strong>WORLD BUILDING</strong></td>
+<td align="center"><strong>BUILD IT</strong></td>
+<td align="center"><strong>MAKE IT YOURS</strong></td>
 </tr>
 </table>
 
@@ -92,7 +96,7 @@ It is designed around the things you actually need to describe when making a gam
 Write `.aeo` files directly inside Worldkiln.
 
 <p align="center">
-  <img src="SCREENSHOTS/v%200.8.x%20%20script_editor.png" alt="Worldkiln AeoScript editor" width="100%">
+  <img src="SCREENSHOTS/blacksmith_patrol.png" alt="AeoScript controlling a blacksmith patrol with navigation callbacks" width="100%">
 </p>
 
 A simple script can start small:
@@ -143,7 +147,7 @@ Your World, Actors, physics, scripts, UI, audio, animation, cameras, and input c
 Worldkiln keeps script output available inside the editor while the game runs.
 
 <p align="center">
-  <img src="SCREENSHOTS/v%200.8.x%20output.png" alt="Worldkiln Play mode output" width="100%">
+  <img src="SCREENSHOTS/moon.png" alt="A game running in Worldkiln Play mode with a character, HUD, and dialogue" width="100%">
 </p>
 
 Stop Play mode, make another change, and run it again.
