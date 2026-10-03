@@ -2,7 +2,7 @@
 
 > **Build. Script. All in one.**
 >
-> Worldkiln is in active development.
+> **Worldkiln 0.8.0 is the current public beta.**
 
 <p align="center">
   <img src="SCREENSHOTS/thumbnail.png" alt="AeoEngine" width="100%">
@@ -13,6 +13,10 @@ Worldkiln is a 3D voxel game engine, editor, and scripting environment written i
 Build worlds, add Actors, write gameplay with AeoScript, test everything in Play mode, and package the project as a standalone game.
 
 **BUILD → SCRIPT → PLAY → RELEASE**
+
+[**Download Worldkiln 0.8.0 for Windows →**](https://github.com/Aeowun/Worldkiln/releases/download/win11-v0.8.0/Installer.exe)
+
+The release is also listed on the [Worldkiln releases page](https://github.com/Aeowun/Worldkiln/releases/tag/win11-v0.8.0).
 
 ---
 
