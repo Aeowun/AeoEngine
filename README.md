@@ -342,7 +342,37 @@ Worldkiln is still being shaped by the people building with it before 1.0.
 
 The **Worldkiln Founding Developer Program** recognizes members who meaningfully build with, test, and help improve Worldkiln during its founding era.
 
+AEOWUN Members is the community and contribution layer behind that program. Members can maintain a profile, share projects and updates, publish games, submit builds, report bugs, give feedback, and participate in the community. Useful participation can be recorded as contribution history, and verified contributions can place a member into the Founding Developer review queue.
+
+The program is intentionally not automatic. Creating an AEOWUN member account does **not** grant Founding Developer status. A member becomes a candidate through verified contribution, and Founding Developer status is awarded after review for meaningful participation during Worldkiln's pre-1.0 era.
+
+The relationship is:
+
+```text
+AEOWUN Member
+      ↓
+Builds, tests, reports, documents, gives useful feedback, or contributes
+      ↓
+Contribution recorded
+      ↓
+Contribution verified
+      ↓
+Founding Developer candidate
+      ↓
+AEOWUN review
+      ↓
+Founding Developer
+```
+
+This keeps the distinction clear:
+
+- **Member** — anyone with an AEOWUN account.
+- **Contributor** — a member with recorded or verified useful participation.
+- **Founding Developer** — a contributor explicitly recognized by AEOWUN for meaningful Worldkiln participation during the pre-1.0 founding era.
+
 Founding Developer status is intended to be permanent. Program benefits and opportunities may evolve as Worldkiln grows.
+
+[**Join AEOWUN Members →**](https://aeowun.com/members/signup/)
 
 [**Learn about the Founding Developer Program →**](https://aeowun.com/worldkiln/founders/)
 
