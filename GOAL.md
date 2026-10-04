@@ -1,4 +1,4 @@
-Worldkiln Goal
+# Worldkiln Goal
 
 «Make a game. Make it yours.»
 
@@ -10,7 +10,7 @@ Help someone go from an idea to their own standalone game.
 
 BUILD → SCRIPT → PLAY → SHIP
 
-What We Prioritize
+## What We Prioritize
 
 Worldkiln should:
 
@@ -30,7 +30,7 @@ New systems should be evaluated by a simple question:
 
 «Does this help someone make their game?»
 
-The Boundary
+## The Boundary
 
 Worldkiln is a game engine and development tool.
 
